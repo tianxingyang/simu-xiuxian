@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/React-19-blue?logo=react" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Vite-6-purple?logo=vite" alt="Vite">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
+  <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
 </p>
 
 ---
@@ -72,4 +72,4 @@ src/
 
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)
