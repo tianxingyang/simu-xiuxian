@@ -1,0 +1,8 @@
+schema: spec-driven
+
+context: |
+  Tech stack: React, TypeScript, Vite
+  Charts: lightweight charting library (e.g. Chart.js or Recharts)
+  Simulation: Web Worker for off-thread computation
+  Domain: Cultivation world simulator (修仙世界模拟器)
+  No backend, pure frontend SPA
