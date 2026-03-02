@@ -1,18 +1,41 @@
 import type { Cultivator, SimEvent } from '../types';
 import {
-  ABSORB_RATE,
+  DEFEAT_CULT_LOSS_RATE,
+  DEFEAT_CULT_LOSS_W,
+  DEFEAT_DEATH_BASE,
+  DEFEAT_DEATH_DECAY,
+  DEFEAT_DEMOTION_W,
+  DEFEAT_GAP_SEVERITY,
+  DEFEAT_INJURY_W,
+  DEFEAT_LIGHT_INJURY_W,
+  DEFEAT_MAX_DEATH,
+  DEFEAT_MERIDIAN_W,
+  EVASION_PENALTY,
+  EVASION_SENSITIVITY,
   EVENTS_PER_TICK,
+  INJURY_DURATION,
   LEVEL_COUNT,
   LEVEL_NAMES,
+  LIGHT_INJURY_DURATION,
+  LOOT_BASE_RATE,
+  LOOT_VARIABLE_RATE,
+  LUCK_MAX,
+  LUCK_MEAN,
+  LUCK_MIN,
+  LUCK_STDDEV,
+  MERIDIAN_COMBAT_PENALTY,
+  MERIDIAN_DAMAGE_DURATION,
+  effectiveCourage,
   lifespanBonus,
   round1,
   threshold,
 } from '../constants';
-import { prngShuffle } from './prng';
+import { prngShuffle, truncatedGaussian } from './prng';
 import type { SimulationEngine } from './simulation';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 const EMPTY_EVENTS: SimEvent[] = [];
+const OUTCOME_SUFFIX = ['', '，败者跌境', '，败者重伤', '，败者损失修为', '', '，败者经脉受损', '，败者轻伤'];
 
 export function processEncounters(engine: SimulationEngine, collectEvents = true): SimEvent[] {
   const snapshotNk = engine._snapshotNk;
@@ -22,9 +45,13 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
     const arr = engine.levelArrayCache.get(level)!;
     arr.length = 0;
     if (level === 0) continue;
-    snapshotNk[level] = ids.size;
-    snapshotN += ids.size;
-    if (ids.size > 1) for (const id of ids) arr.push(id);
+    for (const id of ids) {
+      const c = engine.cultivators.get(id)!;
+      if (c.injuredUntil > engine.year) continue;
+      arr.push(id);
+    }
+    snapshotNk[level] = arr.length;
+    snapshotN += arr.length;
   }
   if (snapshotN === 0) return EMPTY_EVENTS;
 
@@ -44,9 +71,12 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
     lowBuf.length = 0;
   }
 
+  const defeatedSet = new Set<number>();
+
   for (const id of aliveIds) {
     const c = engine.cultivators.get(id)!;
     if (!c.alive) continue;
+    if (c.injuredUntil > engine.year || defeatedSet.has(id)) continue;
 
     const nk = snapshotNk[c.level];
     if (nk <= 1) continue;
@@ -61,11 +91,30 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
     const opp = engine.cultivators.get(oppId)!;
     if (!opp.alive || opp.level !== c.level) continue;
 
-    resolveCombat(engine, c, opp, highBuf, lowBuf);
+    resolveCombat(engine, c, opp, highBuf, lowBuf, defeatedSet);
   }
 
   if (!collectEvents) return EMPTY_EVENTS;
   return materializeSelected(highBuf!, lowBuf!, engine.year, engine.prng, engine);
+}
+
+function resolveDefeatOutcome(
+  prng: () => number,
+  winnerSnap: number,
+  loserSnap: number,
+  loserLevel: number,
+): number {
+  const gap = (winnerSnap - loserSnap) / (winnerSnap + loserSnap);
+  const deathChance = Math.min(DEFEAT_MAX_DEATH,
+    DEFEAT_DEATH_BASE * DEFEAT_DEATH_DECAY ** loserLevel * (1 + DEFEAT_GAP_SEVERITY * gap));
+  if (prng() < deathChance) return 0;
+  const total = DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W + DEFEAT_MERIDIAN_W + DEFEAT_DEMOTION_W;
+  const r = prng();
+  if (r < DEFEAT_LIGHT_INJURY_W / total) return 6;
+  if (r < (DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W) / total) return 2;
+  if (r < (DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W) / total) return 3;
+  if (r < (DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W + DEFEAT_MERIDIAN_W) / total) return 5;
+  return 1;
 }
 
 function resolveCombat(
@@ -74,21 +123,105 @@ function resolveCombat(
   b: Cultivator,
   highBuf: number[] | null,
   lowBuf: number[] | null,
+  defeatedSet: Set<number>,
 ): void {
-  const total = a.cultivation + b.cultivation;
-  if (total <= 0) return;
-  if (a.courage <= b.cultivation / total && b.courage <= a.cultivation / total) return;
+  const aCultSnap = a.cultivation;
+  const bCultSnap = b.cultivation;
 
-  const aWins = engine.prng() < a.cultivation / total;
+  let aCombatPower = a.cultivation;
+  let bCombatPower = b.cultivation;
+  if (a.meridianDamagedUntil > engine.year) {
+    aCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+  }
+  if (b.meridianDamagedUntil > engine.year) {
+    bCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+  }
+
+  let total = aCombatPower + bCombatPower;
+  if (total <= 0) return;
+  const aCourage = effectiveCourage(a);
+  const bCourage = effectiveCourage(b);
+  const aDefeat = bCombatPower / total;
+  const bDefeat = aCombatPower / total;
+  const aWantsFight = aCourage > aDefeat;
+  const bWantsFight = bCourage > bDefeat;
+  if (!aWantsFight && !bWantsFight) return;
+
+  if (aWantsFight !== bWantsFight) {
+    const attacker = aWantsFight ? a : b;
+    const evader = aWantsFight ? b : a;
+    const gap = (evader.cultivation - attacker.cultivation)
+      / (evader.cultivation + attacker.cultivation);
+    const P = Math.max(0, Math.min(1, 0.5 + EVASION_SENSITIVITY * gap));
+
+    const evasionSucceeded = P === 0 ? false : P === 1 ? true : engine.prng() < P;
+    if (evasionSucceeded) return;
+
+    const penalized = round1(evader.cultivation * (1 - EVASION_PENALTY));
+    evader.cultivation = Math.max(threshold(evader.level), penalized);
+
+    aCombatPower = a.cultivation;
+    bCombatPower = b.cultivation;
+    if (a.meridianDamagedUntil > engine.year) {
+      aCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+    }
+    if (b.meridianDamagedUntil > engine.year) {
+      bCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+    }
+    total = aCombatPower + bCombatPower;
+  }
+
+  const aWins = engine.prng() < aCombatPower / total;
   const winner = aWins ? a : b;
   const loser = aWins ? b : a;
 
-  loser.alive = false;
-  engine.combatDeaths++;
-  engine.levelGroups.get(loser.level)!.delete(loser.id);
+  const loserSnap = loser === a ? aCultSnap : bCultSnap;
+  const levelBase = threshold(loser.level);
+  const baseLoot = levelBase * LOOT_BASE_RATE;
+  const excess = Math.max(0, loserSnap - levelBase);
+  const luck = truncatedGaussian(engine.prng, LUCK_MEAN, LUCK_STDDEV, LUCK_MIN, LUCK_MAX);
+  const loot = Math.max(0.1, round1(baseLoot + excess * LOOT_VARIABLE_RATE * luck));
+  winner.cultivation += loot;
 
-  const absorbed = round1(loser.cultivation * ABSORB_RATE);
-  winner.cultivation += absorbed;
+  const combatLevel = loser.level;
+  const loserCombatPower = loser === a ? aCombatPower : bCombatPower;
+  const winnerCombatPower = winner === a ? aCombatPower : bCombatPower;
+  const outcome = resolveDefeatOutcome(engine.prng, winnerCombatPower, loserCombatPower, loser.level);
+
+  if (outcome === 0) {
+    loser.alive = false;
+    engine.combatDeaths++;
+    engine.levelGroups.get(loser.level)!.delete(loser.id);
+  } else {
+    const arr = engine.levelArrayCache.get(loser.level);
+    if (arr) {
+      const idx = arr.indexOf(loser.id);
+      if (idx !== -1) { arr[idx] = arr[arr.length - 1]; arr.pop(); }
+    }
+    defeatedSet.add(loser.id);
+
+    if (outcome === 1) {
+      engine.combatDemotions++;
+      const oldLevel = loser.level;
+      loser.level--;
+      loser.cultivation = loser.level >= 1 ? threshold(loser.level) : 0;
+      engine.levelGroups.get(oldLevel)!.delete(loser.id);
+      engine.levelGroups.get(loser.level)!.add(loser.id);
+    } else if (outcome === 2) {
+      engine.combatInjuries++;
+      loser.injuredUntil = engine.year + INJURY_DURATION;
+    } else if (outcome === 3) {
+      engine.combatCultLosses++;
+      loser.cultivation = Math.max(
+        threshold(loser.level), round1(loser.cultivation * (1 - DEFEAT_CULT_LOSS_RATE)));
+    } else if (outcome === 5) {
+      engine.combatMeridianDamages++;
+      loser.meridianDamagedUntil = engine.year + MERIDIAN_DAMAGE_DURATION;
+    } else if (outcome === 6) {
+      engine.combatLightInjuries++;
+      loser.lightInjuryUntil = engine.year + LIGHT_INJURY_DURATION;
+    }
+  }
 
   const prevLevel = winner.level;
   while (winner.level < MAX_LEVEL && winner.cultivation >= threshold(winner.level + 1)) {
@@ -103,8 +236,7 @@ function resolveCombat(
   }
 
   if (highBuf && lowBuf) {
-    const combatLevel = loser.level;
-    (combatLevel >= 3 ? highBuf : lowBuf).push(0, combatLevel, absorbed, 0);
+    (combatLevel >= 3 ? highBuf : lowBuf).push(0, combatLevel, loot, outcome);
     if (winner.level !== prevLevel) {
       (winner.level >= 3 ? highBuf : lowBuf).push(1, winner.level, prevLevel, winner.level);
     }
@@ -132,7 +264,7 @@ function materialize(buf: number[], off: number, year: number, engine: Simulatio
       year,
       type: 'combat',
       actorLevel,
-      detail: `${LEVEL_NAMES[actorLevel]}对决，吸收修为${buf[off + 2]}`,
+      detail: `${LEVEL_NAMES[actorLevel]}对决，获得机缘${buf[off + 2]}${OUTCOME_SUFFIX[buf[off + 3]]}`,
     };
   }
   return {

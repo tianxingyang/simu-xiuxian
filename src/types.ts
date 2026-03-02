@@ -5,7 +5,17 @@ export interface Cultivator {
   level: number;
   readonly courage: number;
   maxAge: number;
+  injuredUntil: number;
+  lightInjuryUntil: number;
+  meridianDamagedUntil: number;
   alive: boolean;
+}
+
+export interface LevelStat {
+  ageAvg: number;
+  ageMedian: number;
+  courageAvg: number;
+  courageMedian: number;
 }
 
 export interface YearSummary {
@@ -19,6 +29,12 @@ export interface YearSummary {
   promotions: number[];
   highestLevel: number;
   highestCultivation: number;
+  combatDemotions: number;
+  combatInjuries: number;
+  combatCultLosses: number;
+  combatLightInjuries: number;
+  combatMeridianDamages: number;
+  levelStats: LevelStat[];
 }
 
 export interface SimEvent {

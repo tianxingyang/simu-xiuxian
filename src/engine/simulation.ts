@@ -1,7 +1,7 @@
-import type { Cultivator, SimEvent, YearSummary } from '../types';
-import { LEVEL_COUNT, LEVEL_NAMES, MORTAL_MAX_AGE, YEARLY_NEW, lifespanBonus, threshold } from '../constants';
+import type { Cultivator, LevelStat, SimEvent, YearSummary } from '../types';
+import { COURAGE_MEAN, COURAGE_STDDEV, INJURY_GROWTH_RATE, LEVEL_COUNT, LEVEL_NAMES, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, effectiveCourage, lifespanBonus, round1, round2, threshold } from '../constants';
 import { processEncounters } from './combat';
-import { createPRNG } from './prng';
+import { createPRNG, truncatedGaussian } from './prng';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 
@@ -16,6 +16,11 @@ export class SimulationEngine {
   yearlySpawn: number;
 
   combatDeaths = 0;
+  combatDemotions = 0;
+  combatInjuries = 0;
+  combatCultLosses = 0;
+  combatLightInjuries = 0;
+  combatMeridianDamages = 0;
   expiryDeaths = 0;
   promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
   spawned = 0;
@@ -27,12 +32,16 @@ export class SimulationEngine {
   _lowBuf: number[] = [];
   _snapshotNk = new Array<number>(LEVEL_COUNT).fill(0);
   private _pool: Cultivator[] = [];
+  private _ageBuffers: number[][] = [];
+  private _courageBuffers: number[][] = [];
 
   constructor(seed: number, initialPopCount: number) {
     this.prng = createPRNG(seed);
     this.yearlySpawn = YEARLY_NEW;
     this.levelGroups = initLevelGroups();
     this.levelArrayCache = initLevelArrayCache();
+    this._ageBuffers = initBuffers();
+    this._courageBuffers = initBuffers();
     this.spawnCultivators(initialPopCount);
   }
 
@@ -48,11 +57,14 @@ export class SimulationEngine {
         c.age = 10;
         c.cultivation = 0;
         c.level = 0;
-        (c as { courage: number }).courage = this.prng();
+        (c as { courage: number }).courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
         c.maxAge = MORTAL_MAX_AGE;
+        c.injuredUntil = 0;
+        c.lightInjuryUntil = 0;
+        c.meridianDamagedUntil = 0;
         c.alive = true;
       } else {
-        c = { id, age: 10, cultivation: 0, level: 0, courage: this.prng(), maxAge: MORTAL_MAX_AGE, alive: true };
+        c = { id, age: 10, cultivation: 0, level: 0, courage: round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00)), maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, alive: true };
       }
       this.cultivators.set(id, c);
       this.levelGroups.get(0)!.add(id);
@@ -63,8 +75,19 @@ export class SimulationEngine {
   naturalCultivation(): void {
     for (const c of this.cultivators.values()) {
       if (!c.alive) continue;
-      c.cultivation += 1;
       c.age += 1;
+      let growthRate = 1;
+      if (c.injuredUntil > this.year) {
+        growthRate = INJURY_GROWTH_RATE;
+      } else if (c.lightInjuryUntil > this.year) {
+        growthRate = LIGHT_INJURY_GROWTH_RATE;
+      }
+      c.cultivation += growthRate;
+
+      const target = SUSTAINABLE_MAX_AGE[c.level];
+      if (c.maxAge > target) {
+        c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
+      }
     }
   }
 
@@ -125,14 +148,44 @@ export class SimulationEngine {
   getSummary(): YearSummary {
     const buf = this._levelCountsBuf;
     buf.fill(0);
+    const ageBuf = this._ageBuffers;
+    const courBuf = this._courageBuffers;
+    const ageSum = new Float64Array(LEVEL_COUNT);
+    const courSum = new Float64Array(LEVEL_COUNT);
+    for (let i = 0; i < LEVEL_COUNT; i++) {
+      ageBuf[i].length = 0;
+      courBuf[i].length = 0;
+    }
+
     let total = 0, highLevel = 0, highCult = 0;
     for (const c of this.cultivators.values()) {
       if (!c.alive) continue;
       total++;
-      buf[c.level]++;
-      if (c.level > highLevel) highLevel = c.level;
+      const lv = c.level;
+      buf[lv]++;
+      ageSum[lv] += c.age;
+      courSum[lv] += effectiveCourage(c);
+      ageBuf[lv].push(c.age);
+      courBuf[lv].push(effectiveCourage(c));
+      if (lv > highLevel) highLevel = lv;
       if (c.cultivation > highCult) highCult = c.cultivation;
     }
+
+    const levelStats: LevelStat[] = new Array(LEVEL_COUNT);
+    for (let i = 0; i < LEVEL_COUNT; i++) {
+      const n = buf[i];
+      if (n === 0) {
+        levelStats[i] = { ageAvg: 0, ageMedian: 0, courageAvg: 0, courageMedian: 0 };
+      } else {
+        levelStats[i] = {
+          ageAvg: round1(ageSum[i] / n),
+          ageMedian: round1(median(ageBuf[i])),
+          courageAvg: round2(courSum[i] / n),
+          courageMedian: round2(median(courBuf[i])),
+        };
+      }
+    }
+
     return {
       year: this._summaryYear,
       totalPopulation: total,
@@ -144,6 +197,12 @@ export class SimulationEngine {
       promotions: [...this.promotionCounts],
       highestLevel: highLevel,
       highestCultivation: highCult,
+      combatDemotions: this.combatDemotions,
+      combatInjuries: this.combatInjuries,
+      combatCultLosses: this.combatCultLosses,
+      combatLightInjuries: this.combatLightInjuries,
+      combatMeridianDamages: this.combatMeridianDamages,
+      levelStats,
     };
   }
 
@@ -168,6 +227,11 @@ export class SimulationEngine {
 
   resetYearCounters(): void {
     this.combatDeaths = 0;
+    this.combatDemotions = 0;
+    this.combatInjuries = 0;
+    this.combatCultLosses = 0;
+    this.combatLightInjuries = 0;
+    this.combatMeridianDamages = 0;
     this.expiryDeaths = 0;
     this.promotionCounts.fill(0);
     this.spawned = 0;
@@ -181,6 +245,8 @@ export class SimulationEngine {
     this._highBuf.length = 0;
     this._lowBuf.length = 0;
     this._pool.length = 0;
+    this._ageBuffers = initBuffers();
+    this._courageBuffers = initBuffers();
     this.nextId = 1;
     this.nextEventId = 1;
     this.year = 1;
@@ -196,6 +262,16 @@ function initLevelGroups(): Map<number, Set<number>> {
   const m = new Map<number, Set<number>>();
   for (let i = 0; i < LEVEL_COUNT; i++) m.set(i, new Set());
   return m;
+}
+
+function median(arr: number[]): number {
+  arr.sort((a, b) => a - b);
+  const mid = arr.length >> 1;
+  return arr.length & 1 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+}
+
+function initBuffers(): number[][] {
+  return Array.from({ length: LEVEL_COUNT }, () => []);
 }
 
 function initLevelArrayCache(): Map<number, number[]> {
