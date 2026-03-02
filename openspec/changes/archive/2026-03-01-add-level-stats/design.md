@@ -32,13 +32,13 @@ interface LevelStat {
 }
 ```
 
-当某境界人数为 0 时，四个字段均为 0。
+当某境界人数为 0 时，四个字段均为 0。`round1()` 在引擎 `getSummary()` 计算完成后立即应用，存入 `LevelStat`，下游无需再处理精度。
 
 **理由**：扁平数组结构与现有 `levelCounts`/`promotions` 一致，序列化开销最小。
 
 ### D2: 中位数计算策略
 
-在 `getSummary()` 遍历中，按 level 收集 age/courage 值到预分配的 buffer 数组，遍历结束后对每个 level 的子数组排序取中位数。
+在 `getSummary()` 遍历中，按 level 收集 age/courage 值到预分配的 buffer 数组，遍历结束后对每个 level 的子数组使用 `(a, b) => a - b` 比较器排序取中位数。
 
 预分配策略：引擎持有 `_ageBuffers: number[][]` 和 `_courageBuffers: number[][]`（各 8 个数组），每次 `getSummary()` 调用前重置 `length = 0`，复用底层 ArrayBuffer 避免 GC。
 
@@ -46,13 +46,15 @@ interface LevelStat {
 
 ### D3: TrendChart tab 切换
 
-在 `TrendChart` 组件内部新增 `useState` 管理当前 tab（`'population' | 'age' | 'courage'`）。三个 tab 共享同一个 `trendData: YearSummary[]` 数据源，仅切换渲染的 dataKey：
+在 `TrendChart` 组件内部新增 `useState` 管理当前 tab（`'population' | 'age' | 'courage'`）。三个 tab 共享同一个 `trendData: YearSummary[]` 数据源，仅切换渲染的 dataKey。三个 tab 统一展示 Lv1–Lv7（7 条线），排除 Lv0（炼气），因为炼气人数过多会压缩其他境界可读性：
 
 | Tab | 渲染内容 |
 |-----|---------|
-| 人口趋势 | `levelCounts[i]`（现有逻辑） |
-| 年龄趋势 | `levelStats[i].ageAvg`，每级一条线 |
-| 勇气趋势 | `levelStats[i].courageAvg`，每级一条线 |
+| 人口趋势 | `levelCounts[i]`，i=1..7 |
+| 年龄趋势 | `levelStats[i].ageAvg`，i=1..7 |
+| 勇气趋势 | `levelStats[i].courageAvg`，i=1..7 |
+
+空境界处理：当某年 `levelCounts[i] === 0` 时，age/courage 趋势数据点使用 `null`，Recharts 折线断开，不连接到 0。
 
 趋势图展示平均值而非中位数——折线图中平均值更平滑，中位数在当前快照表格中已可查看。
 

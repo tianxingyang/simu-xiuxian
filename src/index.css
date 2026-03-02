@@ -301,3 +301,58 @@ body {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
 }
+
+/* Level stats table */
+/* Trend chart tabs */
+.tab-group {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  padding: 2px 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.tab-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tab-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Level stats table */
+.level-stats-table {
+  width: 100%;
+  margin-top: 10px;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.level-stats-table th,
+.level-stats-table td {
+  padding: 4px 6px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.level-stats-table th {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.level-stats-table td:first-child,
+.level-stats-table th:first-child {
+  text-align: left;
+}
