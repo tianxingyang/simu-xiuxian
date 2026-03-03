@@ -64,7 +64,7 @@ function runBatch(): void {
   // 输出性能分析结果
   if (shouldProfile) {
     profiler.disable();
-    console.log(`\n[Performance Profile] Year ${engine.year}, Speed ${speed}, Batch ${batchSize}, Population ${engine.cultivators.size}`);
+    console.log(`\n[Performance Profile] Year ${engine.year}, Speed ${speed}, Batch ${batchSize}, Population ${engine.aliveCount}`);
     profiler.printResults();
   }
 

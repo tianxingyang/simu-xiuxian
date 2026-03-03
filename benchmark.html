@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>性能基准测试 - Chrome DevTools Profiling</title>
+  <style>
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    h1 { color: #4ec9b0; }
+    .controls {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #0e639c;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+      font-family: inherit;
+    }
+    button:hover { background: #1177bb; }
+    button:disabled {
+      background: #3e3e42;
+      cursor: not-allowed;
+    }
+    .status {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      min-height: 100px;
+    }
+    .status.running { border-left: 4px solid #4ec9b0; }
+    .status.done { border-left: 4px solid #608b4e; }
+    .results {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .highlight { color: #ce9178; }
+    .warning { color: #dcdcaa; }
+    .error { color: #f48771; }
+    .instruction {
+      background: #1e3a5f;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+      border-left: 4px solid #4ec9b0;
+    }
+    .instruction ol {
+      margin: 10px 0;
+      padding-left: 20px;
+    }
+    .instruction li {
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔥 性能基准测试 - Chrome DevTools Profiling</h1>
+
+  <div class="instruction">
+    <strong>📋 使用说明：</strong>
+    <ol>
+      <li>打开 Chrome DevTools (F12)</li>
+      <li>切换到 <strong>Performance</strong> 标签</li>
+      <li>点击下方的 <strong>"运行 Benchmark"</strong> 按钮</li>
+      <li><strong>立即</strong>点击 DevTools 中的 <strong>Record 按钮</strong>（红色圆点）开始录制</li>
+      <li>等待测试完成（约 10-15 秒）</li>
+      <li>点击 DevTools 中的 <strong>Stop</strong> 按钮停止录制</li>
+      <li>分析火焰图，找到性能瓶颈</li>
+    </ol>
+  </div>
+
+  <div class="controls">
+    <button id="runBtn">🚀 运行 Benchmark (1000年)</button>
+    <button id="runShortBtn">⚡ 快速测试 (100年)</button>
+    <button id="runLongBtn">🔥 深度测试 (5000年)</button>
+  </div>
+
+  <div id="status" class="status">
+    <div>状态: <span id="statusText">等待开始...</span></div>
+    <div>进度: <span id="progress">-</span></div>
+    <div>耗时: <span id="elapsed">-</span></div>
+  </div>
+
+  <div id="results" class="results"></div>
+
+  <script type="module">
+    import { SimulationEngine } from './src/engine/simulation.ts';
+
+    const runBtn = document.getElementById('runBtn');
+    const runShortBtn = document.getElementById('runShortBtn');
+    const runLongBtn = document.getElementById('runLongBtn');
+    const statusDiv = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+    const progressText = document.getElementById('progress');
+    const elapsedText = document.getElementById('elapsed');
+    const resultsDiv = document.getElementById('results');
+
+    function setStatus(text, state = 'idle') {
+      statusText.textContent = text;
+      statusDiv.className = `status ${state}`;
+    }
+
+    function formatTime(ms) {
+      return ms.toFixed(2) + 'ms';
+    }
+
+    async function runBenchmark(years, initialPop, label) {
+      runBtn.disabled = true;
+      runShortBtn.disabled = true;
+      runLongBtn.disabled = true;
+
+      setStatus(`正在运行 ${label}...`, 'running');
+      resultsDiv.textContent = '';
+
+      // 给 UI 一点时间更新
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const engine = new SimulationEngine(42, initialPop);
+      const startTime = performance.now();
+      let lastUpdate = startTime;
+
+      for (let i = 0; i < years; i++) {
+        const collectEvents = i === years - 1;
+        engine.tickYear(collectEvents);
+
+        // 每100年调用一次 getSummary
+        if (i % 100 === 0 || i === years - 1) {
+          engine.getSummary();
+        }
+
+        // 更新进度（每100年或最后一年）
+        const now = performance.now();
+        if (now - lastUpdate > 100 || i === years - 1) {
+          progressText.textContent = `${i + 1} / ${years} 年`;
+          elapsedText.textContent = formatTime(now - startTime);
+          lastUpdate = now;
+
+          // 让浏览器有机会更新 UI
+          if (i % 500 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+          }
+        }
+      }
+
+      const endTime = performance.now();
+      const totalTime = endTime - startTime;
+      const avgPerYear = totalTime / years;
+
+      const summary = engine.getSummary();
+
+      const results = `
+═══════════════════════════════════════════════════════════════
+  ${label} - 测试完成
+═══════════════════════════════════════════════════════════════
+
+⏱️  性能指标:
+  总耗时:        ${formatTime(totalTime)}
+  平均每年:      ${formatTime(avgPerYear)}
+  总年数:        ${years} 年
+  初始人口:      ${initialPop}
+
+📊 最终状态:
+  当前年份:      ${summary.year}
+  总人口:        ${summary.totalPopulation}
+  最高境界:      ${summary.highestLevel}
+  最高修为:      ${summary.highestCultivation.toFixed(1)}
+
+💀 死亡统计:
+  战斗死亡:      ${summary.combatDeaths}
+  寿元耗尽:      ${summary.expiryDeaths}
+  总死亡:        ${summary.deaths}
+
+⚔️  战斗统计:
+  降级:          ${summary.combatDemotions}
+  重伤:          ${summary.combatInjuries}
+  修为损失:      ${summary.combatCultLosses}
+  轻伤:          ${summary.combatLightInjuries}
+  经脉受损:      ${summary.combatMeridianDamages}
+
+🎯 性能分析提示:
+  1. 在 DevTools Performance 面板中查看火焰图
+  2. 重点关注 "tickYear" 和 "processEncounters" 函数
+  3. 查找调用次数最多的函数
+  4. 注意 "resolveCombat" 的耗时占比
+  5. 检查是否有意外的 GC (垃圾回收) 峰值
+
+═══════════════════════════════════════════════════════════════
+`;
+
+      resultsDiv.textContent = results;
+      setStatus('测试完成！请在 DevTools 中分析性能数据', 'done');
+
+      runBtn.disabled = false;
+      runShortBtn.disabled = false;
+      runLongBtn.disabled = false;
+    }
+
+    runBtn.addEventListener('click', () => {
+      runBenchmark(1000, 1000, '标准测试 (1000年, 1000初始人口)');
+    });
+
+    runShortBtn.addEventListener('click', () => {
+      runBenchmark(100, 1000, '快速测试 (100年, 1000初始人口)');
+    });
+
+    runLongBtn.addEventListener('click', () => {
+      runBenchmark(5000, 1000, '深度测试 (5000年, 1000初始人口)');
+    });
+
+    // 页面加载完成提示
+    console.log('%c🔥 性能测试页面已就绪', 'color: #4ec9b0; font-size: 16px; font-weight: bold;');
+    console.log('%c📋 请按照页面上的说明使用 Chrome DevTools 进行性能分析', 'color: #dcdcaa; font-size: 14px;');
+  </script>
+</body>
+</html>

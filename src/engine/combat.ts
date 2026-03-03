@@ -45,12 +45,13 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
   const snapshotNk = engine._snapshotNk;
   snapshotNk.fill(0);
   let snapshotN = 0;
-  for (const [level, ids] of engine.levelGroups) {
-    const arr = engine.levelArrayCache.get(level)!;
+  for (let level = 0; level < LEVEL_COUNT; level++) {
+    const ids = engine.levelGroups[level];
+    const arr = engine.levelArrayCache[level];
     arr.length = 0;
     if (level === 0) continue;
     for (const id of ids) {
-      const c = engine.cultivators.get(id)!;
+      const c = engine.cultivators[id];
       if (c.injuredUntil > engine.year) continue;
       arr.push(id);
     }
@@ -68,7 +69,7 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
   const aliveIds = engine.aliveIds;
   aliveIds.length = 0;
   for (let level = 1; level < LEVEL_COUNT; level++) {
-    for (const id of engine.aliveLevelIds.get(level)!) {
+    for (const id of engine.aliveLevelIds[level]) {
       aliveIds.push(id);
     }
   }
@@ -88,7 +89,7 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
 
   profiler.start('processEncounters.combatLoop');
   for (const id of aliveIds) {
-    const c = engine.cultivators.get(id)!;
+    const c = engine.cultivators[id];
     if (!c.alive) continue;
     if (c.injuredUntil > engine.year || defeatedSet.has(id)) continue;
 
@@ -97,12 +98,13 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
 
     if (engine.prng() >= nk / snapshotN) continue;
 
-    const arr = engine.levelArrayCache.get(c.level);
-    if (!arr || arr.length === 0) continue;
+    const arr = engine.levelArrayCache[c.level];
+    if (arr.length === 0) continue;
+    if (arr.length === 1 && arr[0] === c.id) continue;
 
     let oppId: number;
     do { oppId = arr[Math.floor(engine.prng() * arr.length)]; } while (oppId === c.id);
-    const opp = engine.cultivators.get(oppId)!;
+    const opp = engine.cultivators[oppId];
     if (!opp.alive || opp.level !== c.level) continue;
 
     resolveCombat(engine, c, opp, highBuf, lowBuf, defeatedSet);
@@ -215,14 +217,14 @@ function resolveCombat(
   if (outcome === 0) {
     loser.alive = false;
     engine.combatDeaths++;
-    engine.levelGroups.get(loser.level)!.delete(loser.id);
-    engine.aliveLevelIds.get(loser.level)!.delete(loser.id);
+    engine.aliveCount--;
+    engine._deadIds.push(loser.id);
+    engine.levelGroups[loser.level].delete(loser.id);
+    engine.aliveLevelIds[loser.level].delete(loser.id);
   } else {
-    const arr = engine.levelArrayCache.get(loser.level);
-    if (arr) {
-      const idx = arr.indexOf(loser.id);
-      if (idx !== -1) { arr[idx] = arr[arr.length - 1]; arr.pop(); }
-    }
+    const arr = engine.levelArrayCache[loser.level];
+    const idx = arr.indexOf(loser.id);
+    if (idx !== -1) { arr[idx] = arr[arr.length - 1]; arr.pop(); }
     defeatedSet.add(loser.id);
 
     if (outcome === 1) {
@@ -230,10 +232,10 @@ function resolveCombat(
       const oldLevel = loser.level;
       loser.level--;
       loser.cultivation = loser.level >= 1 ? threshold(loser.level) : 0;
-      engine.levelGroups.get(oldLevel)!.delete(loser.id);
-      engine.levelGroups.get(loser.level)!.add(loser.id);
-      engine.aliveLevelIds.get(oldLevel)!.delete(loser.id);
-      engine.aliveLevelIds.get(loser.level)!.add(loser.id);
+      engine.levelGroups[oldLevel].delete(loser.id);
+      engine.levelGroups[loser.level].add(loser.id);
+      engine.aliveLevelIds[oldLevel].delete(loser.id);
+      engine.aliveLevelIds[loser.level].add(loser.id);
     } else if (outcome === 2) {
       engine.combatInjuries++;
       loser.injuredUntil = engine.year + INJURY_DURATION;
@@ -258,10 +260,10 @@ function resolveCombat(
     engine.promotionCounts[winner.level]++;
   }
   if (winner.level !== prevLevel) {
-    engine.levelGroups.get(prevLevel)!.delete(winner.id);
-    engine.levelGroups.get(winner.level)!.add(winner.id);
-    engine.aliveLevelIds.get(prevLevel)!.delete(winner.id);
-    engine.aliveLevelIds.get(winner.level)!.add(winner.id);
+    engine.levelGroups[prevLevel].delete(winner.id);
+    engine.levelGroups[winner.level].add(winner.id);
+    engine.aliveLevelIds[prevLevel].delete(winner.id);
+    engine.aliveLevelIds[winner.level].add(winner.id);
   }
 
   if (highBuf && lowBuf) {

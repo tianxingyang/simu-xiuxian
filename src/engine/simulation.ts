@@ -7,10 +7,10 @@ import { profiler } from './profiler';
 const MAX_LEVEL = LEVEL_COUNT - 1;
 
 export class SimulationEngine {
-  cultivators = new Map<number, Cultivator>();
-  levelGroups: Map<number, Set<number>>;
-  aliveLevelIds: Map<number, Set<number>>;
-  nextId = 1;
+  cultivators: Cultivator[] = [];
+  levelGroups: Set<number>[];
+  aliveLevelIds: Set<number>[];
+  nextId = 0;
   nextEventId = 1;
   year = 1;
   private _summaryYear = 1;
@@ -28,12 +28,14 @@ export class SimulationEngine {
   spawned = 0;
 
   aliveIds: number[] = [];
-  levelArrayCache: Map<number, number[]>;
+  levelArrayCache: number[][];
   private _levelCountsBuf = new Array<number>(LEVEL_COUNT).fill(0);
   _highBuf: number[] = [];
   _lowBuf: number[] = [];
   _snapshotNk = new Array<number>(LEVEL_COUNT).fill(0);
-  private _pool: Cultivator[] = [];
+  freeSlots: number[] = [];
+  aliveCount = 0;
+  _deadIds: number[] = [];
   private _ageBuffers: number[][] = [];
   private _courageBuffers: number[][] = [];
 
@@ -49,39 +51,40 @@ export class SimulationEngine {
   }
 
   spawnCultivators(count: number): void {
-    const pool = this._pool;
     for (let i = 0; i < count; i++) {
-      const id = this.nextId++;
-      let c: Cultivator;
-      if (pool.length > 0) {
-        c = pool[pool.length - 1];
-        pool.length--;
+      const courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
+      let id: number;
+      if (this.freeSlots.length > 0) {
+        id = this.freeSlots[this.freeSlots.length - 1];
+        this.freeSlots.length--;
+        const c = this.cultivators[id];
         c.id = id;
         c.age = 10;
         c.cultivation = 0;
         c.level = 0;
-        (c as { courage: number }).courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
+        (c as { courage: number }).courage = courage;
         c.maxAge = MORTAL_MAX_AGE;
         c.injuredUntil = 0;
         c.lightInjuryUntil = 0;
         c.meridianDamagedUntil = 0;
         c.alive = true;
       } else {
-        c = { id, age: 10, cultivation: 0, level: 0, courage: round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00)), maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, alive: true };
+        id = this.nextId++;
+        this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, alive: true };
       }
-      this.cultivators.set(id, c);
-      this.levelGroups.get(0)!.add(id);
-      this.aliveLevelIds.get(0)!.add(id);
+      this.aliveCount++;
+      this.levelGroups[0].add(id);
+      this.aliveLevelIds[0].add(id);
     }
     this.spawned += count;
   }
 
   tickCultivators(events?: SimEvent[]): void {
     profiler.start('tickCultivators');
-    for (const c of this.cultivators.values()) {
+    for (let i = 0; i < this.nextId; i++) {
+      const c = this.cultivators[i];
       if (!c.alive) continue;
 
-      // Natural cultivation: age + cultivation growth + lifespan decay
       c.age += 1;
       let growthRate = 1;
       if (c.injuredUntil > this.year) {
@@ -96,7 +99,6 @@ export class SimulationEngine {
         c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
       }
 
-      // Check promotions
       const prev = c.level;
       while (c.level < MAX_LEVEL && c.cultivation >= threshold(c.level + 1)) {
         c.level++;
@@ -105,10 +107,10 @@ export class SimulationEngine {
         this.promotionCounts[c.level]++;
       }
       if (c.level !== prev) {
-        this.levelGroups.get(prev)!.delete(c.id);
-        this.levelGroups.get(c.level)!.add(c.id);
-        this.aliveLevelIds.get(prev)!.delete(c.id);
-        this.aliveLevelIds.get(c.level)!.add(c.id);
+        this.levelGroups[prev].delete(c.id);
+        this.levelGroups[c.level].add(c.id);
+        this.aliveLevelIds[prev].delete(c.id);
+        this.aliveLevelIds[c.level].add(c.id);
         if (events && c.level >= 3) {
           events.push({
             id: this.nextEventId++,
@@ -120,12 +122,13 @@ export class SimulationEngine {
         }
       }
 
-      // Check expiry
       if (c.age >= c.maxAge) {
         c.alive = false;
         this.expiryDeaths++;
-        this.levelGroups.get(c.level)!.delete(c.id);
-        this.aliveLevelIds.get(c.level)!.delete(c.id);
+        this.aliveCount--;
+        this._deadIds.push(c.id);
+        this.levelGroups[c.level].delete(c.id);
+        this.aliveLevelIds[c.level].delete(c.id);
         if (events && c.level >= 3) {
           events.push({
             id: this.nextEventId++,
@@ -141,13 +144,12 @@ export class SimulationEngine {
   }
 
   purgeDead(): void {
-    const pool = this._pool;
-    for (const [id, c] of this.cultivators) {
-      if (!c.alive) {
-        this.cultivators.delete(id);
-        pool.push(c);
-      }
+    const deadIds = this._deadIds;
+    const freeSlots = this.freeSlots;
+    for (let i = 0; i < deadIds.length; i++) {
+      freeSlots.push(deadIds[i]);
     }
+    deadIds.length = 0;
   }
 
   getSummary(): YearSummary {
@@ -165,7 +167,8 @@ export class SimulationEngine {
 
     profiler.start('getSummary.iterate');
     let total = 0, highLevel = 0, highCult = 0;
-    for (const c of this.cultivators.values()) {
+    for (let i = 0; i < this.nextId; i++) {
+      const c = this.cultivators[i];
       if (!c.alive) continue;
       total++;
       const lv = c.level;
@@ -226,7 +229,7 @@ export class SimulationEngine {
     const combatEvents = processEncounters(this, collectEvents);
     if (collectEvents) events.push(...combatEvents);
     this.purgeDead();
-    const isExtinct = this.cultivators.size === 0;
+    const isExtinct = this.aliveCount === 0;
     this._summaryYear = this.year;
     this.year++;
     profiler.end('tickYear');
@@ -243,20 +246,23 @@ export class SimulationEngine {
     this.expiryDeaths = 0;
     this.promotionCounts.fill(0);
     this.spawned = 0;
+    this._deadIds.length = 0;
   }
 
   reset(seed: number, initialPop: number): void {
-    this.cultivators.clear();
+    this.cultivators.length = 0;
+    this.freeSlots.length = 0;
+    this._deadIds.length = 0;
+    this.nextId = 0;
+    this.aliveCount = 0;
     this.levelGroups = initLevelGroups();
     this.aliveLevelIds = initLevelGroups();
     this.levelArrayCache = initLevelArrayCache();
     this.aliveIds.length = 0;
     this._highBuf.length = 0;
     this._lowBuf.length = 0;
-    this._pool.length = 0;
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
-    this.nextId = 1;
     this.nextEventId = 1;
     this.year = 1;
     this._summaryYear = 1;
@@ -267,10 +273,10 @@ export class SimulationEngine {
   }
 }
 
-function initLevelGroups(): Map<number, Set<number>> {
-  const m = new Map<number, Set<number>>();
-  for (let i = 0; i < LEVEL_COUNT; i++) m.set(i, new Set());
-  return m;
+function initLevelGroups(): Set<number>[] {
+  const a: Set<number>[] = new Array(LEVEL_COUNT);
+  for (let i = 0; i < LEVEL_COUNT; i++) a[i] = new Set();
+  return a;
 }
 
 function median(arr: number[]): number {
@@ -283,8 +289,8 @@ function initBuffers(): number[][] {
   return Array.from({ length: LEVEL_COUNT }, () => []);
 }
 
-function initLevelArrayCache(): Map<number, number[]> {
-  const m = new Map<number, number[]>();
-  for (let i = 0; i < LEVEL_COUNT; i++) m.set(i, []);
-  return m;
+function initLevelArrayCache(): number[][] {
+  const a: number[][] = new Array(LEVEL_COUNT);
+  for (let i = 0; i < LEVEL_COUNT; i++) a[i] = [];
+  return a;
 }

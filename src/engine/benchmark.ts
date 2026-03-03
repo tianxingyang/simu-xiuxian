@@ -42,7 +42,7 @@ function runBenchmark(years: number, initialPop: number, seed = 42): void {
 
   console.log(`\nTotal time: ${totalTime.toFixed(2)}ms`);
   console.log(`Average per year: ${(totalTime / years).toFixed(3)}ms`);
-  console.log(`Final population: ${engine.cultivators.size}`);
+  console.log(`Final population: ${engine.aliveCount}`);
   console.log(`Final year: ${engine.year}`);
 
   profiler.printResults();
@@ -62,5 +62,5 @@ const engine = new SimulationEngine(42, 1000);
 for (let i = 0; i < 5000; i++) {
   engine.tickYear(false);
 }
-console.log(`\nWarming up to year ${engine.year}, population ${engine.cultivators.size}...`);
+console.log(`\nWarming up to year ${engine.year}, population ${engine.aliveCount}...`);
 runBenchmark(1000, 0, 42);

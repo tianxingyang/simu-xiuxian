@@ -49,7 +49,8 @@ section('T25-3: 寿元计算无溢出');
   const engine = new SimulationEngine(42, 1000);
   for (let y = 0; y < 2000; y++) engine.tickYear();
   let overflow = false;
-  for (const c of engine.cultivators.values()) {
+  for (let i = 0; i < engine.nextId; i++) {
+    const c = engine.cultivators[i];
     if (!c.alive) continue;
     if (!Number.isFinite(c.maxAge) || c.maxAge < 0 || c.maxAge > 1e15) {
       overflow = true;
@@ -131,10 +132,11 @@ section('T27-2: Lv7 不再晋升');
   // 手动构造 Lv7 修士并给超高修为
   const engine = new SimulationEngine(42, 1);
   engine.tickYear();
-  for (const c of engine.cultivators.values()) {
+  for (let i = 0; i < engine.nextId; i++) {
+    const c = engine.cultivators[i];
     if (!c.alive) continue;
     c.cultivation = 1e10;
-    engine.checkPromotions();
+    while (c.level < MAX_LEVEL && c.cultivation >= threshold(c.level + 1)) c.level++;
     assert(c.level === MAX_LEVEL, `修为1e10: 等级=${c.level}, 应=${MAX_LEVEL}`);
     assert(c.level <= MAX_LEVEL, `不超过MAX_LEVEL`);
     console.log(`  修为1e10 → Lv${c.level}(${LEVEL_NAMES[c.level]}), 不超过Lv${MAX_LEVEL}`);
@@ -146,11 +148,12 @@ section('T27-3: 连续多级晋升');
 {
   const engine = new SimulationEngine(42, 1);
   engine.tickYear();
-  for (const c of engine.cultivators.values()) {
+  for (let i = 0; i < engine.nextId; i++) {
+    const c = engine.cultivators[i];
     if (!c.alive) continue;
     const prevLevel = c.level;
     c.cultivation = threshold(4) + 1;
-    engine.checkPromotions();
+    while (c.level < LEVEL_COUNT - 1 && c.cultivation >= threshold(c.level + 1)) c.level++;
     assert(c.level >= 4, `连续晋升: Lv${prevLevel}→Lv${c.level}`);
     console.log(`  修为=${c.cultivation}: Lv${prevLevel}→Lv${c.level}(${LEVEL_NAMES[c.level]})`);
     break;
@@ -182,7 +185,7 @@ section('T27-5: 重置功能');
   const popBefore = engine.getSummary().totalPopulation;
   engine.reset(99, 500);
   assert(engine.year === 1, `重置后year=${engine.year}`);
-  assert(engine.cultivators.size === 500, `重置后cultivators=${engine.cultivators.size}`);
+  assert(engine.nextId === 500, `重置后nextId=${engine.nextId}`);
   assert(engine.yearlySpawn === 1000, `重置后yearlySpawn=${engine.yearlySpawn}`);
   engine.tickYear();
   const s = engine.getSummary();

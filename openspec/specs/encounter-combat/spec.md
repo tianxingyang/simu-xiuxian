@@ -1,15 +1,15 @@
-## ADDED Requirements
-
 ### Requirement: Encounter probability
-At the start of the encounter phase each year, the system SHALL snapshot `Nk` (cultivator count per level, Lv >= 1 only) and `N` (total cultivator count, Lv >= 1). These values remain fixed for the entire encounter phase. For each Lv=k cultivator (k >= 1), an encounter triggers with probability `Nk / N`. Lv0 cultivators SHALL NOT participate in the encounter phase — they SHALL be excluded from both the snapshot counts and the encounter iteration.
+At the start of the encounter phase each year, the system SHALL snapshot `Nk` (cultivator count per level, Lv >= 1 only) and `N` (total cultivator count, Lv >= 1). These values remain fixed for the entire encounter phase. For each Lv=k cultivator (k >= 1), an encounter triggers with probability `Nk / N`. Lv0 cultivators SHALL NOT participate in the encounter phase.
+
+数据访问路径变更：`engine.cultivators[id]` 替代 `engine.cultivators.get(id)!`；`engine.levelArrayCache[level]` 替代 `engine.levelArrayCache.get(level)`；`engine.levelGroups[level]` 替代 `engine.levelGroups.get(level)!`。buildCache 阶段遍历改为 `for (let level = 0; level < LEVEL_COUNT; level++)`。
 
 #### Scenario: Snapshot-based encounter probability
 - **WHEN** the encounter phase begins with 8000 Lv1 cultivators and 10000 total (Lv >= 1)
-- **THEN** each Lv1 cultivator's encounter probability SHALL be 8000/10000 = 0.8 for the entire phase, even if cultivators die during the phase
+- **THEN** each Lv1 cultivator's encounter probability SHALL be 8000/10000 = 0.8 for the entire phase
 
 #### Scenario: Lv0 excluded from snapshot
 - **WHEN** the encounter phase begins with 5000 Lv0 cultivators and 3000 Lv1+ cultivators
-- **THEN** `N` SHALL be 3000 (not 8000); `snapshotNk[0]` SHALL be 0
+- **THEN** `N` SHALL be 3000; `snapshotNk[0]` SHALL be 0
 
 #### Scenario: Lv0 excluded from encounter iteration
 - **WHEN** the encounter phase iterates over alive cultivators
@@ -62,7 +62,11 @@ When cultivator A encounters cultivator B: A's defeat rate = `B.cultivation / (A
 - **THEN** effectiveCourage ≈ 0.55 > 0.50，该修仙者 SHALL 选择战斗（若 baseCourage 未经寿元加成则会退缩）
 
 ### Requirement: Combat resolution
-When combat occurs, the winner is determined by weighted random: A wins with probability `A.cultivation / (A.cultivation + B.cultivation)`. The loser's outcome SHALL be determined by the defeat outcome system（见 `combat-defeat-outcomes` spec）：根据实力差距、境界、随机因素判定死亡、跌境、重伤或损失修为。仅死亡结局的败者 SHALL 被标记为 `alive = false`。The winner SHALL gain cultivation through the fortune loot formula, using the loser's **pre-evasion-penalty** cultivation snapshot（公式不变）。
+When combat occurs, the winner is determined by weighted random: A wins with probability `A.cultivation / (A.cultivation + B.cultivation)`. The loser's outcome SHALL be determined by the defeat outcome system. 仅死亡结局的败者 SHALL 被标记为 `alive = false`。The winner SHALL gain cultivation through the fortune loot formula.
+
+数据访问路径变更：`resolveCombat` 内所有 `engine.levelGroups[level].delete/add` 替代 `engine.levelGroups.get(level)!.delete/add`；`engine.aliveLevelIds[level]` 替代 `engine.aliveLevelIds.get(level)!`；`engine.levelArrayCache[level]` 替代 `engine.levelArrayCache.get(level)`。
+
+战斗死亡时 SHALL 同时执行 `engine.aliveCount--` 和 `engine._deadIds.push(loser.id)`。
 
 **执行顺序**：胜负判定 → loot 计算 → loot 应用 → 败者结局判定 → 败者结局应用 → 胜者晋升检查。
 
@@ -84,7 +88,7 @@ loot         = max(0.1, round1(baseLoot + variableLoot))
 winner.cultivation += loot
 ```
 
-Constants: `LOOT_BASE_RATE = 0.05`, `LOOT_VARIABLE_RATE = 0.1`, `LUCK_MEAN = 1.0`, `LUCK_STDDEV = 0.3`, `LUCK_MIN = 0`, `LUCK_MAX = 2.5`. A promotion check SHALL execute immediately for the winner after loot gain. The combat event text SHALL display outcome-specific text（见 combat-defeat-outcomes spec Event encoding）.
+Constants: `LOOT_BASE_RATE = 0.05`, `LOOT_VARIABLE_RATE = 0.1`, `LUCK_MEAN = 1.0`, `LUCK_STDDEV = 0.3`, `LUCK_MIN = 0`, `LUCK_MAX = 2.5`. A promotion check SHALL execute immediately for the winner after loot gain. The combat event text SHALL display outcome-specific text.
 
 #### Scenario: Lv1 winner with average luck
 - **WHEN** a Lv1 cultivator defeats a Lv1 with cultivation 50, and luck = 1.0
@@ -94,9 +98,9 @@ Constants: `LOOT_BASE_RATE = 0.05`, `LOOT_VARIABLE_RATE = 0.1`, `LUCK_MEAN = 1.0
 - **WHEN** a Lv1 cultivator with cultivation 95 defeats a Lv1 with cultivation 60, and luck = 1.0
 - **THEN** baseLoot = 0.5, excess = 50, variableLoot = 5.0, loot = max(0.1, round1(5.5)) = 5.5, reaching 100.5, and SHALL promote to Lv2
 
-#### Scenario: Loser dies — removed immediately
+#### Scenario: Loser dies — death tracking
 - **WHEN** cultivator B loses and defeat outcome is death
-- **THEN** B SHALL be marked dead immediately; subsequent encounters selecting B as opponent SHALL be cancelled
+- **THEN** B SHALL be marked `alive = false`; `engine.aliveCount` SHALL decrement; `engine._deadIds` SHALL contain B.id; subsequent encounters selecting B as opponent SHALL be cancelled
 
 #### Scenario: Loser survives — locked out for year
 - **WHEN** cultivator B loses and defeat outcome is demotion, injury, or cultivation loss
