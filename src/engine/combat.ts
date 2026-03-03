@@ -32,12 +32,16 @@ import {
 } from '../constants';
 import { prngShuffle, truncatedGaussian } from './prng';
 import type { SimulationEngine } from './simulation';
+import { profiler } from './profiler';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 const EMPTY_EVENTS: SimEvent[] = [];
 const OUTCOME_SUFFIX = ['', '，败者跌境', '，败者重伤', '，败者损失修为', '', '，败者经脉受损', '，败者轻伤'];
 
 export function processEncounters(engine: SimulationEngine, collectEvents = true): SimEvent[] {
+  profiler.start('processEncounters');
+
+  profiler.start('processEncounters.buildCache');
   const snapshotNk = engine._snapshotNk;
   snapshotNk.fill(0);
   let snapshotN = 0;
@@ -53,14 +57,23 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
     snapshotNk[level] = arr.length;
     snapshotN += arr.length;
   }
-  if (snapshotN === 0) return EMPTY_EVENTS;
+  profiler.end('processEncounters.buildCache');
 
+  if (snapshotN === 0) {
+    profiler.end('processEncounters');
+    return EMPTY_EVENTS;
+  }
+
+  profiler.start('processEncounters.buildAliveIds');
   const aliveIds = engine.aliveIds;
   aliveIds.length = 0;
-  for (const c of engine.cultivators.values()) {
-    if (c.alive && c.level > 0) aliveIds.push(c.id);
+  for (let level = 1; level < LEVEL_COUNT; level++) {
+    for (const id of engine.aliveLevelIds.get(level)!) {
+      aliveIds.push(id);
+    }
   }
   prngShuffle(engine.prng, aliveIds);
+  profiler.end('processEncounters.buildAliveIds');
 
   let highBuf: number[] | null = null;
   let lowBuf: number[] | null = null;
@@ -73,6 +86,7 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
 
   const defeatedSet = new Set<number>();
 
+  profiler.start('processEncounters.combatLoop');
   for (const id of aliveIds) {
     const c = engine.cultivators.get(id)!;
     if (!c.alive) continue;
@@ -93,9 +107,19 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
 
     resolveCombat(engine, c, opp, highBuf, lowBuf, defeatedSet);
   }
+  profiler.end('processEncounters.combatLoop');
 
-  if (!collectEvents) return EMPTY_EVENTS;
-  return materializeSelected(highBuf!, lowBuf!, engine.year, engine.prng, engine);
+  if (!collectEvents) {
+    profiler.end('processEncounters');
+    return EMPTY_EVENTS;
+  }
+
+  profiler.start('processEncounters.materialize');
+  const result = materializeSelected(highBuf!, lowBuf!, engine.year, engine.prng, engine);
+  profiler.end('processEncounters.materialize');
+
+  profiler.end('processEncounters');
+  return result;
 }
 
 function resolveDefeatOutcome(
@@ -192,6 +216,7 @@ function resolveCombat(
     loser.alive = false;
     engine.combatDeaths++;
     engine.levelGroups.get(loser.level)!.delete(loser.id);
+    engine.aliveLevelIds.get(loser.level)!.delete(loser.id);
   } else {
     const arr = engine.levelArrayCache.get(loser.level);
     if (arr) {
@@ -207,6 +232,8 @@ function resolveCombat(
       loser.cultivation = loser.level >= 1 ? threshold(loser.level) : 0;
       engine.levelGroups.get(oldLevel)!.delete(loser.id);
       engine.levelGroups.get(loser.level)!.add(loser.id);
+      engine.aliveLevelIds.get(oldLevel)!.delete(loser.id);
+      engine.aliveLevelIds.get(loser.level)!.add(loser.id);
     } else if (outcome === 2) {
       engine.combatInjuries++;
       loser.injuredUntil = engine.year + INJURY_DURATION;
@@ -233,6 +260,8 @@ function resolveCombat(
   if (winner.level !== prevLevel) {
     engine.levelGroups.get(prevLevel)!.delete(winner.id);
     engine.levelGroups.get(winner.level)!.add(winner.id);
+    engine.aliveLevelIds.get(prevLevel)!.delete(winner.id);
+    engine.aliveLevelIds.get(winner.level)!.add(winner.id);
   }
 
   if (highBuf && lowBuf) {

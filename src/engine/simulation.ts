@@ -2,12 +2,14 @@ import type { Cultivator, LevelStat, SimEvent, YearSummary } from '../types';
 import { COURAGE_MEAN, COURAGE_STDDEV, INJURY_GROWTH_RATE, LEVEL_COUNT, LEVEL_NAMES, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, effectiveCourage, lifespanBonus, round1, round2, threshold } from '../constants';
 import { processEncounters } from './combat';
 import { createPRNG, truncatedGaussian } from './prng';
+import { profiler } from './profiler';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 
 export class SimulationEngine {
   cultivators = new Map<number, Cultivator>();
   levelGroups: Map<number, Set<number>>;
+  aliveLevelIds: Map<number, Set<number>>;
   nextId = 1;
   nextEventId = 1;
   year = 1;
@@ -39,6 +41,7 @@ export class SimulationEngine {
     this.prng = createPRNG(seed);
     this.yearlySpawn = YEARLY_NEW;
     this.levelGroups = initLevelGroups();
+    this.aliveLevelIds = initLevelGroups();
     this.levelArrayCache = initLevelArrayCache();
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
@@ -68,13 +71,17 @@ export class SimulationEngine {
       }
       this.cultivators.set(id, c);
       this.levelGroups.get(0)!.add(id);
+      this.aliveLevelIds.get(0)!.add(id);
     }
     this.spawned += count;
   }
 
-  naturalCultivation(): void {
+  tickCultivators(events?: SimEvent[]): void {
+    profiler.start('tickCultivators');
     for (const c of this.cultivators.values()) {
       if (!c.alive) continue;
+
+      // Natural cultivation: age + cultivation growth + lifespan decay
       c.age += 1;
       let growthRate = 1;
       if (c.injuredUntil > this.year) {
@@ -88,12 +95,8 @@ export class SimulationEngine {
       if (c.maxAge > target) {
         c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
       }
-    }
-  }
 
-  checkPromotions(events?: SimEvent[]): void {
-    for (const c of this.cultivators.values()) {
-      if (!c.alive) continue;
+      // Check promotions
       const prev = c.level;
       while (c.level < MAX_LEVEL && c.cultivation >= threshold(c.level + 1)) {
         c.level++;
@@ -104,6 +107,8 @@ export class SimulationEngine {
       if (c.level !== prev) {
         this.levelGroups.get(prev)!.delete(c.id);
         this.levelGroups.get(c.level)!.add(c.id);
+        this.aliveLevelIds.get(prev)!.delete(c.id);
+        this.aliveLevelIds.get(c.level)!.add(c.id);
         if (events && c.level >= 3) {
           events.push({
             id: this.nextEventId++,
@@ -114,25 +119,25 @@ export class SimulationEngine {
           });
         }
       }
-    }
-  }
 
-  removeExpired(events?: SimEvent[]): void {
-    for (const c of this.cultivators.values()) {
-      if (!c.alive || c.age < c.maxAge) continue;
-      c.alive = false;
-      this.expiryDeaths++;
-      this.levelGroups.get(c.level)!.delete(c.id);
-      if (events && c.level >= 3) {
-        events.push({
-          id: this.nextEventId++,
-          year: this.year,
-          type: 'expiry',
-          actorLevel: c.level,
-          detail: `${LEVEL_NAMES[c.level]}寿元耗尽`,
-        });
+      // Check expiry
+      if (c.age >= c.maxAge) {
+        c.alive = false;
+        this.expiryDeaths++;
+        this.levelGroups.get(c.level)!.delete(c.id);
+        this.aliveLevelIds.get(c.level)!.delete(c.id);
+        if (events && c.level >= 3) {
+          events.push({
+            id: this.nextEventId++,
+            year: this.year,
+            type: 'expiry',
+            actorLevel: c.level,
+            detail: `${LEVEL_NAMES[c.level]}寿元耗尽`,
+          });
+        }
       }
     }
+    profiler.end('tickCultivators');
   }
 
   purgeDead(): void {
@@ -146,6 +151,7 @@ export class SimulationEngine {
   }
 
   getSummary(): YearSummary {
+    profiler.start('getSummary');
     const buf = this._levelCountsBuf;
     buf.fill(0);
     const ageBuf = this._ageBuffers;
@@ -157,6 +163,7 @@ export class SimulationEngine {
       courBuf[i].length = 0;
     }
 
+    profiler.start('getSummary.iterate');
     let total = 0, highLevel = 0, highCult = 0;
     for (const c of this.cultivators.values()) {
       if (!c.alive) continue;
@@ -170,7 +177,9 @@ export class SimulationEngine {
       if (lv > highLevel) highLevel = lv;
       if (c.cultivation > highCult) highCult = c.cultivation;
     }
+    profiler.end('getSummary.iterate');
 
+    profiler.start('getSummary.median');
     const levelStats: LevelStat[] = new Array(LEVEL_COUNT);
     for (let i = 0; i < LEVEL_COUNT; i++) {
       const n = buf[i];
@@ -185,7 +194,9 @@ export class SimulationEngine {
         };
       }
     }
+    profiler.end('getSummary.median');
 
+    profiler.end('getSummary');
     return {
       year: this._summaryYear,
       totalPopulation: total,
@@ -207,21 +218,18 @@ export class SimulationEngine {
   }
 
   tickYear(collectEvents = true): { isExtinct: boolean; events: SimEvent[] } {
+    profiler.start('tickYear');
     this.resetYearCounters();
     this.spawnCultivators(this.yearlySpawn);
-    this.naturalCultivation();
-    const events = processEncounters(this, collectEvents);
-    if (collectEvents) {
-      this.checkPromotions(events);
-      this.removeExpired(events);
-    } else {
-      this.checkPromotions();
-      this.removeExpired();
-    }
+    const events = collectEvents ? [] : ([] as SimEvent[]);
+    this.tickCultivators(collectEvents ? events : undefined);
+    const combatEvents = processEncounters(this, collectEvents);
+    if (collectEvents) events.push(...combatEvents);
     this.purgeDead();
     const isExtinct = this.cultivators.size === 0;
     this._summaryYear = this.year;
     this.year++;
+    profiler.end('tickYear');
     return { isExtinct, events };
   }
 
@@ -240,6 +248,7 @@ export class SimulationEngine {
   reset(seed: number, initialPop: number): void {
     this.cultivators.clear();
     this.levelGroups = initLevelGroups();
+    this.aliveLevelIds = initLevelGroups();
     this.levelArrayCache = initLevelArrayCache();
     this.aliveIds.length = 0;
     this._highBuf.length = 0;

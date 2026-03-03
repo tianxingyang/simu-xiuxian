@@ -1,5 +1,6 @@
 import type { FromWorker, SimEvent, ToWorker, YearSummary } from '../types';
 import { SimulationEngine } from './simulation';
+import { profiler } from './profiler';
 
 declare const self: DedicatedWorkerGlobalScope;
 
@@ -36,6 +37,13 @@ function runBatch(): void {
   const events: SimEvent[] = [];
   const summaryStride = Math.max(1, Math.ceil(batchSize / 50));
 
+  // 启用性能分析（每10个batch分析一次）
+  const shouldProfile = engine.year % (batchSize * 10) === 0;
+  if (shouldProfile) {
+    profiler.reset();
+    profiler.enable();
+  }
+
   for (let i = 0; i < batchSize; i++) {
     const collectEvents = i === batchSize - 1;
     const tick = engine.tickYear(collectEvents);
@@ -51,6 +59,13 @@ function runBatch(): void {
       running = false;
       break;
     }
+  }
+
+  // 输出性能分析结果
+  if (shouldProfile) {
+    profiler.disable();
+    console.log(`\n[Performance Profile] Year ${engine.year}, Speed ${speed}, Batch ${batchSize}, Population ${engine.cultivators.size}`);
+    profiler.printResults();
   }
 
   const msg: FromWorker = { type: 'tick', summaries, events };
