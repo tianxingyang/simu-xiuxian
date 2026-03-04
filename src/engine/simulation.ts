@@ -79,6 +79,9 @@ export class SimulationEngine {
   levelArrayCache: number[][];
   private _levelCountsBuf = new Array<number>(LEVEL_COUNT).fill(0);
   _snapshotNk = new Array<number>(LEVEL_COUNT).fill(0);
+  _encounterThresholds = new Float64Array(LEVEL_COUNT);
+  _ageSumBuf = new Float64Array(LEVEL_COUNT);
+  _courageSumBuf = new Float64Array(LEVEL_COUNT);
   _defeatedBuf = new Uint8Array(0);
   _levelArrayIndex = new Int32Array(0);
   freeSlots: number[] = [];
@@ -213,8 +216,10 @@ export class SimulationEngine {
     buf.fill(0);
     const ageBuf = this._ageBuffers;
     const courBuf = this._courageBuffers;
-    const ageSum = new Float64Array(LEVEL_COUNT);
-    const courSum = new Float64Array(LEVEL_COUNT);
+    const ageSum = this._ageSumBuf;
+    const courSum = this._courageSumBuf;
+    ageSum.fill(0);
+    courSum.fill(0);
     for (let i = 0; i < LEVEL_COUNT; i++) {
       ageBuf[i].length = 0;
       courBuf[i].length = 0;
@@ -227,11 +232,12 @@ export class SimulationEngine {
       if (!c.alive) continue;
       total++;
       const lv = c.level;
+      const courage = c.cachedCourage;
       buf[lv]++;
       ageSum[lv] += c.age;
-      courSum[lv] += effectiveCourage(c);
+      courSum[lv] += courage;
       ageBuf[lv].push(c.age);
-      courBuf[lv].push(effectiveCourage(c));
+      courBuf[lv].push(courage);
       if (lv > highLevel) highLevel = lv;
       if (c.cultivation > highCult) highCult = c.cultivation;
     }
@@ -340,10 +346,45 @@ function initLevelGroups(): Set<number>[] {
   return a;
 }
 
+function swap(arr: number[], i: number, j: number): void {
+  const t = arr[i];
+  arr[i] = arr[j];
+  arr[j] = t;
+}
+
+function partition(arr: number[], left: number, right: number, pivotIndex: number): number {
+  const pivotValue = arr[pivotIndex];
+  swap(arr, pivotIndex, right);
+  let storeIndex = left;
+  for (let i = left; i < right; i++) {
+    if (arr[i] < pivotValue) {
+      swap(arr, storeIndex, i);
+      storeIndex++;
+    }
+  }
+  swap(arr, right, storeIndex);
+  return storeIndex;
+}
+
+function quickselect(arr: number[], k: number): number {
+  let left = 0;
+  let right = arr.length - 1;
+  while (left <= right) {
+    const pivotIndex = (left + right) >> 1;
+    const idx = partition(arr, left, right, pivotIndex);
+    if (idx === k) return arr[idx];
+    if (idx < k) left = idx + 1;
+    else right = idx - 1;
+  }
+  return arr[k];
+}
+
 function median(arr: number[]): number {
-  arr.sort((a, b) => a - b);
   const mid = arr.length >> 1;
-  return arr.length & 1 ? arr[mid] : (arr[mid - 1] + arr[mid]) / 2;
+  if (arr.length & 1) return quickselect(arr, mid);
+  const upper = quickselect(arr, mid);
+  const lower = quickselect(arr, mid - 1);
+  return (upper + lower) / 2;
 }
 
 function initBuffers(): number[][] {
