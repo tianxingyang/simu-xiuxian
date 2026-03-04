@@ -56,7 +56,7 @@ export class Profiler {
     const results: ProfileResult[] = [];
     let totalTime = 0;
 
-    for (const [name, data] of this.timings) {
+    for (const [, data] of this.timings) {
       totalTime += data.total;
     }
 

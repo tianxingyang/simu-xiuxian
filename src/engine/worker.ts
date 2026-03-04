@@ -14,7 +14,7 @@ let speed = 1;
 let running = false;
 let extinct = false;
 let awaitingAck = false;
-let pendingPost = 0;
+let pendingPost: ReturnType<typeof setTimeout> | 0 = 0;
 
 function post(msg: FromWorker): void {
   self.postMessage(msg);
@@ -47,6 +47,14 @@ function richToSimEvent(e: RichEvent, id: number): SimEvent {
         detail: e.kind === 'first_at_level'
           ? `天地异象！首位${LEVEL_NAMES[e.detail.level]}修士出现`
           : `${LEVEL_NAMES[e.detail.level]}断代` };
+    case 'breakthrough_fail':
+      return {
+        id,
+        year: e.year,
+        type: 'breakthrough_fail',
+        actorLevel: e.subject.level,
+        detail: `${LEVEL_NAMES[e.subject.level]}破境失败（${e.penalty === 'injury' ? '受伤' : e.penalty === 'cultivation_loss' ? '修为受损' : '冷却'}）`,
+      };
   }
 }
 
@@ -175,5 +183,8 @@ self.onmessage = (e: MessageEvent<ToWorker>): void => {
       post({ type: 'reset-done' });
       return;
     }
+
+    default:
+      return;
   }
 };

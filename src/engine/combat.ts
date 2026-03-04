@@ -37,7 +37,6 @@ import { prngShuffle, truncatedGaussian } from './prng';
 import { tryBreakthrough, type SimulationEngine } from './simulation';
 import { profiler } from './profiler';
 
-const MAX_LEVEL = LEVEL_COUNT - 1;
 
 const OUTCOME_NAMES: DefeatOutcome[] = [
   'death', 'demotion', 'injury', 'cult_loss',
