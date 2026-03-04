@@ -97,7 +97,7 @@ export function processEncounters(engine: SimulationEngine): RichEvent[] {
     return [];
   }
 
-  const encounterThresholds = new Float64Array(LEVEL_COUNT);
+  const encounterThresholds = engine._encounterThresholds;
   for (let level = 1; level < LEVEL_COUNT; level++) {
     encounterThresholds[level] = snapshotNk[level] / snapshotN;
   }
