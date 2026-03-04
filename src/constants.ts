@@ -43,18 +43,32 @@ export const MERIDIAN_DAMAGE_DURATION = 10;
 export const MERIDIAN_COMBAT_PENALTY = 0.3;
 export const LIFESPAN_DECAY_RATE = 0.2;
 
+export const BREAKTHROUGH_A = 0.6;
+export const BREAKTHROUGH_B = 0.15;
+export const BREAKTHROUGH_COOLDOWN = 3;
+export const BREAKTHROUGH_CULT_LOSS_RATE = 0.2;
+export const BREAKTHROUGH_NOTHING_W = 5.0;
+export const BREAKTHROUGH_CULT_LOSS_W = 2.0;
+export const BREAKTHROUGH_INJURY_W = 2.0;
+
 export const SUSTAINABLE_MAX_AGE = [
   60, 100, 900, 8_900, 88_900, 888_900, 8_888_900, 88_888_900,
 ] as const;
 
+export const THRESHOLDS: readonly number[] = [Infinity, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000];
+
 export function threshold(level: number): number {
-  return level >= 1 ? 10 ** level : Infinity;
+  return THRESHOLDS[level];
 }
 
 export function lifespanBonus(level: number): number {
   if (level <= 0) return 0;
   if (level === 1) return 100;
   return 8 * 10 ** level;
+}
+
+export function breakthroughChance(level: number): number {
+  return Math.exp(-(BREAKTHROUGH_A + BREAKTHROUGH_B * (2 * level + 1)));
 }
 
 export function round1(v: number): number {

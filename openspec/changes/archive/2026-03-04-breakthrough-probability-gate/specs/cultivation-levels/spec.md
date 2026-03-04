@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Level hierarchy
 The system SHALL support 8 cultivation levels (Lv0–Lv7). The promotion threshold SHALL be accessed via precomputed constant array `THRESHOLDS[level]`, where `THRESHOLDS = [Infinity, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000]`. The function `threshold(level)` SHALL return `THRESHOLDS[level]`. Lv7 (大乘) SHALL be the maximum level; no further promotion is possible.
 

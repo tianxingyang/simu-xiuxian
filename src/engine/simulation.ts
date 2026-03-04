@@ -1,21 +1,66 @@
-import type { Cultivator, LevelStat, SimEvent, YearSummary } from '../types';
-import { COURAGE_MEAN, COURAGE_STDDEV, INJURY_GROWTH_RATE, LEVEL_COUNT, LEVEL_NAMES, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, effectiveCourage, lifespanBonus, round1, round2, threshold } from '../constants';
-import { processEncounters } from './combat';
+import type { Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, YearSummary } from '../types';
+import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, lifespanBonus, round1, round2, threshold } from '../constants';
+import { processEncounters, scoreNewsRank } from './combat';
 import { createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
+
+export class MilestoneTracker {
+  highestLevelEverReached = 0;
+  levelEverPopulated: boolean[];
+
+  constructor() {
+    this.levelEverPopulated = new Array(LEVEL_COUNT).fill(false);
+    this.levelEverPopulated[0] = true;
+  }
+
+  checkPromotion(
+    level: number, cultivatorId: number,
+    cultivatorName: string, year: number,
+  ): RichMilestoneEvent | null {
+    this.levelEverPopulated[level] = true;
+    if (level < 2 || level <= this.highestLevelEverReached) {
+      if (level > this.highestLevelEverReached) this.highestLevelEverReached = level;
+      return null;
+    }
+    this.highestLevelEverReached = level;
+    return {
+      type: 'milestone', year, newsRank: 'S', kind: 'first_at_level',
+      detail: { level, cultivatorId, cultivatorName, year },
+    };
+  }
+
+  checkDeath(
+    level: number, levelGroupSize: number,
+    cultivatorId: number, cultivatorName: string, year: number,
+  ): RichMilestoneEvent | null {
+    if (level < 2 || !this.levelEverPopulated[level] || levelGroupSize > 0) return null;
+    return {
+      type: 'milestone', year, newsRank: 'S', kind: 'last_at_level',
+      detail: { level, cultivatorId, cultivatorName, year },
+    };
+  }
+
+  reset(): void {
+    this.highestLevelEverReached = 0;
+    this.levelEverPopulated.fill(false);
+    this.levelEverPopulated[0] = true;
+  }
+}
 
 export class SimulationEngine {
   cultivators: Cultivator[] = [];
   levelGroups: Set<number>[];
   aliveLevelIds: Set<number>[];
   nextId = 0;
-  nextEventId = 1;
   year = 1;
   private _summaryYear = 1;
   prng: () => number;
   yearlySpawn: number;
+
+  hooks?: EngineHooks;
+  milestones = new MilestoneTracker();
 
   combatDeaths = 0;
   combatDemotions = 0;
@@ -23,6 +68,9 @@ export class SimulationEngine {
   combatCultLosses = 0;
   combatLightInjuries = 0;
   combatMeridianDamages = 0;
+  breakthroughAttempts = 0;
+  breakthroughSuccesses = 0;
+  breakthroughFailures = 0;
   expiryDeaths = 0;
   promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
   spawned = 0;
@@ -30,9 +78,9 @@ export class SimulationEngine {
   aliveIds: number[] = [];
   levelArrayCache: number[][];
   private _levelCountsBuf = new Array<number>(LEVEL_COUNT).fill(0);
-  _highBuf: number[] = [];
-  _lowBuf: number[] = [];
   _snapshotNk = new Array<number>(LEVEL_COUNT).fill(0);
+  _defeatedBuf = new Uint8Array(0);
+  _levelArrayIndex = new Int32Array(0);
   freeSlots: number[] = [];
   aliveCount = 0;
   _deadIds: number[] = [];
@@ -48,6 +96,8 @@ export class SimulationEngine {
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
     this.spawnCultivators(initialPopCount);
+    this._defeatedBuf = new Uint8Array(this.nextId);
+    this._levelArrayIndex = new Int32Array(this.nextId);
   }
 
   spawnCultivators(count: number): void {
@@ -67,10 +117,13 @@ export class SimulationEngine {
         c.injuredUntil = 0;
         c.lightInjuryUntil = 0;
         c.meridianDamagedUntil = 0;
+        c.breakthroughCooldownUntil = 0;
         c.alive = true;
+        c.cachedCourage = effectiveCourage(c);
       } else {
         id = this.nextId++;
-        this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, alive: true };
+        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0 };
+        nc.cachedCourage = effectiveCourage(nc);
       }
       this.aliveCount++;
       this.levelGroups[0].add(id);
@@ -79,7 +132,7 @@ export class SimulationEngine {
     this.spawned += count;
   }
 
-  tickCultivators(events?: SimEvent[]): void {
+  tickCultivators(events: RichEvent[]): void {
     profiler.start('tickCultivators');
     for (let i = 0; i < this.nextId; i++) {
       const c = this.cultivators[i];
@@ -99,44 +152,46 @@ export class SimulationEngine {
         c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
       }
 
-      const prev = c.level;
-      while (c.level < MAX_LEVEL && c.cultivation >= threshold(c.level + 1)) {
-        c.level++;
-        if (c.level === 1) c.maxAge = 100;
-        else c.maxAge += lifespanBonus(c.level);
-        this.promotionCounts[c.level]++;
+      if (c.level === 0 && c.cultivation >= threshold(1)) {
+        c.level = 1;
+        c.maxAge = 100;
+        this.promotionCounts[1]++;
+        this.levelGroups[0].delete(c.id);
+        this.levelGroups[1].add(c.id);
+        this.aliveLevelIds[0].delete(c.id);
+        this.aliveLevelIds[1].add(c.id);
       }
-      if (c.level !== prev) {
-        this.levelGroups[prev].delete(c.id);
-        this.levelGroups[c.level].add(c.id);
-        this.aliveLevelIds[prev].delete(c.id);
-        this.aliveLevelIds[c.level].add(c.id);
-        if (events && c.level >= 3) {
-          events.push({
-            id: this.nextEventId++,
-            year: this.year,
-            type: 'promotion',
-            actorLevel: c.level,
-            detail: `${LEVEL_NAMES[prev]}→${LEVEL_NAMES[c.level]}（自然晋升）`,
-          });
-        }
+      if (c.level >= 1) {
+        tryBreakthrough(this, c, events, 'natural');
       }
+
+      c.cachedCourage = effectiveCourage(c);
 
       if (c.age >= c.maxAge) {
         c.alive = false;
         this.expiryDeaths++;
         this.aliveCount--;
         this._deadIds.push(c.id);
-        this.levelGroups[c.level].delete(c.id);
-        this.aliveLevelIds[c.level].delete(c.id);
-        if (events && c.level >= 3) {
-          events.push({
-            id: this.nextEventId++,
-            year: this.year,
-            type: 'expiry',
-            actorLevel: c.level,
-            detail: `${LEVEL_NAMES[c.level]}寿元耗尽`,
-          });
+        const deathLevel = c.level;
+        this.levelGroups[deathLevel].delete(c.id);
+        this.aliveLevelIds[deathLevel].delete(c.id);
+
+        this.hooks?.onExpiry(c, this.year);
+
+        if (deathLevel >= 2) {
+          const name = this.hooks?.getName(c.id);
+          const ee: RichExpiryEvent = {
+            type: 'expiry', year: this.year, newsRank: 'C',
+            subject: { id: c.id, name, age: c.age }, level: deathLevel,
+          };
+          ee.newsRank = scoreNewsRank(ee);
+          events.push(ee);
+
+          const ms = this.milestones.checkDeath(
+            deathLevel, this.levelGroups[deathLevel].size,
+            c.id, name ?? '', this.year,
+          );
+          if (ms) events.push(ms);
         }
       }
     }
@@ -216,18 +271,21 @@ export class SimulationEngine {
       combatCultLosses: this.combatCultLosses,
       combatLightInjuries: this.combatLightInjuries,
       combatMeridianDamages: this.combatMeridianDamages,
+      breakthroughAttempts: this.breakthroughAttempts,
+      breakthroughSuccesses: this.breakthroughSuccesses,
+      breakthroughFailures: this.breakthroughFailures,
       levelStats,
     };
   }
 
-  tickYear(collectEvents = true): { isExtinct: boolean; events: SimEvent[] } {
+  tickYear(): { isExtinct: boolean; events: RichEvent[] } {
     profiler.start('tickYear');
     this.resetYearCounters();
     this.spawnCultivators(this.yearlySpawn);
-    const events = collectEvents ? [] : ([] as SimEvent[]);
-    this.tickCultivators(collectEvents ? events : undefined);
-    const combatEvents = processEncounters(this, collectEvents);
-    if (collectEvents) events.push(...combatEvents);
+    const events: RichEvent[] = [];
+    this.tickCultivators(events);
+    const combatEvents = processEncounters(this);
+    for (const e of combatEvents) events.push(e);
     this.purgeDead();
     const isExtinct = this.aliveCount === 0;
     this._summaryYear = this.year;
@@ -243,6 +301,9 @@ export class SimulationEngine {
     this.combatCultLosses = 0;
     this.combatLightInjuries = 0;
     this.combatMeridianDamages = 0;
+    this.breakthroughAttempts = 0;
+    this.breakthroughSuccesses = 0;
+    this.breakthroughFailures = 0;
     this.expiryDeaths = 0;
     this.promotionCounts.fill(0);
     this.spawned = 0;
@@ -259,17 +320,17 @@ export class SimulationEngine {
     this.aliveLevelIds = initLevelGroups();
     this.levelArrayCache = initLevelArrayCache();
     this.aliveIds.length = 0;
-    this._highBuf.length = 0;
-    this._lowBuf.length = 0;
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
-    this.nextEventId = 1;
+    this.milestones.reset();
     this.year = 1;
     this._summaryYear = 1;
     this.prng = createPRNG(seed);
     this.yearlySpawn = YEARLY_NEW;
     this.resetYearCounters();
     this.spawnCultivators(initialPop);
+    this._defeatedBuf = new Uint8Array(this.nextId);
+    this._levelArrayIndex = new Int32Array(this.nextId);
   }
 }
 
@@ -293,4 +354,79 @@ function initLevelArrayCache(): number[][] {
   const a: number[][] = new Array(LEVEL_COUNT);
   for (let i = 0; i < LEVEL_COUNT; i++) a[i] = [];
   return a;
+}
+
+const BT_TOTAL_W = BREAKTHROUGH_NOTHING_W + BREAKTHROUGH_CULT_LOSS_W + BREAKTHROUGH_INJURY_W;
+const BT_NOTHING_THRESHOLD = BREAKTHROUGH_NOTHING_W / BT_TOTAL_W;
+const BT_CULT_LOSS_THRESHOLD = (BREAKTHROUGH_NOTHING_W + BREAKTHROUGH_CULT_LOSS_W) / BT_TOTAL_W;
+
+export function tryBreakthrough(
+  engine: SimulationEngine, c: Cultivator,
+  events: RichEvent[], cause: 'natural' | 'combat',
+): boolean {
+  const year = engine.year;
+  if (c.level < 1 || c.level >= MAX_LEVEL) return false;
+  if (c.cultivation < threshold(c.level + 1)) return false;
+  if (c.breakthroughCooldownUntil > year) return false;
+  if (c.injuredUntil > year) return false;
+
+  engine.breakthroughAttempts++;
+
+  if (engine.prng() < breakthroughChance(c.level)) {
+    const prevLevel = c.level;
+    c.level++;
+    c.maxAge += lifespanBonus(c.level);
+    engine.levelGroups[prevLevel].delete(c.id);
+    engine.levelGroups[c.level].add(c.id);
+    engine.aliveLevelIds[prevLevel].delete(c.id);
+    engine.aliveLevelIds[c.level].add(c.id);
+    engine.promotionCounts[c.level]++;
+    engine.breakthroughSuccesses++;
+
+    engine.hooks?.onPromotion(c, c.level, year);
+
+    if (c.level >= 2) {
+      const name = engine.hooks?.getName(c.id);
+      const pe: RichPromotionEvent = {
+        type: 'promotion', year, newsRank: 'C',
+        subject: { id: c.id, name },
+        fromLevel: prevLevel, toLevel: c.level, cause,
+      };
+      pe.newsRank = scoreNewsRank(pe);
+      events.push(pe);
+
+      const ms = engine.milestones.checkPromotion(c.level, c.id, name ?? '', year);
+      if (ms) events.push(ms);
+    }
+    return true;
+  }
+
+  c.breakthroughCooldownUntil = year + BREAKTHROUGH_COOLDOWN;
+  engine.breakthroughFailures++;
+
+  const r = engine.prng();
+  let penalty: RichBreakthroughEvent['penalty'] = 'cooldown_only';
+  if (r >= BT_NOTHING_THRESHOLD) {
+    if (r < BT_CULT_LOSS_THRESHOLD) {
+      penalty = 'cultivation_loss';
+      const base = threshold(c.level);
+      c.cultivation = Math.max(base, round1(c.cultivation - (c.cultivation - base) * BREAKTHROUGH_CULT_LOSS_RATE));
+    } else {
+      penalty = 'injury';
+      c.injuredUntil = year + INJURY_DURATION;
+    }
+  }
+
+  if (c.level >= 2) {
+    const name = engine.hooks?.getName(c.id);
+    const be: RichBreakthroughEvent = {
+      type: 'breakthrough_fail', year,
+      newsRank: c.level >= 4 ? 'B' : 'C',
+      subject: { id: c.id, name, level: c.level },
+      penalty, cause,
+    };
+    events.push(be);
+  }
+
+  return false;
 }

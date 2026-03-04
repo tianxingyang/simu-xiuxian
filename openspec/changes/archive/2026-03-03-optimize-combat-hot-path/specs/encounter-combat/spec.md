@@ -1,3 +1,5 @@
+## MODIFIED Requirements
+
 ### Requirement: Encounter iteration order
 The system SHALL randomly shuffle all alive cultivators (Lv >= 1) at the start of the encounter phase. Cultivators SHALL be processed in this shuffled order. Skipped conditions (checked in order):
 1. `!c.alive` → skip（已死亡）
@@ -23,7 +25,6 @@ The system SHALL randomly shuffle all alive cultivators (Lv >= 1) at the start o
 #### Scenario: Injured excluded from snapshot Nk
 - **WHEN** Lv2 有 20 名存活修士，其中 5 名重伤
 - **THEN** Lv2 的 snapshotNk SHALL 为 15，snapshotN 中也排除这 5 名
-
 
 ### Requirement: Combat decision
 When cultivator A encounters cultivator B: A's defeat rate = `B.cultivation / (A.cultivation + B.cultivation)`. A chooses to fight if `A.cachedCourage > defeat_rate` (strict greater-than). When `A.cachedCourage == defeat_rate`, A SHALL retreat. B's decision is computed independently with the same rule. `cachedCourage` SHALL 为 `tickCultivators` 阶段预算并缓存在 Cultivator 对象上的 `effectiveCourage` 值，使战斗意愿随修仙者的生命阶段动态变化。当恰好一方想打（attacker）、一方不想打（evader）时，SHALL 先执行避战判定（见 `combat-evasion` spec）。避战成功则无战斗；避战失败则 evader 承受修为惩罚后进入战斗。
@@ -82,4 +83,3 @@ Constants: `LOOT_BASE_RATE = 0.05`, `LOOT_VARIABLE_RATE = 0.1`, `LUCK_MEAN = 1.0
 #### Scenario: Loser survives — tracked via Uint8Array
 - **WHEN** cultivator B loses and defeat outcome is demotion, injury, or cultivation loss
 - **THEN** B SHALL remain alive; B SHALL be removed from levelArrayCache via O(1) reverse-index swap-remove; `engine._defeatedBuf[B.id]` SHALL be set to 1; B SHALL NOT be selected as opponent or initiate encounters for the rest of this phase
-

@@ -26,10 +26,8 @@ function runBenchmark(years: number, initialPop: number, seed = 42): void {
   const startTime = performance.now();
 
   for (let i = 0; i < years; i++) {
-    const collectEvents = i === years - 1;
-    engine.tickYear(collectEvents);
+    engine.tickYear();
 
-    // 每100年调用一次 getSummary
     if (i % 100 === 0 || i === years - 1) {
       engine.getSummary();
     }
@@ -60,7 +58,7 @@ runBenchmark(1000, 5000, 42);
 // 场景3：后期（人口稳定）
 const engine = new SimulationEngine(42, 1000);
 for (let i = 0; i < 5000; i++) {
-  engine.tickYear(false);
+  engine.tickYear();
 }
 console.log(`\nWarming up to year ${engine.year}, population ${engine.aliveCount}...`);
 runBenchmark(1000, 0, 42);

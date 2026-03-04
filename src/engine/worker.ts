@@ -1,4 +1,5 @@
-import type { FromWorker, SimEvent, ToWorker, YearSummary } from '../types';
+import type { FromWorker, RichEvent, SimEvent, ToWorker, YearSummary } from '../types';
+import { LEVEL_NAMES } from '../constants';
 import { SimulationEngine } from './simulation';
 import { profiler } from './profiler';
 
@@ -28,6 +29,27 @@ function stop(): void {
   }
 }
 
+function richToSimEvent(e: RichEvent, id: number): SimEvent {
+  switch (e.type) {
+    case 'combat': {
+      const lv = Math.max(e.winner.level, e.loser.level);
+      return { id, year: e.year, type: 'combat', actorLevel: lv,
+        detail: `${LEVEL_NAMES[lv]}对决，获得机缘${e.absorbed}` };
+    }
+    case 'promotion':
+      return { id, year: e.year, type: 'promotion', actorLevel: e.toLevel,
+        detail: `${LEVEL_NAMES[e.fromLevel]}→${LEVEL_NAMES[e.toLevel]}（${e.cause === 'natural' ? '自然' : '战斗'}晋升）` };
+    case 'expiry':
+      return { id, year: e.year, type: 'expiry', actorLevel: e.level,
+        detail: `${LEVEL_NAMES[e.level]}寿元耗尽` };
+    case 'milestone':
+      return { id, year: e.year, type: 'promotion', actorLevel: e.detail.level,
+        detail: e.kind === 'first_at_level'
+          ? `天地异象！首位${LEVEL_NAMES[e.detail.level]}修士出现`
+          : `${LEVEL_NAMES[e.detail.level]}断代` };
+  }
+}
+
 function runBatch(): void {
   if (!engine || !running || extinct || awaitingAck) return;
 
@@ -37,7 +59,6 @@ function runBatch(): void {
   const events: SimEvent[] = [];
   const summaryStride = Math.max(1, Math.ceil(batchSize / 50));
 
-  // 启用性能分析（每10个batch分析一次）
   const shouldProfile = engine.year % (batchSize * 10) === 0;
   if (shouldProfile) {
     profiler.reset();
@@ -45,14 +66,14 @@ function runBatch(): void {
   }
 
   for (let i = 0; i < batchSize; i++) {
-    const collectEvents = i === batchSize - 1;
-    const tick = engine.tickYear(collectEvents);
+    const tick = engine.tickYear();
     const isExtinct = tick.isExtinct;
     if (i % summaryStride === 0 || i === batchSize - 1 || isExtinct) {
       summaries.push(engine.getSummary());
     }
-    if (collectEvents) {
-      for (const e of tick.events) events.push(e);
+    if (i === batchSize - 1) {
+      let eid = 1;
+      for (const e of tick.events) events.push(richToSimEvent(e, eid++));
     }
     if (isExtinct) {
       extinct = true;
@@ -61,7 +82,6 @@ function runBatch(): void {
     }
   }
 
-  // 输出性能分析结果
   if (shouldProfile) {
     profiler.disable();
     console.log(`\n[Performance Profile] Year ${engine.year}, Speed ${speed}, Batch ${batchSize}, Population ${engine.aliveCount}`);
@@ -125,7 +145,9 @@ self.onmessage = (e: MessageEvent<ToWorker>): void => {
       if (!engine) return;
       const tick = engine.tickYear();
       const summary = engine.getSummary();
-      post({ type: 'tick', summaries: [summary], events: tick.events });
+      let eid = 1;
+      const simEvents = tick.events.map(e => richToSimEvent(e, eid++));
+      post({ type: 'tick', summaries: [summary], events: simEvents });
       if (tick.isExtinct) {
         extinct = true;
         post({ type: 'paused', reason: 'extinction' });

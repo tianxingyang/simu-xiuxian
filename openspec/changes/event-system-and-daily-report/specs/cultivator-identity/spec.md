@@ -1,9 +1,13 @@
 ## ADDED Requirements
 
 ### Requirement: Name generation
-系统 SHALL 提供修仙风格姓名生成器。生成规则：从姓氏池随机选取 1 个姓，从名字用字池随机选取 1-2 个字组成名，拼接为完整姓名。生成 SHALL 基于引擎 PRNG，保证同一 seed 可复现。
+系统 SHALL 提供修仙风格姓名生成器。生成规则：从姓氏池随机选取 1 个姓，从名字用字池随机选取 1-2 个字组成名，拼接为完整姓名。
+
+姓名生成 SHALL 使用独立的 PRNG 子流（从主 seed 派生，如 `seed ^ 0x4E414D45`），不影响模拟引擎的主 PRNG 序列。同一 seed 下姓名生成结果 SHALL 可复现。
 
 姓氏池 SHALL 包含至少 50 个单姓和 10 个复姓。名字用字池 SHALL 包含至少 80 个修仙风味单字。
+
+姓名唯一性范围为同一 run 的全历史（包括已死亡修士）。碰撞时 SHALL 重新生成，最多重试 100 次；若仍碰撞 SHALL 在名字后追加数字后缀（如"叶凌霄②"）。进程重启时 SHALL 从 `named_cultivators` 表重建去重集合。
 
 #### Scenario: Name format
 - **WHEN** 姓名生成器为单姓生成名字
@@ -19,7 +23,11 @@
 
 #### Scenario: Uniqueness
 - **WHEN** 生成 1000 个姓名
-- **THEN** SHALL 无重复。碰撞时 SHALL 自动重新生成
+- **THEN** SHALL 无重复（含已死亡修士的姓名）。碰撞时 SHALL 自动重新生成
+
+#### Scenario: Collision retry exhaustion
+- **WHEN** 连续 100 次生成均碰撞（姓名池接近耗尽）
+- **THEN** SHALL 在最后一次生成的名字后追加数字后缀（如"②"）作为 fallback
 
 ### Requirement: Naming threshold
 修士 SHALL 在晋升到 Lv2（结丹）时被命名。Lv0-1 的修士 SHALL 保持匿名（仅有 numeric id）。命名 SHALL 在晋升检查（`checkPromotions` / 战斗晋升）中触发。
@@ -34,7 +42,7 @@
 
 #### Scenario: Multi-level skip naming
 - **WHEN** 修士从 Lv1 直接跳级晋升到 Lv3（修为同时超过 Lv2 和 Lv3 阈值）
-- **THEN** SHALL 在跨过 Lv2 时触发命名（仅一次）
+- **THEN** SHALL 在跨过 Lv2 时触发命名（仅一次）。`promotionYears` SHALL 记录一条 toLevel=3 的晋升（不为中间每个 level 分别记录）
 
 ### Requirement: Named cultivator biography tracking
 每个命名修士 SHALL 关联一个 `NamedCultivator` 对象，追踪以下履历字段：
@@ -45,7 +53,7 @@
 - `killCount: number` — 击杀数
 - `combatWins: number` — 战斗胜场
 - `combatLosses: number` — 战斗败场
-- `promotionYears: number[]` — 每次晋升对应的年份
+- `promotionYears: { year: number, toLevel: number }[]` — 每次晋升记录（年份 + 目标境界）
 - `peakLevel: number` — 历史最高境界
 - `peakCultivation: number` — 历史最高修为
 - `deathYear?: number` — 死亡年份
@@ -62,7 +70,7 @@
 
 #### Scenario: Promotion updates biography
 - **WHEN** 命名修士从 Lv3 晋升到 Lv4（在第 500 年）
-- **THEN** `promotionYears` SHALL 追加 500，`peakLevel` SHALL 更新为 4
+- **THEN** `promotionYears` SHALL 追加 `{ year: 500, toLevel: 4 }`，`peakLevel` SHALL 更新为 4
 
 #### Scenario: Peak cultivation tracking
 - **WHEN** 命名修士战斗后修为达到新高
@@ -71,6 +79,10 @@
 #### Scenario: Combat death records killer
 - **WHEN** 命名修士 A 被命名修士 B 击杀
 - **THEN** A 的 `deathYear` SHALL 为当前年份，`deathCause` 为 `'combat'`，`killedBy` 为 B 的姓名
+
+#### Scenario: Combat death by anonymous killer
+- **WHEN** 命名修士 A 被匿名修士（Lv0-1）击杀
+- **THEN** A 的 `killedBy` SHALL 为 `"无名修士"`
 
 #### Scenario: Expiry death
 - **WHEN** 命名修士寿元耗尽
@@ -101,3 +113,29 @@
 #### Scenario: Query dead cultivator
 - **WHEN** 日报聚合需要查询已死亡修士的履历
 - **THEN** SHALL 从 SQLite 查询，不依赖内存
+
+## PBT Properties
+
+### Property: Name generation determinism and isolation
+固定 seed + 调用序列下姓名完全一致；姓名 PRNG 子流不改变主引擎 PRNG 的输出序列。
+- **Falsification**: 双实例对比（有/无姓名调用），验证主 RNG 输出一致，姓名序列一致。
+
+### Property: Name global uniqueness
+同一 run 内（含已死亡修士）无重复姓名。
+- **Falsification**: 缩小姓名池强制高碰撞率，生成大量修士，验证集合基数 = 生成数。
+
+### Property: Naming trigger once at Lv2 boundary
+修士从 `<Lv2` 到 `>=Lv2` 时恰好触发一次命名；后续晋升/降级不重命名。
+- **Falsification**: 随机晋升/降级/跳级轨迹，统计每个修士的命名次数。
+
+### Property: Biography counter monotonicity
+`killCount`、`combatWins`、`combatLosses`、`peakLevel`、`peakCultivation` 均为单调非递减。
+- **Falsification**: 随机战斗/寿尽事件流，逐步断言计数器单调性。
+
+### Property: Death field consistency
+`deathCause='expiry'` → `killedBy === undefined`；`deathCause='combat'` → `killedBy` 为字符串（命名修士名或"无名修士"）。
+- **Falsification**: 遍历所有死亡记录，验证字段组合约束。
+
+### Property: Active map = alive named cultivators
+任意时刻，内存活跃 Map 的 key 集合 === 存活的命名修士 ID 集合。
+- **Falsification**: 每步后对比 Map.keys 与密集数组中 alive + named 的修士 ID。

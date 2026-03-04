@@ -1,4 +1,10 @@
-import type { Cultivator, SimEvent } from '../types';
+import type {
+  Cultivator,
+  DefeatOutcome,
+  NewsRank,
+  RichCombatEvent,
+  RichEvent,
+} from '../types';
 import {
   DEFEAT_CULT_LOSS_RATE,
   DEFEAT_CULT_LOSS_W,
@@ -12,10 +18,8 @@ import {
   DEFEAT_MERIDIAN_W,
   EVASION_PENALTY,
   EVASION_SENSITIVITY,
-  EVENTS_PER_TICK,
   INJURY_DURATION,
   LEVEL_COUNT,
-  LEVEL_NAMES,
   LIGHT_INJURY_DURATION,
   LOOT_BASE_RATE,
   LOOT_VARIABLE_RATE,
@@ -26,25 +30,53 @@ import {
   MERIDIAN_COMBAT_PENALTY,
   MERIDIAN_DAMAGE_DURATION,
   effectiveCourage,
-  lifespanBonus,
   round1,
   threshold,
 } from '../constants';
 import { prngShuffle, truncatedGaussian } from './prng';
-import type { SimulationEngine } from './simulation';
+import { tryBreakthrough, type SimulationEngine } from './simulation';
 import { profiler } from './profiler';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
-const EMPTY_EVENTS: SimEvent[] = [];
-const OUTCOME_SUFFIX = ['', '，败者跌境', '，败者重伤', '，败者损失修为', '', '，败者经脉受损', '，败者轻伤'];
 
-export function processEncounters(engine: SimulationEngine, collectEvents = true): SimEvent[] {
+const OUTCOME_NAMES: DefeatOutcome[] = [
+  'death', 'demotion', 'injury', 'cult_loss',
+  'cult_loss', // index 4 unused, placeholder
+  'meridian_damage', 'light_injury',
+];
+
+export function scoreNewsRank(e: RichEvent): NewsRank {
+  if (e.type === 'milestone') return 'S';
+  if (e.type === 'combat' && e.outcome === 'death' && e.loser.level >= 6) return 'S';
+  if (e.type === 'combat') {
+    const lv = Math.max(e.winner.level, e.loser.level);
+    if (lv >= 4) return 'A';
+    if (e.winner.cultivation < e.loser.cultivation * 0.5) return 'A';
+  }
+  if (e.type === 'promotion' && e.toLevel - e.fromLevel >= 2) return 'A';
+  if (e.type === 'expiry' && e.level >= 4 && e.subject.name) return 'A';
+  if (e.type === 'promotion' && e.toLevel >= 2 && e.toLevel <= 3) return 'B';
+  if (e.type === 'combat') {
+    const lv = Math.max(e.winner.level, e.loser.level);
+    if (lv === 3) return 'B';
+  }
+  if (e.type === 'expiry' && e.level >= 2 && e.level <= 3 && e.subject.name) return 'B';
+  return 'C';
+}
+
+export function processEncounters(engine: SimulationEngine): RichEvent[] {
   profiler.start('processEncounters');
+
+  if (engine.nextId > engine._defeatedBuf.length) {
+    engine._defeatedBuf = new Uint8Array(engine.nextId);
+    engine._levelArrayIndex = new Int32Array(engine.nextId);
+  }
 
   profiler.start('processEncounters.buildCache');
   const snapshotNk = engine._snapshotNk;
   snapshotNk.fill(0);
   let snapshotN = 0;
+  engine._levelArrayIndex.fill(-1);
   for (let level = 0; level < LEVEL_COUNT; level++) {
     const ids = engine.levelGroups[level];
     const arr = engine.levelArrayCache[level];
@@ -53,6 +85,7 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
     for (const id of ids) {
       const c = engine.cultivators[id];
       if (c.injuredUntil > engine.year) continue;
+      engine._levelArrayIndex[id] = arr.length;
       arr.push(id);
     }
     snapshotNk[level] = arr.length;
@@ -62,7 +95,12 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
 
   if (snapshotN === 0) {
     profiler.end('processEncounters');
-    return EMPTY_EVENTS;
+    return [];
+  }
+
+  const encounterThresholds = new Float64Array(LEVEL_COUNT);
+  for (let level = 1; level < LEVEL_COUNT; level++) {
+    encounterThresholds[level] = snapshotNk[level] / snapshotN;
   }
 
   profiler.start('processEncounters.buildAliveIds');
@@ -76,27 +114,19 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
   prngShuffle(engine.prng, aliveIds);
   profiler.end('processEncounters.buildAliveIds');
 
-  let highBuf: number[] | null = null;
-  let lowBuf: number[] | null = null;
-  if (collectEvents) {
-    highBuf = engine._highBuf;
-    lowBuf = engine._lowBuf;
-    highBuf.length = 0;
-    lowBuf.length = 0;
-  }
-
-  const defeatedSet = new Set<number>();
+  const events: RichEvent[] = [];
+  engine._defeatedBuf.fill(0);
 
   profiler.start('processEncounters.combatLoop');
   for (const id of aliveIds) {
     const c = engine.cultivators[id];
     if (!c.alive) continue;
-    if (c.injuredUntil > engine.year || defeatedSet.has(id)) continue;
+    if (c.injuredUntil > engine.year || engine._defeatedBuf[id]) continue;
 
     const nk = snapshotNk[c.level];
     if (nk <= 1) continue;
 
-    if (engine.prng() >= nk / snapshotN) continue;
+    if (engine.prng() >= encounterThresholds[c.level]) continue;
 
     const arr = engine.levelArrayCache[c.level];
     if (arr.length === 0) continue;
@@ -107,21 +137,12 @@ export function processEncounters(engine: SimulationEngine, collectEvents = true
     const opp = engine.cultivators[oppId];
     if (!opp.alive || opp.level !== c.level) continue;
 
-    resolveCombat(engine, c, opp, highBuf, lowBuf, defeatedSet);
+    resolveCombat(engine, c, opp, events);
   }
   profiler.end('processEncounters.combatLoop');
 
-  if (!collectEvents) {
-    profiler.end('processEncounters');
-    return EMPTY_EVENTS;
-  }
-
-  profiler.start('processEncounters.materialize');
-  const result = materializeSelected(highBuf!, lowBuf!, engine.year, engine.prng, engine);
-  profiler.end('processEncounters.materialize');
-
   profiler.end('processEncounters');
-  return result;
+  return events;
 }
 
 function resolveDefeatOutcome(
@@ -147,26 +168,25 @@ function resolveCombat(
   engine: SimulationEngine,
   a: Cultivator,
   b: Cultivator,
-  highBuf: number[] | null,
-  lowBuf: number[] | null,
-  defeatedSet: Set<number>,
+  events: RichEvent[],
 ): void {
+  const year = engine.year;
   const aCultSnap = a.cultivation;
   const bCultSnap = b.cultivation;
 
   let aCombatPower = a.cultivation;
   let bCombatPower = b.cultivation;
-  if (a.meridianDamagedUntil > engine.year) {
+  if (a.meridianDamagedUntil > year) {
     aCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
   }
-  if (b.meridianDamagedUntil > engine.year) {
+  if (b.meridianDamagedUntil > year) {
     bCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
   }
 
   let total = aCombatPower + bCombatPower;
   if (total <= 0) return;
-  const aCourage = effectiveCourage(a);
-  const bCourage = effectiveCourage(b);
+  const aCourage = a.cachedCourage;
+  const bCourage = b.cachedCourage;
   const aDefeat = bCombatPower / total;
   const bDefeat = aCombatPower / total;
   const aWantsFight = aCourage > aDefeat;
@@ -188,20 +208,23 @@ function resolveCombat(
 
     aCombatPower = a.cultivation;
     bCombatPower = b.cultivation;
-    if (a.meridianDamagedUntil > engine.year) {
+    if (a.meridianDamagedUntil > year) {
       aCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
     }
-    if (b.meridianDamagedUntil > engine.year) {
+    if (b.meridianDamagedUntil > year) {
       bCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
     }
     total = aCombatPower + bCombatPower;
+    if (total <= 0) return;
   }
 
   const aWins = engine.prng() < aCombatPower / total;
   const winner = aWins ? a : b;
   const loser = aWins ? b : a;
-
+  const winnerSnap = winner === a ? aCultSnap : bCultSnap;
   const loserSnap = loser === a ? aCultSnap : bCultSnap;
+  const combatLevel = loser.level;
+
   const levelBase = threshold(loser.level);
   const baseLoot = levelBase * LOOT_BASE_RATE;
   const excess = Math.max(0, loserSnap - levelBase);
@@ -209,13 +232,15 @@ function resolveCombat(
   const loot = Math.max(0.1, round1(baseLoot + excess * LOOT_VARIABLE_RATE * luck));
   winner.cultivation += loot;
 
-  const combatLevel = loser.level;
   const loserCombatPower = loser === a ? aCombatPower : bCombatPower;
   const winnerCombatPower = winner === a ? aCombatPower : bCombatPower;
-  const outcome = resolveDefeatOutcome(engine.prng, winnerCombatPower, loserCombatPower, loser.level);
+  const outcomeCode = resolveDefeatOutcome(engine.prng, winnerCombatPower, loserCombatPower, loser.level);
+  const outcome = OUTCOME_NAMES[outcomeCode];
 
-  if (outcome === 0) {
+  let loserDied = false;
+  if (outcomeCode === 0) {
     loser.alive = false;
+    loserDied = true;
     engine.combatDeaths++;
     engine.aliveCount--;
     engine._deadIds.push(loser.id);
@@ -223,11 +248,20 @@ function resolveCombat(
     engine.aliveLevelIds[loser.level].delete(loser.id);
   } else {
     const arr = engine.levelArrayCache[loser.level];
-    const idx = arr.indexOf(loser.id);
-    if (idx !== -1) { arr[idx] = arr[arr.length - 1]; arr.pop(); }
-    defeatedSet.add(loser.id);
+    const idx = engine._levelArrayIndex[loser.id];
+    if (idx !== -1) {
+      const last = arr.length - 1;
+      if (idx < last) {
+        const movedId = arr[last];
+        arr[idx] = movedId;
+        engine._levelArrayIndex[movedId] = idx;
+      }
+      arr.pop();
+      engine._levelArrayIndex[loser.id] = -1;
+    }
+    engine._defeatedBuf[loser.id] = 1;
 
-    if (outcome === 1) {
+    if (outcomeCode === 1) {
       engine.combatDemotions++;
       const oldLevel = loser.level;
       loser.level--;
@@ -236,104 +270,60 @@ function resolveCombat(
       engine.levelGroups[loser.level].add(loser.id);
       engine.aliveLevelIds[oldLevel].delete(loser.id);
       engine.aliveLevelIds[loser.level].add(loser.id);
-    } else if (outcome === 2) {
+    } else if (outcomeCode === 2) {
       engine.combatInjuries++;
-      loser.injuredUntil = engine.year + INJURY_DURATION;
-    } else if (outcome === 3) {
+      loser.injuredUntil = year + INJURY_DURATION;
+    } else if (outcomeCode === 3) {
       engine.combatCultLosses++;
       loser.cultivation = Math.max(
         threshold(loser.level), round1(loser.cultivation * (1 - DEFEAT_CULT_LOSS_RATE)));
-    } else if (outcome === 5) {
+    } else if (outcomeCode === 5) {
       engine.combatMeridianDamages++;
-      loser.meridianDamagedUntil = engine.year + MERIDIAN_DAMAGE_DURATION;
-    } else if (outcome === 6) {
+      loser.meridianDamagedUntil = year + MERIDIAN_DAMAGE_DURATION;
+    } else if (outcomeCode === 6) {
       engine.combatLightInjuries++;
-      loser.lightInjuryUntil = engine.year + LIGHT_INJURY_DURATION;
+      loser.lightInjuryUntil = year + LIGHT_INJURY_DURATION;
     }
   }
 
-  const prevLevel = winner.level;
-  while (winner.level < MAX_LEVEL && winner.cultivation >= threshold(winner.level + 1)) {
-    winner.level++;
-    if (winner.level === 1) winner.maxAge = 100;
-    else winner.maxAge += lifespanBonus(winner.level);
-    engine.promotionCounts[winner.level]++;
-  }
-  if (winner.level !== prevLevel) {
-    engine.levelGroups[prevLevel].delete(winner.id);
-    engine.levelGroups[winner.level].add(winner.id);
-    engine.aliveLevelIds[prevLevel].delete(winner.id);
-    engine.aliveLevelIds[winner.level].add(winner.id);
-  }
+  engine.hooks?.onCombatResult(winner, loser, loserDied, year);
 
-  if (highBuf && lowBuf) {
-    (combatLevel >= 3 ? highBuf : lowBuf).push(0, combatLevel, loot, outcome);
-    if (winner.level !== prevLevel) {
-      (winner.level >= 3 ? highBuf : lowBuf).push(1, winner.level, prevLevel, winner.level);
-    }
-  }
-}
+  const winnerName = engine.hooks?.getName(winner.id);
+  const loserName = engine.hooks?.getName(loser.id);
 
-function shuffleStride4(prng: () => number, buf: number[]): void {
-  const n = buf.length >> 2;
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(prng() * (i + 1));
-    const ii = i << 2, jj = j << 2;
-    for (let k = 0; k < 4; k++) {
-      const tmp = buf[ii + k];
-      buf[ii + k] = buf[jj + k];
-      buf[jj + k] = tmp;
-    }
-  }
-}
-
-function materialize(buf: number[], off: number, year: number, engine: SimulationEngine): SimEvent {
-  const actorLevel = buf[off + 1];
-  if (buf[off] === 0) {
-    return {
-      id: engine.nextEventId++,
-      year,
-      type: 'combat',
-      actorLevel,
-      detail: `${LEVEL_NAMES[actorLevel]}对决，获得机缘${buf[off + 2]}${OUTCOME_SUFFIX[buf[off + 3]]}`,
-    };
-  }
-  return {
-    id: engine.nextEventId++,
+  const combatEvent: RichCombatEvent = {
+    type: 'combat',
     year,
-    type: 'promotion',
-    actorLevel,
-    detail: `${LEVEL_NAMES[buf[off + 2]]}→${LEVEL_NAMES[buf[off + 3]]}（战斗晋升）`,
+    newsRank: 'C',
+    winner: { id: winner.id, name: winnerName, level: combatLevel, cultivation: winnerSnap },
+    loser: { id: loser.id, name: loserName, level: combatLevel, cultivation: loserSnap },
+    absorbed: loot,
+    outcome,
   };
-}
+  combatEvent.newsRank = scoreNewsRank(combatEvent);
+  events.push(combatEvent);
 
-function materializeSelected(
-  highBuf: number[],
-  lowBuf: number[],
-  year: number,
-  prng: () => number,
-  engine: SimulationEngine,
-): SimEvent[] {
-  const highCount = highBuf.length >> 2;
-
-  if (highCount >= EVENTS_PER_TICK) {
-    shuffleStride4(prng, highBuf);
-    const result: SimEvent[] = [];
-    for (let i = 0; i < EVENTS_PER_TICK; i++) result.push(materialize(highBuf, i << 2, year, engine));
-    return result;
+  if (loserDied) {
+    const ms = engine.milestones.checkDeath(
+      combatLevel, engine.levelGroups[combatLevel].size,
+      loser.id, loserName ?? '', year,
+    );
+    if (ms) events.push(ms);
   }
 
-  const result: SimEvent[] = [];
-  for (let i = 0; i < highCount; i++) result.push(materialize(highBuf, i << 2, year, engine));
-
-  const remaining = EVENTS_PER_TICK - highCount;
-  const lowCount = lowBuf.length >> 2;
-  if (lowCount <= remaining) {
-    for (let i = 0; i < lowCount; i++) result.push(materialize(lowBuf, i << 2, year, engine));
-    return result;
+  if (winner.level === 0 && winner.cultivation >= threshold(1)) {
+    winner.level = 1;
+    winner.maxAge = 100;
+    engine.promotionCounts[1]++;
+    engine.levelGroups[0].delete(winner.id);
+    engine.levelGroups[1].add(winner.id);
+    engine.aliveLevelIds[0].delete(winner.id);
+    engine.aliveLevelIds[1].add(winner.id);
+    winner.cachedCourage = effectiveCourage(winner);
   }
-
-  shuffleStride4(prng, lowBuf);
-  for (let i = 0; i < remaining; i++) result.push(materialize(lowBuf, i << 2, year, engine));
-  return result;
+  if (winner.level >= 1) {
+    if (tryBreakthrough(engine, winner, events, 'combat')) {
+      winner.cachedCourage = effectiveCourage(winner);
+    }
+  }
 }
