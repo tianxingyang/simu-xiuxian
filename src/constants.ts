@@ -55,11 +55,46 @@ export const SUSTAINABLE_MAX_AGE = [
   60, 150, 1_070, 11_070, 111_070, 1_111_070, 11_111_070, 111_111_070,
 ] as const;
 
-export const THRESHOLDS: readonly number[] = [0, 15, 90, 900, 14_500, 100_000, 1_000_000, 10_000_000];
+const THRESHOLD_LOG_CORR_COEFF = [
+  0.3715635564324824,
+  0.056458557592892256,
+  -0.5746050492793122,
+  -0.0025278639621033328,
+  0.1614363053810571,
+  -0.0012504358018764136,
+  -0.011075070363141586,
+] as const;
+
+const THRESHOLD_CACHE: number[] = Array.from({ length: LEVEL_COUNT }, () => Number.NaN);
+THRESHOLD_CACHE[0] = 0;
+
+function thresholdLogCorrection(x: number): number {
+  const [c0, c1, c2, c3, c4, c5, c6] = THRESHOLD_LOG_CORR_COEFF;
+  return ((((((c6 * x + c5) * x + c4) * x + c3) * x + c2) * x + c1) * x + c0);
+}
+
+function computeThreshold(level: number): number {
+  if (level <= 0) return 0;
+  const x = level - 4;
+  return Math.max(0, Math.round(10 ** level * Math.exp(thresholdLogCorrection(x))));
+}
 
 export function threshold(level: number): number {
-  return THRESHOLDS[level];
+  const lv = Math.trunc(level);
+  if (lv <= 0) return 0;
+  if (lv < LEVEL_COUNT) {
+    const cached = THRESHOLD_CACHE[lv];
+    if (!Number.isNaN(cached)) return cached;
+    const v = computeThreshold(lv);
+    THRESHOLD_CACHE[lv] = v;
+    return v;
+  }
+  return computeThreshold(lv);
 }
+
+export const THRESHOLDS: readonly number[] = Object.freeze(
+  Array.from({ length: LEVEL_COUNT }, (_, level) => threshold(level)),
+);
 
 export function lifespanBonus(level: number): number {
   if (level <= 0) return 0;
