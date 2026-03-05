@@ -155,18 +155,7 @@ export class SimulationEngine {
         c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
       }
 
-      if (c.level === 0 && c.cultivation >= threshold(1)) {
-        c.level = 1;
-        c.maxAge = 100;
-        this.promotionCounts[1]++;
-        this.levelGroups[0].delete(c.id);
-        this.levelGroups[1].add(c.id);
-        this.aliveLevelIds[0].delete(c.id);
-        this.aliveLevelIds[1].add(c.id);
-      }
-      if (c.level >= 1) {
-        tryBreakthrough(this, c, events, 'natural');
-      }
+      tryBreakthrough(this, c, events, 'natural');
 
       c.cachedCourage = effectiveCourage(c);
 
@@ -406,7 +395,7 @@ export function tryBreakthrough(
   events: RichEvent[], cause: 'natural' | 'combat',
 ): boolean {
   const year = engine.year;
-  if (c.level < 1 || c.level >= MAX_LEVEL) return false;
+  if (c.level >= MAX_LEVEL) return false;
   if (c.cultivation < threshold(c.level + 1)) return false;
   if (c.breakthroughCooldownUntil > year) return false;
   if (c.injuredUntil > year) return false;

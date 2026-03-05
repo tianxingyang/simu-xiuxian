@@ -310,19 +310,7 @@ function resolveCombat(
     if (ms) events.push(ms);
   }
 
-  if (winner.level === 0 && winner.cultivation >= threshold(1)) {
-    winner.level = 1;
-    winner.maxAge = 100;
-    engine.promotionCounts[1]++;
-    engine.levelGroups[0].delete(winner.id);
-    engine.levelGroups[1].add(winner.id);
-    engine.aliveLevelIds[0].delete(winner.id);
-    engine.aliveLevelIds[1].add(winner.id);
+  if (tryBreakthrough(engine, winner, events, 'combat')) {
     winner.cachedCourage = effectiveCourage(winner);
-  }
-  if (winner.level >= 1) {
-    if (tryBreakthrough(engine, winner, events, 'combat')) {
-      winner.cachedCourage = effectiveCourage(winner);
-    }
   }
 }

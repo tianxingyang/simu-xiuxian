@@ -5,7 +5,11 @@
 breakthroughChance(k) = Math.exp(-(BREAKTHROUGH_A + BREAKTHROUGH_B * (2 * k + 1)))
 ```
 
-其中 k 为当前境界编号（k ≥ 1）。
+其中 k 为当前境界编号（k ≥ 0）。
+
+#### Scenario: Lv0 breakthrough chance
+- **WHEN** 调用 `breakthroughChance(0)`
+- **THEN** 返回值 SHALL 为 `Math.exp(-(0.6 + 0.15 * 1))` ≈ 0.4724（47.2%）
 
 #### Scenario: Lv1 breakthrough chance
 - **WHEN** 调用 `breakthroughChance(1)`
@@ -16,7 +20,7 @@ breakthroughChance(k) = Math.exp(-(BREAKTHROUGH_A + BREAKTHROUGH_B * (2 * k + 1)
 - **THEN** 返回值 SHALL 为 `Math.exp(-(0.6 + 0.15 * 13))` ≈ 0.0781（7.8%）
 
 #### Scenario: Monotonic decrease
-- **WHEN** 对 k=1,2,...,6 依次调用 `breakthroughChance(k)`
+- **WHEN** 对 k=0,1,2,...,6 依次调用 `breakthroughChance(k)`
 - **THEN** 返回值 SHALL 严格递减
 
 ### Requirement: Breakthrough constants
@@ -50,13 +54,22 @@ breakthroughChance(k) = Math.exp(-(BREAKTHROUGH_A + BREAKTHROUGH_B * (2 * k + 1)
 ### Requirement: Breakthrough eligibility
 修仙者 SHALL 同时满足以下全部条件才能尝试突破：
 
-1. `level ≥ 1`（Lv0→Lv1 不经过门控）
-2. `level < MAX_LEVEL`（Lv7 为顶级）
-3. `cultivation ≥ threshold(level + 1)`（修为达标）
-4. `breakthroughCooldownUntil ≤ currentYear`（不在冷却期）
-5. `injuredUntil ≤ currentYear`（未处于重伤状态）
+1. `level < MAX_LEVEL`（Lv7 为顶级）
+2. `cultivation ≥ threshold(level + 1)`（修为达标）
+3. `breakthroughCooldownUntil ≤ currentYear`（不在冷却期）
+4. `injuredUntil ≤ currentYear`（未处于重伤状态）
 
 轻伤（`lightInjuryUntil`）和经脉损伤（`meridianDamagedUntil`）SHALL NOT 阻止突破尝试。
+
+Lv0 修仙者满足上述条件后 SHALL 进入突破判定，与 Lv1+ 使用相同的判定和惩罚逻辑。
+
+#### Scenario: Lv0 eligible cultivator
+- **WHEN** Lv0 修仙者 cultivation=13（≥ threshold(1)=13），breakthroughCooldownUntil=0, injuredUntil=0, 当前年份=100
+- **THEN** SHALL 满足全部突破条件，进入突破判定
+
+#### Scenario: Lv0 cultivation insufficient
+- **WHEN** Lv0 修仙者 cultivation=12（< threshold(1)=13），当前年份=100
+- **THEN** SHALL NOT 满足条件2，不触发突破尝试
 
 #### Scenario: Eligible cultivator
 - **WHEN** Lv1 修仙者 cultivation=200（≥ threshold(2)=100），breakthroughCooldownUntil=0, injuredUntil=0, 当前年份=100
@@ -185,9 +198,13 @@ combat 路径中的突破尝试与 `tickCultivators` 路径独立——即使同
 **newsRank 规则**:
 - Lv4+ 失败 → `'B'`
 - Lv2-3 失败 → `'C'`
-- Lv1 失败 → 不产生事件（过于常见）
+- Lv0-1 失败 → 不产生事件（过于常见）
 
-**类型注册**: `RichEvent` 联合类型 SHALL 新增 `RichBreakthroughEvent`。`SimEvent.type` SHALL 新增 `'breakthrough_fail'` 选项。
+**类型注册**: `RichEvent` 联合类型 SHALL 包含 `RichBreakthroughEvent`。
+
+#### Scenario: Lv0 breakthrough failure no event
+- **WHEN** Lv0 修仙者突破失败
+- **THEN** SHALL NOT 产生 RichBreakthroughEvent（仅更新计数器）
 
 #### Scenario: Lv5 breakthrough failure event
 - **WHEN** Lv5 修仙者在自然修炼中突破失败，惩罚为受伤
@@ -213,6 +230,14 @@ combat 路径中的突破尝试与 `tickCultivators` 路径独立——即使同
 4. 成功：执行单级升级（level++, maxAge, levelGroups/aliveLevelIds 迁移, promotionCounts++），产生 `RichPromotionEvent`，触发 `onPromotion` hook，`engine.breakthroughSuccesses++`，return true
 5. 失败：设置冷却，roll 额外惩罚，`engine.breakthroughFailures++`，Lv2+ 产生 `RichBreakthroughEvent`，return false
 
+#### Scenario: Lv0 tryBreakthrough returns true on success
+- **WHEN** Lv0 修仙者 cultivation=13, prng() 返回 0.20（< breakthroughChance(0) ≈ 0.472）
+- **THEN** 函数 SHALL 返回 `true`，修仙者 level 变为 1，maxAge 增加 lifespanBonus(1)=100
+
+#### Scenario: Lv0 tryBreakthrough returns false on failure
+- **WHEN** Lv0 修仙者 cultivation=13, prng() 返回 0.60（≥ breakthroughChance(0) ≈ 0.472）
+- **THEN** 函数 SHALL 返回 `false`，`breakthroughCooldownUntil` 设为 currentYear + 3
+
 #### Scenario: tryBreakthrough returns true on success
 - **WHEN** 满足条件的修仙者突破成功
 - **THEN** 函数 SHALL 返回 `true`，修仙者 level 已增加
@@ -224,11 +249,11 @@ combat 路径中的突破尝试与 `tickCultivators` 路径独立——即使同
 ## PBT Properties
 
 ### PBT-01: breakthroughChance 严格递减
-- **INVARIANT**: 对所有整数 k ∈ [1, 6]，breakthroughChance(k+1) < breakthroughChance(k)
-- **FALSIFICATION**: 遍历所有相邻对 (k, k+1) 验证严格小于，含边界 (1,2) 和 (5,6)
+- **INVARIANT**: ∀k ∈ {0..5}: breakthroughChance(k+1) < breakthroughChance(k)
+- **FALSIFICATION**: 遍历所有相邻对 (k, k+1) 验证严格小于，含边界 (0,1) 和 (5,6)
 
 ### PBT-02: breakthroughChance 输出范围
-- **INVARIANT**: 对所有有效 k ∈ [1, 6]，0 < breakthroughChance(k) < 1
+- **INVARIANT**: ∀k ∈ {0..6}: 0 < breakthroughChance(k) < 1
 - **FALSIFICATION**: 对每个有效 k 断言结果为有限数且严格介于 0 和 1 之间
 
 ### PBT-03: 不满足条件时零副作用
@@ -271,6 +296,14 @@ combat 路径中的突破尝试与 `tickCultivators` 路径独立——即使同
 - **INVARIANT**: tryBreakthrough 后 c.maxAge' ≥ c.maxAge；成功时 maxAge' = maxAge + lifespanBonus(newLevel)，失败时 maxAge' = maxAge
 - **FALSIFICATION**: 记录调用前后 maxAge，断言全局不下降
 
-### PBT-13: Lv0 绕过突破门
-- **INVARIANT**: level=0 的修仙者永远不进入 tryBreakthrough，自动升级至 Lv1 不消耗突破相关 PRNG
-- **FALSIFICATION**: 对 tryBreakthrough 设置 spy，运行含多个 Lv0 达标修仙者的模拟，断言 spy 零调用
+### PBT-13: Lv0 突破失败修为不为负
+- **INVARIANT**: 对 Lv0 突破失败，惩罚计算 `max(threshold(0), cultivation - excess * 0.2)` = `max(0, ...)` ≥ 0
+- **FALSIFICATION**: Fuzz cultivation 值（0, 0.1, 13, 极大值），对每个值连续应用 1..N 次惩罚，断言结果 ≥ 0
+
+### PBT-14: Lv0 稳态分布验证
+- **INVARIANT**: 3 个不同 seed 各运行 5000 tick，Lv0 占存活总人口比例 r ∈ [0.50, 0.65]
+- **FALSIFICATION**: 运行 3 seed × 5000 tick，取最后 tick 的 Lv0 比例，断言在区间内
+
+### PBT-15: 所有 Lv0→Lv1 升级必须消耗 PRNG
+- **INVARIANT**: 每次 Lv0→Lv1 升级事件必须经过 tryBreakthrough 的 prng() 调用，不存在绕过概率门的直接升级路径
+- **FALSIFICATION**: 插桩 PRNG 调用计数器，监控所有 level 变更，断言每次 0→1 升级伴随至少 1 次 prng() 消耗
