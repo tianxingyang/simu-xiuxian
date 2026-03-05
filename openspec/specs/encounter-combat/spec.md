@@ -73,11 +73,11 @@ loot         = max(0.1, round1(baseLoot + variableLoot))
 winner.cultivation += loot
 ```
 
-Constants: `LOOT_BASE_RATE = 0.05`, `LOOT_VARIABLE_RATE = 0.1`, `LUCK_MEAN = 1.0`, `LUCK_STDDEV = 0.3`, `LUCK_MIN = 0`, `LUCK_MAX = 2.5`. A promotion check SHALL execute immediately for the winner after loot gain. The combat event text SHALL display outcome-specific text.
+Constants: `LOOT_BASE_RATE = 0.24`, `LOOT_VARIABLE_RATE = 0.20`, `LUCK_MEAN = 1.0`, `LUCK_STDDEV = 0.3`, `LUCK_MIN = 0`, `LUCK_MAX = 2.5`. A promotion check SHALL execute immediately for the winner after loot gain. The combat event text SHALL display outcome-specific text.
 
 #### Scenario: Lv1 winner with average luck
 - **WHEN** a Lv1 cultivator defeats a Lv1 with cultivation 50, and luck = 1.0
-- **THEN** levelBase = THRESHOLDS[1] = 10, baseLoot = 0.5, excess = 40, variableLoot = 4.0, loot = max(0.1, round1(4.5)) = 4.5
+- **THEN** levelBase = THRESHOLDS[1] = 13, baseLoot = 3.12, excess = 37, variableLoot = 7.4, loot = max(0.1, round1(10.52)) = 10.5
 
 #### Scenario: Loser survives — tracked via Uint8Array
 - **WHEN** cultivator B loses and defeat outcome is demotion, injury, or cultivation loss

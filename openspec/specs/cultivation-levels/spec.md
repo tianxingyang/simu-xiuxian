@@ -43,14 +43,14 @@ The system SHALL support 8 cultivation levels (Lv0–Lv7). The promotion thresho
 
 | 用途 | 公式 | 旧值 | 新值 |
 |---|---|---|---|
-| Lv1 baseLoot | `threshold(1) * LOOT_BASE_RATE` | 0.5 | 0.65 |
+| Lv1 baseLoot | `threshold(1) * LOOT_BASE_RATE` | 0.5 | 3.12 |
 | Lv1 逃跑修为地板 | `max(threshold(evader.level), ...)` | 10 | 13 |
 | Lv1 战败修为损失地板 | `max(threshold(loser.level), ...)` | 10 | 13 |
 | Lv1 突破失败修为地板 | `max(threshold(c.level), ...)` | 10 | 13 |
 
 #### Scenario: Lv1 combat base loot
 - **WHEN** Lv1 修仙者在战斗中被击败
-- **THEN** baseLoot SHALL 为 `13 * 0.05 = 0.65`
+- **THEN** baseLoot SHALL 为 `13 * 0.24 = 3.12`
 
 #### Scenario: Lv1 evasion cultivation floor
 - **WHEN** Lv1 修仙者逃跑失败受到修为惩罚

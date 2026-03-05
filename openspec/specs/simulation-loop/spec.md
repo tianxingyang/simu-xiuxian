@@ -142,7 +142,7 @@ for each alive cultivator c:
 `naturalCultivation` SHALL 在年龄/修为增长之后，对 `maxAge` 超出当前境界可维持寿元的修士执行渐进式衰减：
 
 ```
-sustainableMaxAge = [60, 100, 900, 8900, 88900, 888900, 8888900, 88888900]
+sustainableMaxAge = [60, 150, 1070, 11070, 111070, 1111070, 11111070, 111111070]
 for each alive cultivator c:
   // ... age/cultivation growth ...
   target = sustainableMaxAge[c.level]
@@ -156,15 +156,15 @@ for each alive cultivator c:
 - `maxAge` 下限为 `MORTAL_MAX_AGE`(60)
 
 #### Scenario: No decay when maxAge matches level
-- **WHEN** Lv2 修士 maxAge=900（等于 sustainableMaxAge[2]）
+- **WHEN** Lv2 修士 maxAge=1070（等于 sustainableMaxAge[2]）
 - **THEN** maxAge SHALL 不变
 
 #### Scenario: Decay applied after demotion
-- **WHEN** 修士上一轮从 Lv3 跌境至 Lv2（maxAge=8900）
-- **THEN** 本轮 naturalCultivation SHALL 衰减 maxAge：(8900-900)×0.2=1600，maxAge → round(7300) = 7300
+- **WHEN** 修士上一轮从 Lv3 跌境至 Lv2（maxAge=11070）
+- **THEN** 本轮 naturalCultivation SHALL 衰减 maxAge：(11070-1070)×0.2=2000，maxAge → round(9070) = 9070
 
 #### Scenario: Normal cultivator unaffected
-- **WHEN** Lv3 修士 maxAge=8900（等于 sustainableMaxAge[3]）
+- **WHEN** Lv3 修士 maxAge=11070（等于 sustainableMaxAge[3]）
 - **THEN** maxAge SHALL 不变
 
 ### Requirement: YearSummary defeat statistics

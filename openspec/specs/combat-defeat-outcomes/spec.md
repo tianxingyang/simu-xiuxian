@@ -11,22 +11,22 @@ deathChance = min(DEFEAT_MAX_DEATH, rawDeath × (1 + DEFEAT_GAP_SEVERITY × gap)
 
 - `gap` SHALL 使用败者**战前快照**（闪避惩罚前）修为计算
 - `gap` 可为负值（弱者赢时 winner.cult < loser.cult）
-- 常量：`DEFEAT_DEATH_BASE=0.40`, `DEFEAT_DEATH_DECAY=0.72`, `DEFEAT_GAP_SEVERITY=0.3`（乘性系数）, `DEFEAT_MAX_DEATH=0.95`
+- 常量：`DEFEAT_DEATH_BASE=0.45`, `DEFEAT_DEATH_DECAY=0.72`, `DEFEAT_GAP_SEVERITY=0.3`（乘性系数）, `DEFEAT_MAX_DEATH=0.95`
 - 无下限 clamp：指数衰减公式天然保证正值
 
 第一次掷骰 `r1 = prng()`：若 `r1 < deathChance` → 死亡。否则进入存活结局判定。
 
 #### Scenario: Lv1 equal fight death chance
 - **WHEN** Lv1 败者与胜者修为相近（gap ≈ 0）
-- **THEN** deathChance SHALL ≈ 0.29（0.40 × 0.72^1）
+- **THEN** deathChance SHALL ≈ 0.32（0.45 × 0.72^1）
 
 #### Scenario: Lv7 equal fight death chance
 - **WHEN** Lv7 败者与胜者修为相近（gap ≈ 0）
-- **THEN** deathChance SHALL ≈ 0.04（0.40 × 0.72^7）
+- **THEN** deathChance SHALL ≈ 0.05（0.45 × 0.72^7）
 
 #### Scenario: Large gap increases death chance multiplicatively
 - **WHEN** Lv3 败者 gap = 0.5
-- **THEN** deathChance SHALL ≈ 0.17（rawDeath 0.149 × 1.15），比均势的 0.149 高出约 15%
+- **THEN** deathChance SHALL ≈ 0.19（rawDeath 0.168 × 1.15），比均势的 0.168 高出约 15%
 
 #### Scenario: Death chance capped at MAX_DEATH
 - **WHEN** 计算结果超出 DEFEAT_MAX_DEATH
@@ -38,7 +38,7 @@ deathChance = min(DEFEAT_MAX_DEATH, rawDeath × (1 + DEFEAT_GAP_SEVERITY × gap)
 
 #### Scenario: High level not blown up by gap
 - **WHEN** Lv7 败者 gap = 0.5
-- **THEN** deathChance SHALL ≈ 0.046（0.04 × 1.15），而非加性设计下的 0.22
+- **THEN** deathChance SHALL ≈ 0.052（0.05 × 1.15），而非加性设计下的 0.22
 
 ### Requirement: Survival outcome selection
 当败者未死亡时，系统 SHALL 进行第二次掷骰 `r2 = prng()` 选择存活结局。五种结局按固定权重归一化分配概率：
@@ -91,8 +91,8 @@ otherwise → 跌境
 - 败者 SHALL 从原级别的 `levelGroups` 中移除，加入新级别的 `levelGroups`
 
 #### Scenario: Lv3 demotion to Lv2
-- **WHEN** Lv3 修士（cultivation=5000, maxAge=8900）被判定为跌境
-- **THEN** level SHALL 变为 2，cultivation SHALL 变为 100（threshold(2)），maxAge SHALL 保持 8900 不变（后续由渐进衰减处理）
+- **WHEN** Lv3 修士（cultivation=5000, maxAge=11070）被判定为跌境
+- **THEN** level SHALL 变为 2，cultivation SHALL 变为 100（threshold(2)），maxAge SHALL 保持 11070 不变（后续由渐进衰减处理）
 
 #### Scenario: Lv1 demotion to Lv0
 - **WHEN** Lv1 修士（cultivation=50, maxAge=100）被判定为跌境
@@ -106,7 +106,7 @@ otherwise → 跌境
 `naturalCultivation` SHALL 对 `maxAge` 超出当前境界可维持寿元的修士执行渐进式衰减：
 
 ```
-sustainableMaxAge = [60, 100, 900, 8900, 88900, 888900, 8888900, 88888900]
+sustainableMaxAge = [60, 150, 1070, 11070, 111070, 1111070, 11111070, 111111070]
 if maxAge > sustainableMaxAge[level]:
     decay = (maxAge - sustainableMaxAge[level]) * LIFESPAN_DECAY_RATE
     maxAge = max(MORTAL_MAX_AGE, round(maxAge - decay))
@@ -119,9 +119,9 @@ if maxAge > sustainableMaxAge[level]:
 - 当 `maxAge` 衰减至 `age <= maxAge` 范围时，`removeExpired` 自然处理死亡，计入 `expiryDeaths`
 
 #### Scenario: Lv3 demoted to Lv2, gradual decay
-- **WHEN** Lv3 修士（maxAge=8900）跌境至 Lv2（sustainableMaxAge=900）
-- **THEN** 第一年衰减 (8900-900)×0.2 = 1600，maxAge SHALL 变为 round(8900-1600) = 7300
-- **AND** 第二年衰减 (7300-900)×0.2 = 1280，maxAge SHALL 变为 round(7300-1280) = 6020
+- **WHEN** Lv3 修士（maxAge=11070）跌境至 Lv2（sustainableMaxAge=1070）
+- **THEN** 第一年衰减 (11070-1070)×0.2 = 2000，maxAge SHALL 变为 round(11070-2000) = 9070
+- **AND** 第二年衰减 (9070-1070)×0.2 = 1600，maxAge SHALL 变为 round(9070-1600) = 7470
 
 #### Scenario: Decay converges to sustainable level
 - **WHEN** 经过足够多年的衰减
@@ -133,7 +133,7 @@ if maxAge > sustainableMaxAge[level]:
 
 #### Scenario: Irreversible decay
 - **WHEN** 修士从 Lv3 跌境至 Lv2，maxAge 衰减至 5000 后重新突破至 Lv3
-- **THEN** maxAge SHALL 变为 5000 + lifespanBonus(3) = 5000 + 8000 = 13000，而非原始的 8900 + 8000
+- **THEN** maxAge SHALL 变为 5000 + lifespanBonus(3) = 5000 + 10000 = 15000，而非原始的 11070 + 10000
 
 #### Scenario: Demotion-induced death via removeExpired
 - **WHEN** 跌境后经过渐进衰减 maxAge 降至 age 以下
@@ -283,7 +283,7 @@ loser.cultivation = max(threshold(loser.level), round1(loser.cultivation × (1 -
 ### Requirement: Defeat outcome constants
 系统 SHALL 在 `src/constants.ts` 中定义以下常量：
 
-- `DEFEAT_DEATH_BASE = 0.40`
+- `DEFEAT_DEATH_BASE = 0.45`
 - `DEFEAT_DEATH_DECAY = 0.72`
 - `DEFEAT_GAP_SEVERITY = 0.3`
 - `DEFEAT_MAX_DEATH = 0.95`
@@ -374,7 +374,7 @@ loser.cultivation = max(threshold(loser.level), round1(loser.cultivation × (1 -
 - 不可逆：跌境后 `maxAge` 永不超过跌境时刻的值（除非重新晋升）
 
 #### Scenario: Monotone decay
-- **WHEN** maxAge=8900, sustainableMaxAge=900, 连续衰减 20 年
+- **WHEN** maxAge=11070, sustainableMaxAge=1070, 连续衰减 20 年
 - **THEN** 每年 maxAge SHALL 严格递减，且始终 >= 60
 
 ### Requirement: PBT — Defeat state consistency
