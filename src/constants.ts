@@ -55,7 +55,7 @@ export const SUSTAINABLE_MAX_AGE = [
   60, 150, 1_070, 11_070, 111_070, 1_111_070, 11_111_070, 111_111_070,
 ] as const;
 
-export const THRESHOLDS: readonly number[] = [0, 15, 90, 900, 11_000, 100_000, 1_000_000, 10_000_000];
+export const THRESHOLDS: readonly number[] = [0, 15, 90, 900, 14_500, 100_000, 1_000_000, 10_000_000];
 
 export function threshold(level: number): number {
   return THRESHOLDS[level];
