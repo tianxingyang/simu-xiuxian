@@ -7,8 +7,8 @@ export const LEVEL_NAMES = [
 export const LEVEL_COUNT = LEVEL_NAMES.length;
 export const MORTAL_MAX_AGE = 60;
 export const YEARLY_NEW = 1000;
-export const LOOT_BASE_RATE = 0.24;
-export const LOOT_VARIABLE_RATE = 0.20;
+export const LOOT_BASE_RATE = 0.28;
+export const LOOT_VARIABLE_RATE = 0.24;
 export const LUCK_MEAN = 1.0;
 export const LUCK_STDDEV = 0.3;
 export const LUCK_MIN = 0;
@@ -25,11 +25,11 @@ export const COURAGE_STDDEV = 0.15;
 export const EVASION_SENSITIVITY = 0.5;
 export const EVASION_PENALTY = 0.05;
 
-export const DEFEAT_DEATH_BASE = 0.45;
-export const DEFEAT_DEATH_DECAY = 0.72;
+export const DEFEAT_DEATH_BASE = 0.40;
+export const DEFEAT_DEATH_DECAY = 0.80;
 export const DEFEAT_GAP_SEVERITY = 0.3;
 export const DEFEAT_MAX_DEATH = 0.95;
-export const DEFEAT_DEMOTION_W = 0.1;
+export const DEFEAT_DEMOTION_W = 0.4;
 export const DEFEAT_INJURY_W = 2.9;
 export const DEFEAT_CULT_LOSS_W = 2.0;
 export const DEFEAT_LIGHT_INJURY_W = 4.0;
@@ -43,8 +43,8 @@ export const MERIDIAN_DAMAGE_DURATION = 10;
 export const MERIDIAN_COMBAT_PENALTY = 0.3;
 export const LIFESPAN_DECAY_RATE = 0.2;
 
-export const BREAKTHROUGH_A = 0.6;
-export const BREAKTHROUGH_B = 0.15;
+export const BREAKTHROUGH_A = 0.45;
+export const BREAKTHROUGH_B = 0.10;
 export const BREAKTHROUGH_COOLDOWN = 3;
 export const BREAKTHROUGH_CULT_LOSS_RATE = 0.2;
 export const BREAKTHROUGH_NOTHING_W = 5.0;
@@ -55,7 +55,7 @@ export const SUSTAINABLE_MAX_AGE = [
   60, 150, 1_070, 11_070, 111_070, 1_111_070, 11_111_070, 111_111_070,
 ] as const;
 
-export const THRESHOLDS: readonly number[] = [0, 13, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000];
+export const THRESHOLDS: readonly number[] = [0, 15, 90, 900, 11_000, 100_000, 1_000_000, 10_000_000];
 
 export function threshold(level: number): number {
   return THRESHOLDS[level];
