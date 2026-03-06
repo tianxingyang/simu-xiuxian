@@ -32,6 +32,11 @@ export class MilestoneTracker {
     };
   }
 
+  recordPromotion(level: number): void {
+    this.levelEverPopulated[level] = true;
+    if (level > this.highestLevelEverReached) this.highestLevelEverReached = level;
+  }
+
   checkDeath(
     level: number, levelGroupSize: number,
     cultivatorId: number, cultivatorName: string, year: number,
@@ -411,7 +416,12 @@ export function tryBreakthrough(
 
     engine.hooks?.onPromotion(c, c.level, year);
 
-    if (events && c.level >= 2) {
+    if (c.level >= 2) {
+      if (!events) {
+        engine.milestones.recordPromotion(c.level);
+        return true;
+      }
+
       const name = engine.hooks?.getName(c.id);
       const pe: RichPromotionEvent = {
         type: 'promotion', year, newsRank: 'C',
