@@ -1,5 +1,5 @@
+import { Worker } from 'node:worker_threads';
 import { describe, it, expect } from 'vitest';
-import { SimulationEngine } from '../src/engine/simulation';
 import { LEVEL_NAMES, LEVEL_COUNT } from '../src/constants';
 
 /**
@@ -23,42 +23,73 @@ const RELATIVE_TOLERANCE = 0.10; // ±10%
 // Lv0~Lv4 are asserted; Lv5+ are logged but not asserted (pending future tuning)
 const ASSERTED_LEVELS = 5; // Lv0 through Lv4
 
-const TOTAL_YEARS = 10_000;
+const TOTAL_TEST_YEARS = 100_000;
 const WARMUP_YEARS = 2_000;
 const SEEDS = [42, 137, 256];
 const INITIAL_POP = 10_000;
+const YEARS_PER_SEED = Math.ceil(TOTAL_TEST_YEARS / SEEDS.length);
+const TSX_API_URL = new URL('../node_modules/tsx/dist/esm/api/index.mjs', import.meta.url).href;
+const DISTRIBUTION_WORKER_URL = new URL('./distribution.worker.ts', import.meta.url).href;
+const WORKER_ENTRY_SOURCE = `
+  import { tsImport } from ${JSON.stringify(TSX_API_URL)};
+  await tsImport(${JSON.stringify(DISTRIBUTION_WORKER_URL)}, import.meta.url);
+`;
+const WORKER_ENTRY_URL = new URL(`data:text/javascript,${encodeURIComponent(WORKER_ENTRY_SOURCE)}`);
 
-function collectDistribution(seed: number): number[][] {
-  const engine = new SimulationEngine(seed, INITIAL_POP);
-  const snapshots: number[][] = [];
-  for (let y = 0; y < TOTAL_YEARS; y++) {
-    engine.tickYear();
-    if (y >= WARMUP_YEARS) {
-      const s = engine.getSummary();
-      if (s.totalPopulation > 0) {
-        snapshots.push(s.levelCounts.map(c => (c / s.totalPopulation) * 100));
+type DistributionPartial = {
+  seed: number;
+  sampleCount: number;
+  distSums: number[];
+};
+
+function collectDistributionInWorker(seed: number): Promise<DistributionPartial> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(WORKER_ENTRY_URL, {
+      type: 'module',
+      workerData: {
+        seed,
+        totalYears: YEARS_PER_SEED,
+        warmupYears: WARMUP_YEARS,
+        initialPop: INITIAL_POP,
+      },
+    });
+
+    let settled = false;
+    const finalize = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    worker.once('message', (result: DistributionPartial) => {
+      finalize(() => resolve(result));
+    });
+
+    worker.once('error', error => {
+      finalize(() => reject(error));
+    });
+
+    worker.once('exit', code => {
+      if (code !== 0) {
+        finalize(() => reject(new Error(`distribution worker exited with code ${code}`)));
       }
-    }
-  }
-  return snapshots;
+    });
+  });
 }
 
 describe('Level Distribution (steady-state)', () => {
-  // Pre-compute across seeds (shared by all assertions)
   let avgDist: number[];
 
-  // 3 seeds x ~45s each ≈ 135s
-  it('should match target within ±10% relative deviation per level', { timeout: 300_000 }, () => {
-    const allSnapshots: number[][] = [];
-    for (const seed of SEEDS) {
-      allSnapshots.push(...collectDistribution(seed));
-    }
+  it('should match target within ±10% relative deviation per level', { timeout: 900_000 }, async () => {
+    const partials = await Promise.all(SEEDS.map(seed => collectDistributionInWorker(seed)));
+    const totalSamples = partials.reduce((sum, partial) => sum + partial.sampleCount, 0);
 
     avgDist = new Array(LEVEL_COUNT).fill(0);
-    for (const snap of allSnapshots) {
-      for (let i = 0; i < LEVEL_COUNT; i++) avgDist[i] += snap[i];
+    for (const partial of partials) {
+      for (let i = 0; i < LEVEL_COUNT; i++) avgDist[i] += partial.distSums[i];
     }
-    for (let i = 0; i < LEVEL_COUNT; i++) avgDist[i] /= allSnapshots.length;
+    expect(totalSamples, 'distribution test should collect at least one post-warmup sample').toBeGreaterThan(0);
+    for (let i = 0; i < LEVEL_COUNT; i++) avgDist[i] /= totalSamples;
 
     const results: string[] = [];
     const failures: string[] = [];
@@ -83,9 +114,11 @@ describe('Level Distribution (steady-state)', () => {
       if (!pass && lv < ASSERTED_LEVELS) failures.push(line);
     }
 
-    // Always print full table for diagnostics
+    const seedBreakdown = partials
+      .map(partial => `seed=${partial.seed}: ${partial.sampleCount} samples`)
+      .join(', ');
     console.log(
-      `\nDistribution analysis (${allSnapshots.length} samples, ${SEEDS.length} seeds):\n` +
+      `\nDistribution analysis (${totalSamples} samples, ${SEEDS.length} seeds, totalYears=${TOTAL_TEST_YEARS}, yearsPerSeed=${YEARS_PER_SEED}; ${seedBreakdown}):\n` +
       results.join('\n'),
     );
 
