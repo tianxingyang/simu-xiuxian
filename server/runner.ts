@@ -77,7 +77,7 @@ export class Runner {
       const target = Math.max(1, saved.current_year);
       if (target > 1) console.log(`[runner] replaying to year ${target}...`);
       while (engine.year < target) {
-        if (engine.tickYear().isExtinct) break;
+        if (engine.tickYear(false).isExtinct) break;
       }
       this.engine = engine;
       this.restoreMilestones(saved.highest_levels_ever);
@@ -124,7 +124,7 @@ export class Runner {
         if (this.running) return;
         if (this.extinct) { this.io.broadcast({ type: 'paused', reason: 'extinction' }); return; }
         if (!this.engine) return;
-        const tick = this.engine.tickYear();
+        const tick = this.engine.tickYear(true);
         const summary = this.engine.getSummary();
         this.lastSummary = summary;
         this.persistBatch(tick.events);
@@ -211,7 +211,7 @@ export class Runner {
     let lastTickEvents: RichEvent[] = [];
 
     for (let i = 0; i < batchSize; i++) {
-      const tick = engine.tickYear();
+      const tick = engine.tickYear(true);
       if (i % stride === 0 || i === batchSize - 1 || tick.isExtinct) {
         summaries.push(engine.getSummary());
       }
