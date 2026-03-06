@@ -74,7 +74,7 @@ function runBatch(): void {
   }
 
   for (let i = 0; i < batchSize; i++) {
-    const tick = engine.tickYear();
+    const tick = engine.tickYear(i === batchSize - 1);
     const isExtinct = tick.isExtinct;
     if (i % summaryStride === 0 || i === batchSize - 1 || isExtinct) {
       summaries.push(engine.getSummary());
@@ -151,7 +151,7 @@ self.onmessage = (e: MessageEvent<ToWorker>): void => {
         return;
       }
       if (!engine) return;
-      const tick = engine.tickYear();
+      const tick = engine.tickYear(true);
       const summary = engine.getSummary();
       let eid = 1;
       const simEvents = tick.events.map(e => richToSimEvent(e, eid++));

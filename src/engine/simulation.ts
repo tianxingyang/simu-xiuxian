@@ -5,6 +5,7 @@ import { createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
+type EventBuffer = RichEvent[] | null;
 
 export class MilestoneTracker {
   highestLevelEverReached = 0;
@@ -29,6 +30,11 @@ export class MilestoneTracker {
       type: 'milestone', year, newsRank: 'S', kind: 'first_at_level',
       detail: { level, cultivatorId, cultivatorName, year },
     };
+  }
+
+  recordPromotion(level: number): void {
+    this.levelEverPopulated[level] = true;
+    if (level > this.highestLevelEverReached) this.highestLevelEverReached = level;
   }
 
   checkDeath(
@@ -94,7 +100,7 @@ export class SimulationEngine {
     this.prng = createPRNG(seed);
     this.yearlySpawn = YEARLY_NEW;
     this.levelGroups = initLevelGroups();
-    this.aliveLevelIds = initLevelGroups();
+    this.aliveLevelIds = this.levelGroups;
     this.levelArrayCache = initLevelArrayCache();
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
@@ -130,12 +136,11 @@ export class SimulationEngine {
       }
       this.aliveCount++;
       this.levelGroups[0].add(id);
-      this.aliveLevelIds[0].add(id);
     }
     this.spawned += count;
   }
 
-  tickCultivators(events: RichEvent[]): void {
+  tickCultivators(events: EventBuffer = null): void {
     profiler.start('tickCultivators');
     for (let i = 0; i < this.nextId; i++) {
       const c = this.cultivators[i];
@@ -166,11 +171,10 @@ export class SimulationEngine {
         this._deadIds.push(c.id);
         const deathLevel = c.level;
         this.levelGroups[deathLevel].delete(c.id);
-        this.aliveLevelIds[deathLevel].delete(c.id);
 
         this.hooks?.onExpiry(c, this.year);
 
-        if (deathLevel >= 2) {
+        if (events && deathLevel >= 2) {
           const name = this.hooks?.getName(c.id);
           const ee: RichExpiryEvent = {
             type: 'expiry', year: this.year, newsRank: 'C',
@@ -273,20 +277,19 @@ export class SimulationEngine {
     };
   }
 
-  tickYear(): { isExtinct: boolean; events: RichEvent[] } {
+  tickYear(collectEvents = true): { isExtinct: boolean; events: RichEvent[] } {
     profiler.start('tickYear');
     this.resetYearCounters();
     this.spawnCultivators(this.yearlySpawn);
-    const events: RichEvent[] = [];
+    const events: EventBuffer = collectEvents ? [] : null;
     this.tickCultivators(events);
-    const combatEvents = processEncounters(this);
-    for (const e of combatEvents) events.push(e);
+    processEncounters(this, events);
     this.purgeDead();
     const isExtinct = this.aliveCount === 0;
     this._summaryYear = this.year;
     this.year++;
     profiler.end('tickYear');
-    return { isExtinct, events };
+    return { isExtinct, events: events ?? [] };
   }
 
   resetYearCounters(): void {
@@ -312,7 +315,7 @@ export class SimulationEngine {
     this.nextId = 0;
     this.aliveCount = 0;
     this.levelGroups = initLevelGroups();
-    this.aliveLevelIds = initLevelGroups();
+    this.aliveLevelIds = this.levelGroups;
     this.levelArrayCache = initLevelArrayCache();
     this.aliveIds.length = 0;
     this._ageBuffers = initBuffers();
@@ -392,7 +395,7 @@ const BT_CULT_LOSS_THRESHOLD = (BREAKTHROUGH_NOTHING_W + BREAKTHROUGH_CULT_LOSS_
 
 export function tryBreakthrough(
   engine: SimulationEngine, c: Cultivator,
-  events: RichEvent[], cause: 'natural' | 'combat',
+  events: EventBuffer, cause: 'natural' | 'combat',
 ): boolean {
   const year = engine.year;
   if (c.level >= MAX_LEVEL) return false;
@@ -408,14 +411,17 @@ export function tryBreakthrough(
     c.maxAge += lifespanBonus(c.level);
     engine.levelGroups[prevLevel].delete(c.id);
     engine.levelGroups[c.level].add(c.id);
-    engine.aliveLevelIds[prevLevel].delete(c.id);
-    engine.aliveLevelIds[c.level].add(c.id);
     engine.promotionCounts[c.level]++;
     engine.breakthroughSuccesses++;
 
     engine.hooks?.onPromotion(c, c.level, year);
 
     if (c.level >= 2) {
+      if (!events) {
+        engine.milestones.recordPromotion(c.level);
+        return true;
+      }
+
       const name = engine.hooks?.getName(c.id);
       const pe: RichPromotionEvent = {
         type: 'promotion', year, newsRank: 'C',
@@ -447,7 +453,7 @@ export function tryBreakthrough(
     }
   }
 
-  if (c.level >= 2) {
+  if (events && c.level >= 2) {
     const name = engine.hooks?.getName(c.id);
     const be: RichBreakthroughEvent = {
       type: 'breakthrough_fail', year,
