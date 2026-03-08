@@ -158,6 +158,7 @@ export class SimulationEngine {
       const target = SUSTAINABLE_MAX_AGE[c.level];
       if (c.maxAge > target) {
         c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
+
       }
 
       tryBreakthrough(this, c, events, 'natural');
@@ -408,7 +409,7 @@ export function tryBreakthrough(
   if (engine.prng() < breakthroughChance(c.level)) {
     const prevLevel = c.level;
     c.level++;
-    c.maxAge += lifespanBonus(c.level);
+    c.maxAge = Math.min(SUSTAINABLE_MAX_AGE[MAX_LEVEL], c.maxAge + lifespanBonus(c.level));
     engine.levelGroups[prevLevel].delete(c.id);
     engine.levelGroups[c.level].add(c.id);
     engine.promotionCounts[c.level]++;

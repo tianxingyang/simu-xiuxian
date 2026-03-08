@@ -20,8 +20,8 @@ const TARGET_DISTRIBUTION = [
 
 const RELATIVE_TOLERANCE = 0.10; // ±10%
 
-// Lv0~Lv4 are asserted; Lv5+ are logged but not asserted (pending future tuning)
-const ASSERTED_LEVELS = 5; // Lv0 through Lv4
+// All levels are asserted, including Lv5~Lv7
+const ASSERTED_LEVELS = LEVEL_COUNT; // Lv0 through Lv7
 
 const TOTAL_TEST_YEARS = 100_000;
 const WARMUP_YEARS = 2_000;

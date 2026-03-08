@@ -5,6 +5,7 @@ import type {
   RichCombatEvent,
   RichEvent,
 } from '../types';
+import { gaussianContribution, getBalanceProfile, sigmoidContribution } from '../balance';
 import {
   DEFEAT_CULT_LOSS_RATE,
   DEFEAT_CULT_LOSS_W,
@@ -146,8 +147,10 @@ function resolveDefeatOutcome(
   loserLevel: number,
 ): number {
   const gap = (winnerSnap - loserSnap) / (winnerSnap + loserSnap);
+  const profile = getBalanceProfile();
+  const deathBoost = Math.exp(gaussianContribution(loserLevel, profile.combat.deathBoost));
   const deathChance = Math.min(DEFEAT_MAX_DEATH,
-    DEFEAT_DEATH_BASE * DEFEAT_DEATH_DECAY ** loserLevel * (1 + DEFEAT_GAP_SEVERITY * gap));
+    DEFEAT_DEATH_BASE * DEFEAT_DEATH_DECAY ** loserLevel * (1 + DEFEAT_GAP_SEVERITY * gap) * deathBoost);
   if (prng() < deathChance) return 0;
   const total = DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W + DEFEAT_MERIDIAN_W + DEFEAT_DEMOTION_W;
   const r = prng();
@@ -223,7 +226,9 @@ function resolveCombat(
   const baseLoot = levelBase * LOOT_BASE_RATE;
   const excess = Math.max(0, loserSnap - levelBase);
   const luck = truncatedGaussian(engine.prng, LUCK_MEAN, LUCK_STDDEV, LUCK_MIN, LUCK_MAX);
-  const loot = Math.max(0.1, round1(baseLoot + excess * LOOT_VARIABLE_RATE * luck));
+  const profile = getBalanceProfile();
+  const lootPenalty = Math.exp(-sigmoidContribution(combatLevel, profile.combat.lootPenalty));
+  const loot = Math.max(0.1, round1((baseLoot + excess * LOOT_VARIABLE_RATE * luck) * lootPenalty));
   winner.cultivation += loot;
 
   const loserCombatPower = loser === a ? aCombatPower : bCombatPower;
