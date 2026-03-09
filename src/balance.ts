@@ -18,6 +18,7 @@ export type ThresholdBalance = {
   gateBoost: GaussianCurve;
   peakBoost: GaussianCurve;
   reliefBoost: GaussianCurve;
+  finalRelief: GaussianCurve;
 };
 
 export type GaussianCurve = {
@@ -47,6 +48,7 @@ export type BalanceProfileInput = Partial<{
     gateBoost?: Partial<GaussianCurve>;
     peakBoost?: Partial<GaussianCurve>;
     reliefBoost?: Partial<GaussianCurve>;
+    finalRelief?: Partial<GaussianCurve>;
   };
   combat: Partial<CombatBalance> & {
     deathBoost?: Partial<GaussianCurve>;
@@ -67,6 +69,7 @@ function freezeProfile(profile: BalanceProfile): Readonly<BalanceProfile> {
       gateBoost: Object.freeze({ ...profile.threshold.gateBoost }),
       peakBoost: Object.freeze({ ...profile.threshold.peakBoost }),
       reliefBoost: Object.freeze({ ...profile.threshold.reliefBoost }),
+      finalRelief: Object.freeze({ ...profile.threshold.finalRelief }),
     }),
     combat: Object.freeze({
       deathBoost: Object.freeze({ ...profile.combat.deathBoost }),
@@ -111,6 +114,7 @@ function cloneProfile(profile: Readonly<BalanceProfile>): BalanceProfile {
       gateBoost: { ...profile.threshold.gateBoost },
       peakBoost: { ...profile.threshold.peakBoost },
       reliefBoost: { ...profile.threshold.reliefBoost },
+      finalRelief: { ...profile.threshold.finalRelief },
     },
     combat: {
       deathBoost: { ...profile.combat.deathBoost },
@@ -132,6 +136,7 @@ function mergeProfile(overrides: BalanceProfileInput = {}): BalanceProfile {
       gateBoost: mergeGaussianCurve(DEFAULT_BALANCE_PROFILE.threshold.gateBoost, overrides.threshold?.gateBoost),
       peakBoost: mergeGaussianCurve(DEFAULT_BALANCE_PROFILE.threshold.peakBoost, overrides.threshold?.peakBoost),
       reliefBoost: mergeGaussianCurve(DEFAULT_BALANCE_PROFILE.threshold.reliefBoost, overrides.threshold?.reliefBoost),
+      finalRelief: mergeGaussianCurve(DEFAULT_BALANCE_PROFILE.threshold.finalRelief, overrides.threshold?.finalRelief),
     },
     combat: {
       deathBoost: mergeGaussianCurve(DEFAULT_BALANCE_PROFILE.combat.deathBoost, overrides.combat?.deathBoost),
