@@ -1,20 +1,20 @@
 import type { BalanceProfile } from '../balance';
 
-export const BALANCE_PRESET_ID_V2026_03_08 = '2026-03-08' as const;
+export const BALANCE_PRESET_ID_V2026_03_09 = '2026-03-09' as const;
 
-export const BALANCE_PRESET_V2026_03_08: BalanceProfile = {
+export const BALANCE_PRESET_V2026_03_09: BalanceProfile = {
   breakthrough: {
     a: 0.454,
-    b: 0.103,
+    b: 0.085,
     tailPenalty: {
-      amplitude: 0.04,
-      center: 5.8,
-      steepness: 1.8,
+      amplitude: 1.0,
+      center: 4.9,
+      steepness: 2.2,
     },
     gatePenalty: {
-      amplitude: 1.53,
-      center: 4.19,
-      width: 0.29,
+      amplitude: 0.7,
+      center: 4.7,
+      width: 1.2,
     },
   },
   threshold: {
@@ -30,18 +30,18 @@ export const BALANCE_PRESET_V2026_03_08: BalanceProfile = {
     },
     peakBoost: {
       amplitude: 1.55,
-      center: 5.85,
+      center: 5.75,
       width: 0.39,
     },
     reliefBoost: {
       amplitude: -0.8,
-      center: 7,
+      center: 7.0,
       width: 0.28,
     },
     finalRelief: {
       amplitude: 0,
-      center: 7,
-      width: 0.3,
+      center: 7.0,
+      width: 0.2,
     },
   },
   combat: {

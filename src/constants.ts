@@ -131,7 +131,8 @@ function computeThreshold(level: number): number {
   const gateBoost = gaussianContribution(level, profile.threshold.gateBoost);
   const peakBoost = gaussianContribution(level, profile.threshold.peakBoost);
   const reliefBoost = gaussianContribution(level, profile.threshold.reliefBoost);
-  return computeThresholdWithTail(level, tailBoost + gateBoost + peakBoost + reliefBoost);
+  const finalRelief = gaussianContribution(level, profile.threshold.finalRelief);
+  return computeThresholdWithTail(level, tailBoost + gateBoost + peakBoost + reliefBoost + finalRelief);
 }
 
 export function threshold(level: number): number {
@@ -154,7 +155,8 @@ export const THRESHOLDS: readonly number[] = Object.freeze(
     const gateBoost = gaussianContribution(level, DEFAULT_BALANCE_PROFILE.threshold.gateBoost);
     const peakBoost = gaussianContribution(level, DEFAULT_BALANCE_PROFILE.threshold.peakBoost);
     const reliefBoost = gaussianContribution(level, DEFAULT_BALANCE_PROFILE.threshold.reliefBoost);
-    return computeThresholdWithTail(level, tailBoost + gateBoost + peakBoost + reliefBoost);
+    const finalRelief = gaussianContribution(level, DEFAULT_BALANCE_PROFILE.threshold.finalRelief);
+    return computeThresholdWithTail(level, tailBoost + gateBoost + peakBoost + reliefBoost + finalRelief);
   }),
 );
 

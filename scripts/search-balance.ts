@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { SimulationEngine } from '../src/engine/simulation';
 import { DEFAULT_BALANCE_PROFILE, resetBalanceProfile, setBalanceProfile, type BalanceProfileInput } from '../src/balance';
-import { LEVEL_COUNT, LEVEL_NAMES } from '../src/constants';
+import { breakthroughChance, LEVEL_COUNT, LEVEL_NAMES } from '../src/constants';
 
 type SearchOptions = {
   totalYears: number;
@@ -20,10 +20,14 @@ type Candidate = {
   score?: number;
   avgDist?: number[];
   violations?: number;
+  breakthroughCurve?: number[];
+  monotonicViolations?: number;
 };
 
 const TARGET_DISTRIBUTION = [59.17, 27.95, 9.78, 2.54, 0.487, 0.069, 0.007, 0.001] as const;
 const RELATIVE_TOLERANCE = 0.10;
+const MONOTONIC_BASE_PENALTY = 250;
+const MONOTONIC_DIFF_WEIGHT = 10_000;
 
 const DEFAULT_OPTIONS: SearchOptions = {
   totalYears: 3_000,
@@ -107,6 +111,11 @@ function candidateFromRandom(rng: () => number, id: number): Candidate {
           center: round3(randIn(rng, 6.6, 7.2)),
           width: round3(randIn(rng, 0.18, 0.6)),
         },
+        finalRelief: {
+          amplitude: round3(randIn(rng, -1.4, 0)),
+          center: round3(randIn(rng, 6.8, 7.2)),
+          width: round3(randIn(rng, 0.12, 0.5)),
+        },
       },
       combat: {
         deathBoost: {
@@ -160,6 +169,11 @@ function mutateCandidate(base: Candidate, rng: () => number, id: number, scale: 
     center: round3(clamp((profile.threshold.reliefBoost?.center ?? 7.0) + randIn(rng, -0.3, 0.3) * scale, 6.4, 7.4)),
     width: round3(clamp((profile.threshold.reliefBoost?.width ?? 0.28) + randIn(rng, -0.15, 0.15) * scale, 0.12, 0.9)),
   };
+  profile.threshold.finalRelief = {
+    amplitude: round3(clamp((profile.threshold.finalRelief?.amplitude ?? 0) + randIn(rng, -1.0, 1.0) * scale, -2.5, 0)),
+    center: round3(clamp((profile.threshold.finalRelief?.center ?? 7.0) + randIn(rng, -0.2, 0.2) * scale, 6.7, 7.3)),
+    width: round3(clamp((profile.threshold.finalRelief?.width ?? 0.28) + randIn(rng, -0.12, 0.12) * scale, 0.08, 0.7)),
+  };
   profile.combat.deathBoost = {
     amplitude: round3(clamp((profile.combat.deathBoost?.amplitude ?? 0) + randIn(rng, -1.0, 1.0) * scale, 0, 3.5)),
     center: round3(clamp((profile.combat.deathBoost?.center ?? 5.2) + randIn(rng, -0.8, 0.8) * scale, 3.8, 6.8)),
@@ -194,6 +208,23 @@ function scoreDistribution(avgDist: number[]): { score: number; violations: numb
   return { score, violations };
 }
 
+function collectBreakthroughCurve(): number[] {
+  return Array.from({ length: LEVEL_COUNT - 1 }, (_, level) => breakthroughChance(level));
+}
+
+function scoreBreakthroughCurve(curve: number[]): { score: number; violations: number } {
+  let score = 0;
+  let violations = 0;
+  for (let level = 0; level < curve.length - 1; level++) {
+    const current = curve[level];
+    const next = curve[level + 1];
+    if (next < current) continue;
+    violations++;
+    score += MONOTONIC_BASE_PENALTY + (next - current) * MONOTONIC_DIFF_WEIGHT;
+  }
+  return { score, violations };
+}
+
 function evaluateCandidate(candidate: Candidate, options: SearchOptions): Candidate {
   setBalanceProfile(candidate.profile);
   const distSums = new Array(LEVEL_COUNT).fill(0);
@@ -213,14 +244,30 @@ function evaluateCandidate(candidate: Candidate, options: SearchOptions): Candid
     }
   }
 
+  const breakthroughCurve = collectBreakthroughCurve();
+  const curveScore = scoreBreakthroughCurve(breakthroughCurve);
   resetBalanceProfile();
   if (sampleCount === 0) {
-    return { ...candidate, score: Number.POSITIVE_INFINITY, avgDist: new Array(LEVEL_COUNT).fill(0), violations: LEVEL_COUNT };
+    return {
+      ...candidate,
+      score: Number.POSITIVE_INFINITY,
+      avgDist: new Array(LEVEL_COUNT).fill(0),
+      breakthroughCurve,
+      violations: LEVEL_COUNT + curveScore.violations,
+      monotonicViolations: curveScore.violations,
+    };
   }
 
   const avgDist = distSums.map(value => value / sampleCount);
-  const { score, violations } = scoreDistribution(avgDist);
-  return { ...candidate, score, avgDist, violations };
+  const distScore = scoreDistribution(avgDist);
+  return {
+    ...candidate,
+    score: distScore.score + curveScore.score,
+    avgDist,
+    breakthroughCurve,
+    violations: distScore.violations + curveScore.violations,
+    monotonicViolations: curveScore.violations,
+  };
 }
 
 function printCandidate(label: string, candidate: Candidate): void {
@@ -228,7 +275,14 @@ function printCandidate(label: string, candidate: Candidate): void {
   const summary = candidate.avgDist
     .map((actual, level) => `${LEVEL_NAMES[level]}=${actual.toFixed(4)}%`)
     .join(', ');
-  console.log(`${label} score=${candidate.score.toFixed(4)} violations=${candidate.violations} :: ${summary}`);
+  const curveSummary = candidate.breakthroughCurve
+    ?.map((chance, level) => `Lv${level}=${(chance * 100).toFixed(3)}%`)
+    .join(', ') ?? '';
+  console.log(
+    `${label} score=${candidate.score.toFixed(4)} violations=${candidate.violations}` +
+    ` monotonic=${candidate.monotonicViolations ?? 0} :: ${summary}`,
+  );
+  console.log(`breakthroughCurve :: ${curveSummary}`);
   console.log(JSON.stringify(candidate.profile, null, 2));
 }
 

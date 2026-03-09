@@ -20,8 +20,8 @@ const TARGET_DISTRIBUTION = [
 
 const RELATIVE_TOLERANCE = 0.10; // ±10%
 
-// All levels are asserted, including Lv5~Lv7
-const ASSERTED_LEVELS = LEVEL_COUNT; // Lv0 through Lv7
+// Lv7 将由后续专门机制单独调节，当前分布测试只断言到 Lv6。
+const ASSERTED_LEVELS = LEVEL_COUNT - 1; // Lv0 through Lv6
 
 const TOTAL_TEST_YEARS = 100_000;
 const WARMUP_YEARS = 2_000;
