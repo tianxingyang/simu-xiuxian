@@ -1,0 +1,44 @@
+{
+  "id": "tribulation-ascension",
+  "name": "tribulation-ascension",
+  "title": "brainstorm: Lv7 tribulation-ascension exit",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "engine,types,balance,events,tests",
+  "priority": "P2",
+  "creator": "vitoyang",
+  "assignee": "vitoyang",
+  "createdAt": "2026-03-11",
+  "completedAt": "2026-03-11",
+  "branch": "feature/tribulation-ascension",
+  "base_branch": "main",
+  "worktree_path": "/home/yangtx/work/trellis-worktrees/feature/tribulation-ascension",
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
