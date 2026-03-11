@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "openspec/changes/event-system-and-daily-report/specs/daily-report/spec.md", "reason": "Check against daily report spec requirements and PBT properties"}
+{"file": "openspec/changes/event-system-and-daily-report/specs/backend-service/spec.md", "reason": "Check startup backfill and /api/report concurrency requirements"}
+{"file": "server/db.ts", "reason": "Verify correct DB function usage"}
+{"file": "server/config.ts", "reason": "Verify correct config usage"}

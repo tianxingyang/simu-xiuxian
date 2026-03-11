@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "openspec/changes/event-system-and-daily-report/specs/daily-report/spec.md", "reason": "Daily report detailed spec: aggregation, prompt, API, storage, cron, QQ push"}
+{"file": "openspec/changes/event-system-and-daily-report/specs/backend-service/spec.md", "reason": "Backend service spec: startup backfill, /api/report endpoint, concurrency guard"}
+{"file": "server/db.ts", "reason": "Existing DB layer: query functions, upsert pattern, row types"}
+{"file": "server/config.ts", "reason": "Config reading pattern: env vars for DeepSeek, OneBot, cron"}
+{"file": "server/index.ts", "reason": "HTTP server: endpoint registration, existing /api/report stub to replace"}
+{"file": "server/events.ts", "reason": "Events module pattern: imports from src/, pure function style"}
+{"file": "server/identity.ts", "reason": "IdentityManager + NamedCultivator interface for bio enrichment"}
+{"file": "src/types.ts", "reason": "RichEvent union type, NewsRank, CombatActor"}
+{"file": "src/constants.ts", "reason": "LEVEL_NAMES for promotion statistics keys"}

@@ -5,15 +5,15 @@
   "description": "",
   "status": "planning",
   "dev_type": null,
-  "scope": null,
+  "scope": "server/reporter.ts, server/bot.ts, server/index.ts, server/db.ts",
   "priority": "P2",
   "creator": "vitoyang",
   "assignee": "vitoyang",
   "createdAt": "2026-03-11",
   "completedAt": null,
-  "branch": null,
+  "branch": "feature/daily-report-pipeline",
   "base_branch": "main",
-  "worktree_path": null,
+  "worktree_path": "/home/yangtx/work/trellis-worktrees/feature/daily-report-pipeline",
   "current_phase": 0,
   "next_action": [
     {
