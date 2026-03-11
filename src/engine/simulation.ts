@@ -524,10 +524,12 @@ export function tryTribulation(
     };
     events.push(te);
 
-    const ms = engine.milestones.checkDeath(
-      deathLevel, engine.levelGroups[deathLevel].size,
-      c.id, name ?? '', engine.year,
-    );
-    if (ms) events.push(ms);
+    if (!ascended) {
+      const ms = engine.milestones.checkDeath(
+        deathLevel, engine.levelGroups[deathLevel].size,
+        c.id, name ?? '', engine.year,
+      );
+      if (ms) events.push(ms);
+    }
   }
 }
