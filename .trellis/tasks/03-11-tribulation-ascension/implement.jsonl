@@ -1,0 +1,19 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "openspec/changes/tribulation-ascension/proposal.md", "reason": "Design proposal with full scope and affected files"}
+{"file": "src/types.ts", "reason": "Core types: Cultivator, RichEvent union, EngineHooks, YearSummary, SimEvent"}
+{"file": "src/balance.ts", "reason": "BalanceProfile structure - pattern for TribulationBalance section"}
+{"file": "src/constants.ts", "reason": "Constants and breakthroughChance sigmoid - pattern for tribulationChance"}
+{"file": "src/engine/simulation.ts", "reason": "SimulationEngine: counters, tickCultivators, tryBreakthrough, getSummary, spawnCultivators"}
+{"file": "src/engine/combat.ts", "reason": "scoreNewsRank function"}
+{"file": "src/engine/worker.ts", "reason": "richToSimEvent worker-side converter"}
+{"file": "server/events.ts", "reason": "toDisplayEvent server-side converter"}
+{"file": "server/runner.ts", "reason": "bindHooks - EngineHooks wiring"}
+{"file": "server/identity.ts", "reason": "IdentityManager - deathCause type, cultivator tracking"}
+{"file": "src/balance-presets/v2026-03-08.ts", "reason": "Latest balance preset - add tribulation section"}
+{"file": "src/balance-presets/index.ts", "reason": "Balance presets index"}
+{"file": "scripts/search-balance.ts", "reason": "Balance search script - adapt for tribulation params"}
+{"file": "test/distribution.test.ts", "reason": "Distribution test - adapt for Lv7 assertion"}
+{"file": "test/breakthrough-chance.test.ts", "reason": "Breakthrough curve test - pattern for tribulationChance test"}
+{"file": "test/milestone-buffering.test.ts", "reason": "Milestone test - pattern for unit testing tryTribulation"}

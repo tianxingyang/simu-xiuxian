@@ -7,6 +7,7 @@ const TYPE_LABELS: Record<SimEvent['type'], string> = {
   promotion: '晋升',
   expiry: '寿尽',
   breakthrough_fail: '破境失败',
+  tribulation: '天劫',
 };
 
 const TYPE_COLORS: Record<SimEvent['type'], string> = {
@@ -14,6 +15,7 @@ const TYPE_COLORS: Record<SimEvent['type'], string> = {
   promotion: '#ffd700',
   expiry: 'var(--text-dim)',
   breakthrough_fail: '#9f7aea',
+  tribulation: '#ff4500',
 };
 
 interface Props {

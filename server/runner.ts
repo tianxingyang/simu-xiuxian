@@ -187,6 +187,7 @@ export class Runner {
       onPromotion(c, lv, y) { id.onPromotion(c, lv, y); },
       onCombatResult(w, l, d, y) { id.onCombatResult(w, l, d, y); },
       onExpiry(c, y) { id.onExpiry(c, y); },
+      onTribulation(c, outcome, y) { id.onTribulation(c, outcome, y); },
       getName(cid) { return id.getActive(cid)?.name; },
     };
     this.engine.hooks = hooks;

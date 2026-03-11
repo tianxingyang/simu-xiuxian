@@ -11,6 +11,7 @@ export interface Cultivator {
   breakthroughCooldownUntil: number;
   alive: boolean;
   cachedCourage: number;
+  reachedMaxLevelAt: number;
 }
 
 export interface LevelStat {
@@ -28,6 +29,9 @@ export interface YearSummary {
   deaths: number;
   combatDeaths: number;
   expiryDeaths: number;
+  tribulations: number;
+  ascensions: number;
+  tribulationDeaths: number;
   promotions: number[];
   highestLevel: number;
   highestCultivation: number;
@@ -45,7 +49,7 @@ export interface YearSummary {
 export interface SimEvent {
   id: number;
   year: number;
-  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail';
+  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation';
   actorLevel: number;
   detail: string;
 }
@@ -117,17 +121,27 @@ export interface RichBreakthroughEvent {
   cause: 'natural' | 'combat';
 }
 
+export interface RichTribulationEvent {
+  type: 'tribulation';
+  year: number;
+  newsRank: NewsRank;
+  subject: { id: number; name?: string; level: number; age: number };
+  outcome: 'ascension' | 'death';
+}
+
 export type RichEvent =
   | RichCombatEvent
   | RichPromotionEvent
   | RichExpiryEvent
   | RichMilestoneEvent
-  | RichBreakthroughEvent;
+  | RichBreakthroughEvent
+  | RichTribulationEvent;
 
 export interface EngineHooks {
   onPromotion(c: Cultivator, toLevel: number, year: number): void;
   onCombatResult(winner: Cultivator, loser: Cultivator, loserDied: boolean, year: number): void;
   onExpiry(c: Cultivator, year: number): void;
+  onTribulation(c: Cultivator, outcome: 'ascension' | 'death', year: number): void;
   getName(id: number): string | undefined;
 }
 

@@ -20,7 +20,9 @@ export default memo(function StatsPanel({ summary }: Props) {
           <Stat label="本年新增" value={fmt(summary.newCultivators)} />
           <Stat label="本年死亡" value={fmt(summary.deaths)} />
           <Stat label="├ 战斗" value={fmt(summary.combatDeaths)} sub />
-          <Stat label="└ 寿尽" value={fmt(summary.expiryDeaths)} sub />
+          <Stat label="├ 寿尽" value={fmt(summary.expiryDeaths)} sub />
+          <Stat label="└ 天劫" value={fmt(summary.tribulationDeaths)} sub />
+          <Stat label="天劫/飞升" value={`${fmt(summary.tribulations)}/${fmt(summary.ascensions)}`} />
           <Stat label="战败存活" value={fmt(summary.combatDemotions + summary.combatInjuries + summary.combatCultLosses + summary.combatLightInjuries + summary.combatMeridianDamages)} />
           <Stat label="├ 跌境" value={fmt(summary.combatDemotions)} sub />
           <Stat label="├ 重伤" value={fmt(summary.combatInjuries)} sub />

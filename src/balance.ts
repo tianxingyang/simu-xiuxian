@@ -32,10 +32,16 @@ export type CombatBalance = {
   lootPenalty: SigmoidCurve;
 };
 
+export type TribulationBalance = {
+  chance: SigmoidCurve;
+  successRate: number;
+};
+
 export type BalanceProfile = {
   breakthrough: BreakthroughBalance;
   threshold: ThresholdBalance;
   combat: CombatBalance;
+  tribulation: TribulationBalance;
 };
 
 export type BalanceProfileInput = Partial<{
@@ -53,6 +59,9 @@ export type BalanceProfileInput = Partial<{
   combat: Partial<CombatBalance> & {
     deathBoost?: Partial<GaussianCurve>;
     lootPenalty?: Partial<SigmoidCurve>;
+  };
+  tribulation: Partial<TribulationBalance> & {
+    chance?: Partial<SigmoidCurve>;
   };
 }>;
 
@@ -74,6 +83,10 @@ function freezeProfile(profile: BalanceProfile): Readonly<BalanceProfile> {
     combat: Object.freeze({
       deathBoost: Object.freeze({ ...profile.combat.deathBoost }),
       lootPenalty: Object.freeze({ ...profile.combat.lootPenalty }),
+    }),
+    tribulation: Object.freeze({
+      chance: Object.freeze({ ...profile.tribulation.chance }),
+      successRate: profile.tribulation.successRate,
     }),
   });
 }
@@ -120,6 +133,10 @@ function cloneProfile(profile: Readonly<BalanceProfile>): BalanceProfile {
       deathBoost: { ...profile.combat.deathBoost },
       lootPenalty: { ...profile.combat.lootPenalty },
     },
+    tribulation: {
+      chance: { ...profile.tribulation.chance },
+      successRate: profile.tribulation.successRate,
+    },
   };
 }
 
@@ -141,6 +158,10 @@ function mergeProfile(overrides: BalanceProfileInput = {}): BalanceProfile {
     combat: {
       deathBoost: mergeGaussianCurve(DEFAULT_BALANCE_PROFILE.combat.deathBoost, overrides.combat?.deathBoost),
       lootPenalty: mergeCurve(DEFAULT_BALANCE_PROFILE.combat.lootPenalty, overrides.combat?.lootPenalty),
+    },
+    tribulation: {
+      chance: mergeCurve(DEFAULT_BALANCE_PROFILE.tribulation.chance, overrides.tribulation?.chance),
+      successRate: overrides.tribulation?.successRate ?? DEFAULT_BALANCE_PROFILE.tribulation.successRate,
     },
   };
 }
