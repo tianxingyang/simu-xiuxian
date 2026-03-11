@@ -60,5 +60,22 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
         : `${ln}境界最后一位修士${name}陨落，${ln}断代`;
       return { id, year: e.year, type: 'promotion', actorLevel: e.detail.level, detail };
     }
+    case 'breakthrough_fail': {
+      const penaltyText = e.penalty === 'injury' ? '受伤' : e.penalty === 'cultivation_loss' ? '修为受损' : '冷却';
+      const prefix = e.subject.name ? `${e.subject.name} ` : '';
+      return {
+        id, year: e.year, type: 'breakthrough_fail', actorLevel: e.subject.level,
+        detail: `${prefix}${LEVEL_NAMES[e.subject.level]}破境失败（${penaltyText}）`,
+      };
+    }
+    case 'tribulation': {
+      const prefix = e.subject.name ? `${e.subject.name} ` : '';
+      return {
+        id, year: e.year, type: 'tribulation', actorLevel: e.subject.level,
+        detail: e.outcome === 'ascension'
+          ? `${prefix}${LEVEL_NAMES[e.subject.level]}渡劫成功，飞升离去！`
+          : `${prefix}${LEVEL_NAMES[e.subject.level]}渡劫失败，陨落天劫之下`,
+      };
+    }
   }
 }

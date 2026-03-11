@@ -1,5 +1,6 @@
-import type { Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, YearSummary } from '../types';
-import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, lifespanBonus, round1, round2, threshold } from '../constants';
+import type { Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
+import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
+import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
 import { createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
@@ -78,6 +79,9 @@ export class SimulationEngine {
   breakthroughSuccesses = 0;
   breakthroughFailures = 0;
   expiryDeaths = 0;
+  tribulations = 0;
+  ascensions = 0;
+  tribulationDeaths = 0;
   promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
   spawned = 0;
 
@@ -129,9 +133,10 @@ export class SimulationEngine {
         c.breakthroughCooldownUntil = 0;
         c.alive = true;
         c.cachedCourage = effectiveCourage(c);
+        c.reachedMaxLevelAt = 0;
       } else {
         id = this.nextId++;
-        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0 };
+        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0, reachedMaxLevelAt: 0 };
         nc.cachedCourage = effectiveCourage(nc);
       }
       this.aliveCount++;
@@ -162,6 +167,11 @@ export class SimulationEngine {
       }
 
       tryBreakthrough(this, c, events, 'natural');
+
+      if (c.level === MAX_LEVEL && c.alive) {
+        tryTribulation(this, c, events);
+        if (!c.alive) continue;
+      }
 
       c.cachedCourage = effectiveCourage(c);
 
@@ -260,9 +270,12 @@ export class SimulationEngine {
       totalPopulation: total,
       levelCounts: buf.slice(),
       newCultivators: this.spawned,
-      deaths: this.combatDeaths + this.expiryDeaths,
+      deaths: this.combatDeaths + this.expiryDeaths + this.tribulationDeaths,
       combatDeaths: this.combatDeaths,
       expiryDeaths: this.expiryDeaths,
+      tribulations: this.tribulations,
+      ascensions: this.ascensions,
+      tribulationDeaths: this.tribulationDeaths,
       promotions: [...this.promotionCounts],
       highestLevel: highLevel,
       highestCultivation: highCult,
@@ -304,6 +317,9 @@ export class SimulationEngine {
     this.breakthroughSuccesses = 0;
     this.breakthroughFailures = 0;
     this.expiryDeaths = 0;
+    this.tribulations = 0;
+    this.ascensions = 0;
+    this.tribulationDeaths = 0;
     this.promotionCounts.fill(0);
     this.spawned = 0;
     this._deadIds.length = 0;
@@ -414,6 +430,7 @@ export function tryBreakthrough(
     engine.levelGroups[c.level].add(c.id);
     engine.promotionCounts[c.level]++;
     engine.breakthroughSuccesses++;
+    if (c.level === MAX_LEVEL) c.reachedMaxLevelAt = engine.year;
 
     engine.hooks?.onPromotion(c, c.level, year);
 
@@ -466,4 +483,53 @@ export function tryBreakthrough(
   }
 
   return false;
+}
+
+export function tryTribulation(
+  engine: SimulationEngine, c: Cultivator,
+  events: EventBuffer,
+): void {
+  if (c.reachedMaxLevelAt <= 0) return;
+  const yearsAtMax = engine.year - c.reachedMaxLevelAt;
+  if (yearsAtMax <= 0) return;
+
+  const chance = tribulationChance(yearsAtMax);
+  if (chance <= 0 || engine.prng() >= chance) return;
+
+  engine.tribulations++;
+  const profile = getBalanceProfile();
+  const ascended = engine.prng() < profile.tribulation.successRate;
+  const outcome: 'ascension' | 'death' = ascended ? 'ascension' : 'death';
+
+  const deathLevel = c.level;
+  c.alive = false;
+  engine.aliveCount--;
+  engine._deadIds.push(c.id);
+  engine.levelGroups[deathLevel].delete(c.id);
+
+  if (ascended) {
+    engine.ascensions++;
+  } else {
+    engine.tribulationDeaths++;
+  }
+
+  engine.hooks?.onTribulation(c, outcome, engine.year);
+
+  if (events) {
+    const name = engine.hooks?.getName(c.id);
+    const te: RichTribulationEvent = {
+      type: 'tribulation', year: engine.year, newsRank: 'S',
+      subject: { id: c.id, name, level: deathLevel, age: c.age },
+      outcome,
+    };
+    events.push(te);
+
+    if (!ascended) {
+      const ms = engine.milestones.checkDeath(
+        deathLevel, engine.levelGroups[deathLevel].size,
+        c.id, name ?? '', engine.year,
+      );
+      if (ms) events.push(ms);
+    }
+  }
 }

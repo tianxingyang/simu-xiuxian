@@ -174,6 +174,11 @@ export function breakthroughChance(level: number): number {
   return Math.exp(-(profile.breakthrough.a + profile.breakthrough.b * (2 * level + 1) + tailPenalty + gatePenalty));
 }
 
+export function tribulationChance(yearsAtMaxLevel: number): number {
+  const profile = getBalanceProfile();
+  return sigmoidContribution(yearsAtMaxLevel, profile.tribulation.chance);
+}
+
 export function round1(v: number): number {
   return Math.round(v * 10) / 10;
 }

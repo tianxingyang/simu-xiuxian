@@ -55,6 +55,16 @@ function richToSimEvent(e: RichEvent, id: number): SimEvent {
         actorLevel: e.subject.level,
         detail: `${LEVEL_NAMES[e.subject.level]}破境失败（${e.penalty === 'injury' ? '受伤' : e.penalty === 'cultivation_loss' ? '修为受损' : '冷却'}）`,
       };
+    case 'tribulation':
+      return {
+        id,
+        year: e.year,
+        type: 'tribulation',
+        actorLevel: e.subject.level,
+        detail: e.outcome === 'ascension'
+          ? `${LEVEL_NAMES[e.subject.level]}渡劫成功，飞升离去！`
+          : `${LEVEL_NAMES[e.subject.level]}渡劫失败，陨落天劫之下`,
+      };
   }
 }
 

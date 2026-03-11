@@ -48,7 +48,7 @@ export interface NamedCultivator {
   peakLevel: number;
   peakCultivation: number;
   deathYear?: number;
-  deathCause?: 'combat' | 'expiry';
+  deathCause?: 'combat' | 'expiry' | 'tribulation' | 'ascension';
   killedBy?: string;
 }
 
@@ -64,7 +64,7 @@ function rowToNamedCultivator(row: NamedCultivatorRow): NamedCultivator {
     peakLevel: row.peak_level,
     peakCultivation: row.peak_cultivation,
     deathYear: row.death_year ?? undefined,
-    deathCause: (row.death_cause as 'combat' | 'expiry') ?? undefined,
+    deathCause: (row.death_cause as NamedCultivator['deathCause']) ?? undefined,
     killedBy: row.killed_by ?? undefined,
   };
 }
@@ -183,6 +183,14 @@ export class IdentityManager {
     if (!nc) return;
     nc.deathYear = year;
     nc.deathCause = 'expiry';
+    this.dirty.add(c.id);
+  }
+
+  onTribulation(c: Cultivator, outcome: 'ascension' | 'death', year: number): void {
+    const nc = this.active.get(c.id);
+    if (!nc) return;
+    nc.deathYear = year;
+    nc.deathCause = outcome === 'ascension' ? 'ascension' : 'tribulation';
     this.dirty.add(c.id);
   }
 

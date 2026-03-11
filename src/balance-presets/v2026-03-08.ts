@@ -56,4 +56,12 @@ export const BALANCE_PRESET_V2026_03_08: BalanceProfile = {
       steepness: 2,
     },
   },
+  tribulation: {
+    chance: {
+      amplitude: 0.02,
+      center: 5000,
+      steepness: 0.001,
+    },
+    successRate: 0.12,
+  },
 };

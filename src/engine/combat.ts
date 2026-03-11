@@ -48,6 +48,7 @@ const OUTCOME_NAMES: DefeatOutcome[] = [
 
 export function scoreNewsRank(e: RichEvent): NewsRank {
   if (e.type === 'milestone') return 'S';
+  if (e.type === 'tribulation') return 'S';
   if (e.type === 'combat' && e.outcome === 'death' && e.loser.level >= 6) return 'S';
   if (e.type === 'combat') {
     const lv = Math.max(e.winner.level, e.loser.level);
