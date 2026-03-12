@@ -22,7 +22,8 @@ interface SimulationControls {
   reset: (seed: number, initialPop: number) => void;
 }
 
-const WS_URL = 'ws://localhost:3000/ws';
+const WS_URL = import.meta.env.VITE_WS_URL ??
+  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 

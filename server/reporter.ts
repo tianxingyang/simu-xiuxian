@@ -338,6 +338,12 @@ export function isBusy(): boolean {
 
 export async function generateDailyReport(date?: string): Promise<void> {
   const targetDate = date ?? yesterdayUtc8();
+
+  if (_busy) {
+    console.warn(`[reporter] already busy, skipping report for ${targetDate}`);
+    return;
+  }
+
   console.log(`[reporter] generating report for ${targetDate}`);
 
   _busy = true;
