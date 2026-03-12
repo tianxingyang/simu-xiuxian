@@ -1,0 +1,4 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "openspec/changes/event-system-and-daily-report/specs/daily-report/spec.md", "reason": "Verify QQ push shape PBT property"}
+{"file": "server/config.ts", "reason": "Verify correct config usage"}
