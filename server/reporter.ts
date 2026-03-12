@@ -1,6 +1,7 @@
 import { LEVEL_NAMES } from '../src/constants.js';
 import type { RichEvent, NewsRank } from '../src/types.js';
 import { config } from './config.js';
+import { pushToQQ } from './bot.js';
 import {
   type EventRow,
   type NamedCultivatorRow,
@@ -323,38 +324,6 @@ export async function callDeepSeek(messages: PromptMessage[]): Promise<string> {
   };
 
   return json.choices[0].message.content;
-}
-
-// ---------------------------------------------------------------------------
-// pushToQQ
-// ---------------------------------------------------------------------------
-
-async function pushToQQ(report: string): Promise<void> {
-  if (!config.onebotHttpUrl || !config.qqGroupId) {
-    console.warn('[reporter] QQ push skipped: ONEBOT_HTTP_URL or QQ_GROUP_ID not configured');
-    return;
-  }
-
-  const url = `${config.onebotHttpUrl}/send_group_msg`;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (config.onebotToken) {
-    headers['Authorization'] = `Bearer ${config.onebotToken}`;
-  }
-
-  try {
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ group_id: config.qqGroupId, message: report }),
-    });
-    if (!resp.ok) {
-      console.error(`[reporter] QQ push failed: ${resp.status} ${await resp.text().catch(() => '')}`);
-    } else {
-      console.log('[reporter] QQ push sent');
-    }
-  } catch (err) {
-    console.error('[reporter] QQ push error:', err);
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -145,15 +145,21 @@ export interface EngineHooks {
   getName(id: number): string | undefined;
 }
 
-export type ToWorker =
+export type ToServer =
   | { type: 'start'; speed: number; seed: number; initialPop: number }
   | { type: 'pause' }
   | { type: 'step' }
   | { type: 'setSpeed'; speed: number }
   | { type: 'reset'; seed: number; initialPop: number }
-  | { type: 'ack' };
+  | { type: 'ack'; tickId: number };
 
-export type FromWorker =
-  | { type: 'tick'; summaries: YearSummary[]; events: SimEvent[] }
+export type FromServer =
+  | { type: 'tick'; tickId: number; summaries: YearSummary[]; events: SimEvent[] }
   | { type: 'paused'; reason: 'manual' | 'extinction' }
-  | { type: 'reset-done' };
+  | { type: 'reset-done' }
+  | { type: 'state'; year: number; running: boolean; speed: number; summary: YearSummary | null };
+
+/** @deprecated Use ToServer */
+export type ToWorker = ToServer;
+/** @deprecated Use FromServer */
+export type FromWorker = FromServer;

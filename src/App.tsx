@@ -21,6 +21,7 @@ function App() {
           isRunning={sim.isRunning}
           isPaused={sim.isPaused}
           extinctionNotice={sim.extinctionNotice}
+          connectionStatus={sim.connectionStatus}
           onStart={sim.start}
           onPause={sim.pause}
           onStep={sim.step}

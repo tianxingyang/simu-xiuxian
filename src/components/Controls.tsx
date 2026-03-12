@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ConnectionStatus } from '../hooks/useSimulation';
 
 interface Props {
   year: number;
@@ -6,6 +7,7 @@ interface Props {
   isRunning: boolean;
   isPaused: boolean;
   extinctionNotice: boolean;
+  connectionStatus: ConnectionStatus;
   onStart: (seed: number, initialPop: number) => void;
   onPause: () => void;
   onStep: () => void;
@@ -15,8 +17,14 @@ interface Props {
 
 const SPEED_LABELS = ['×1', '×5', '×10'] as const;
 
+const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
+  connected: '',
+  connecting: '连接中...',
+  disconnected: '已断开',
+};
+
 export default function Controls({
-  year, seed, isRunning, isPaused, extinctionNotice,
+  year, seed, isRunning, isPaused, extinctionNotice, connectionStatus,
   onStart, onPause, onStep, onSetSpeed, onReset,
 }: Props) {
   const [speedTier, setSpeedTier] = useState(1);
@@ -107,6 +115,10 @@ export default function Controls({
       </div>
 
       <div className="controls-info">
+        <span className={`conn-status conn-${connectionStatus}`} />
+        {CONNECTION_LABEL[connectionStatus] && (
+          <span className="conn-label">{CONNECTION_LABEL[connectionStatus]}</span>
+        )}
         <span>年份: {year}</span>
         {extinctionNotice && <span className="extinction">已灭绝</span>}
       </div>
