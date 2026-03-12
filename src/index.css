@@ -152,6 +152,31 @@ body {
   font-weight: 600;
 }
 
+.conn-status {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.conn-connected {
+  background: #4caf50;
+}
+
+.conn-connecting {
+  background: #ff9800;
+}
+
+.conn-disconnected {
+  background: #f44336;
+}
+
+.conn-label {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 /* Chart containers */
 .chart-container,
 .event-log,

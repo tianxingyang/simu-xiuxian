@@ -1,0 +1,5 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "openspec/changes/event-system-and-daily-report/specs/daily-report/spec.md", "reason": "QQ Bot push spec: OneBot v11 HTTP API, Authorization header, failure handling"}
+{"file": "server/config.ts", "reason": "Config pattern: onebotHttpUrl, onebotToken, qqGroupId"}
+{"file": "server/events.ts", "reason": "Module structure pattern: imports, logging style"}

@@ -8,12 +8,14 @@
   <img src="https://img.shields.io/badge/React-19-blue?logo=react" alt="React 19">
   <img src="https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript" alt="TypeScript">
   <img src="https://img.shields.io/badge/Vite-6-purple?logo=vite" alt="Vite">
+  <img src="https://img.shields.io/badge/Node.js-backend-green?logo=nodedotjs" alt="Node.js">
+  <img src="https://img.shields.io/badge/SQLite-storage-blue?logo=sqlite" alt="SQLite">
   <img src="https://img.shields.io/badge/License-Apache_2.0-green" alt="License">
 </p>
 
 ---
 
-一个基于 Web Worker 的修仙世界演化模拟器。模拟修仙者的修炼、突破、战斗与陨落，实时可视化种群动态与境界分布。
+一个修仙世界演化模拟器。模拟修仙者的修炼、突破、战斗与陨落，实时可视化种群动态与境界分布。后端服务持续运行模拟引擎，通过 WebSocket 将实时数据推送至前端仪表盘，并每日聚合事件经 LLM 润色后生成"修仙世界日报"推送至 QQ 群。
 
 ## Features
 
@@ -47,12 +49,32 @@
 - **寿元体系** — 晋升获得寿元加成，跌境后寿元以 20%/年速率渐进衰减至当前境界可维持水平
 - **机缘掠夺** — 胜者按败者修为和运气因子获得战利品
 
+### 修士身份系统
+
+修士晋升至结丹（Lv2）时获得修仙风格姓名（姓氏池 + 名字用字池随机组合，PRNG 驱动可复现），并开始追踪个体履历：击杀数、战斗胜败、晋升记录、巅峰修为、死因等。
+
+### 结构化事件与新闻评级
+
+事件系统产出带完整上下文的结构化 `RichEvent`（战斗、晋升、寿尽、里程碑），每个事件自动评定新闻价值等级：
+
+| 等级 | 类型 | 处理方式 |
+|------|------|---------|
+| S（头条） | 全服首位达到某境界 / 某境界最后一人陨落 | 完整展开，含人物履历 |
+| A（要闻） | 高阶战斗(Lv4+) / 以弱胜强 / 跨级晋升 | 完整展开 |
+| B（简讯） | 中阶晋升(Lv2-3) / 普通高阶战斗 | 聚合为统计数字 |
+| C（忽略） | 低阶日常 | 不入库 |
+
+### 修仙世界日报
+
+每日定时聚合模拟事件，按新闻价值筛选分级，构建结构化 Prompt 发送至 DeepSeek API，由 LLM 以"修仙史官"视角润色生成日报文本（~800字），通过 QQ 机器人（OneBot v11）推送至群。
+
 ### 可视化仪表盘
 
 - 境界分布柱状图
 - 种群趋势折线图（人口 / 平均年龄 / 平均勇气，Lv1–Lv7 分线展示）
 - 事件日志（战斗、晋升、陨落，含败者结局详情）
 - 统计面板（总人口、新增、死亡分项、晋升、境界统计表格含年龄/勇气均值和中位数）
+- 连接状态指示（connected / connecting / disconnected）
 
 ### 模拟控制
 
@@ -63,19 +85,24 @@
 
 ### 高性能架构
 
-- Web Worker 后台运算 + ACK 背压控制
+- Node.js 后端持续运行引擎 + WebSocket 实时推送 + ACK 背压控制
+- 前端断线自动重连（指数退避 1s–30s）
 - 密集数组存储 + 对象槽位复用（无 GC 抖动）
-- rAF 渲染节流（多条 Worker 消息合并为单次 React setState）
+- rAF 渲染节流（多条 WebSocket 消息合并为单次 React setState）
 - 趋势数据自动降采样（上限 2000 点）
+- SQLite 持久化（WAL 模式，事件/修士/日报/引擎状态）
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| UI | React 19 + Recharts |
+| Frontend | React 19 + Recharts |
+| Backend | Node.js + WebSocket (ws) |
+| Database | SQLite (better-sqlite3) |
+| LLM | DeepSeek API |
+| Bot | OneBot v11 (NapCat/LLOneBot) |
 | Language | TypeScript 5.8 |
-| Build | Vite 6 |
-| Compute | Web Worker |
+| Build | Vite 6 (frontend) + tsx/tsup (backend) |
 
 ## Getting Started
 
@@ -83,14 +110,30 @@
 # 安装依赖
 npm install
 
-# 启动开发服务器
+# 启动后端服务
+npm run server:dev
+
+# 启动前端开发服务器（另一个终端）
 npm run dev
 
 # 构建生产版本
 npm run build
 ```
 
-启动后访问 `http://localhost:5173`，点击 **Start** 开始模拟。
+### 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `PORT` | `3001` | 后端服务端口 |
+| `DEEPSEEK_API_KEY` | — | DeepSeek API Key（不设置则跳过 LLM 调用） |
+| `ONEBOT_HTTP_URL` | — | OneBot HTTP API 地址（不设置则跳过 QQ 推送） |
+| `QQ_GROUP_ID` | — | 推送目标 QQ 群号 |
+| `ONEBOT_TOKEN` | — | OneBot 认证令牌（可选） |
+| `REPORT_CRON` | `0 8 * * *` | 日报定时触发 cron 表达式（Asia/Shanghai） |
+| `DB_PATH` | `./data/simu-xiuxian.db` | SQLite 数据库路径 |
+| `VITE_WS_URL` | — | 前端 WebSocket 地址覆盖（默认从 origin 推导） |
+
+启动后端后访问 `http://localhost:5173`，点击 **Start** 开始模拟。
 
 ## Project Structure
 
@@ -99,7 +142,6 @@ src/
 ├── engine/
 │   ├── simulation.ts   # 核心模拟：年度循环、修炼、突破、寿尽、战败结局
 │   ├── combat.ts       # 战斗系统：遭遇、避战、胜负判定、机缘掠夺
-│   ├── worker.ts       # Web Worker：批量调度、背压控制、消息协议
 │   ├── prng.ts         # 伪随机数生成器 + 截断正态分布
 │   ├── benchmark.ts    # 性能基准测试
 │   └── profiler.ts     # 性能分析工具
@@ -109,11 +151,21 @@ src/
 │   ├── TrendChart.tsx   # 趋势图（人口/年龄/勇气三 Tab）
 │   ├── EventLog.tsx     # 事件日志
 │   ├── StatsPanel.tsx   # 统计面板 + 境界统计表格
-│   └── Controls.tsx     # 控制栏
+│   └── Controls.tsx     # 控制栏 + 连接状态指示
 ├── hooks/
-│   └── useSimulation.ts # Worker 通信 + rAF 缓冲合并
+│   └── useSimulation.ts # WebSocket 通信 + rAF 缓冲合并 + 断线重连
 ├── constants.ts         # 境界阈值、战斗参数、突破概率、伤害常量
 └── types.ts             # TypeScript 类型定义
+
+server/
+├── index.ts             # HTTP + WebSocket server 入口
+├── runner.ts            # 引擎运行器：生命周期管理、批量调度、背压控制
+├── identity.ts          # 修士身份系统：姓名生成、履历追踪
+├── events.ts            # 事件收集 + 新闻价值评分
+├── reporter.ts          # 日报管线：聚合 → Prompt → DeepSeek → 存储
+├── bot.ts               # QQ Bot 推送（OneBot v11）
+├── db.ts                # SQLite 数据层
+└── config.ts            # 环境变量配置
 ```
 
 ## License

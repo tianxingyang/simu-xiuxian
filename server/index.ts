@@ -1,6 +1,8 @@
 import { createServer, type ServerResponse } from 'node:http';
+import cron from 'node-cron';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config } from './config.js';
+import { generateDailyReport, isBusy, checkMissedReport } from './reporter.js';
 import { Runner, type Command } from './runner.js';
 
 function json(res: ServerResponse, status: number, data: unknown): void {
@@ -53,7 +55,10 @@ const server = createServer((req, res) => {
 
   if (url.pathname === '/api/report') {
     if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
-    json(res, 200, { status: 'ok' });
+    if (isBusy()) { json(res, 409, { status: 'busy' }); return; }
+    const date = url.searchParams.get('date') ?? undefined;
+    json(res, 200, { status: 'ok', date: date ?? 'yesterday' });
+    generateDailyReport(date).catch(err => console.error('[server] report generation error:', err));
     return;
   }
 
@@ -88,4 +93,17 @@ wss.on('connection', (ws) => {
 
 server.listen(config.port, config.host, () => {
   console.log(`[server] http://${config.host}:${config.port}`);
+
+  // Cron: daily report generation
+  cron.schedule(config.reportCron, () => {
+    console.log('[cron] triggering daily report');
+    generateDailyReport().catch(err => console.error('[cron] report error:', err));
+  }, { timezone: 'Asia/Shanghai' });
+  console.log(`[server] report cron scheduled: "${config.reportCron}" Asia/Shanghai`);
+
+  // Startup backfill: check if yesterday's report is missing
+  if (checkMissedReport()) {
+    console.log('[server] missed report detected, backfilling...');
+    generateDailyReport().catch(err => console.error('[server] backfill error:', err));
+  }
 });
