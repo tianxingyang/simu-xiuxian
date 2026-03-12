@@ -110,3 +110,74 @@ https://github.com/tianxingyang/simu-xiuxian/pull/7
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Event System Integration: Multi-Agent Pipeline + Spec Update
+
+**Date**: 2026-03-12
+**Task**: Event System Integration: Multi-Agent Pipeline + Spec Update
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+
+## Summary
+
+Completed the event-system-and-daily-report OpenSpec change (tasks 7-10) using multi-agent pipeline, then performed integration verification, PR creation, review feedback fixes, README update, and frontend spec documentation migration.
+
+## Work Done
+
+| Phase | Description |
+|-------|-------------|
+| Multi-agent dispatch | Launched 3 parallel worktree agents: daily-report-pipeline, frontend-websocket, qq-bot-push |
+| Integration merge | Merged 3 feature branches into `integration/event-system`, resolved conflicts |
+| Integration verification | Cross-branch defect fix (duplicate pushToQQ), end-to-end validation |
+| PR #10 | Created PR with all integration commits |
+| PR review fixes | Dynamic WS_URL derivation, generateDailyReport busy guard |
+| README update | Added backend architecture, identity system, daily report, env vars |
+| Spec docs update | Updated all 7 frontend spec files for Worker→WebSocket migration |
+
+## Key Files Modified
+
+- `server/reporter.ts` — Daily report pipeline (aggregate → prompt → DeepSeek → store → QQ push)
+- `server/bot.ts` — QQ Bot push (OneBot v11)
+- `server/index.ts` — Cron scheduling, backfill check, POST /api/report
+- `src/hooks/useSimulation.ts` — Worker→WebSocket migration, reconnection, tickId ACK
+- `src/types.ts` — ToServer/FromServer types with tickId and state variant
+- `src/components/Controls.tsx` — connectionStatus indicator
+- `README.md` — Full documentation update
+- `.trellis/spec/frontend/*.md` (7 files) — Architecture docs Worker→WebSocket
+
+## Decisions
+
+- **pushToQQ dedup**: Removed inline implementation in reporter.ts, imported from bot.ts
+- **WS_URL**: Derived from `location` with `VITE_WS_URL` env override instead of hardcoded
+- **Busy guard**: Moved `_busy` check into `generateDailyReport()` itself (covers cron + backfill + API)
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9825aad` | (see git log) |
+| `57508da` | (see git log) |
+| `b38baea` | (see git log) |
+| `e0123f6` | (see git log) |
+| `eda3a31` | (see git log) |
+| `892ea2e` | (see git log) |
+| `47f1c41` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
