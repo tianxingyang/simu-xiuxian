@@ -5,7 +5,7 @@
 All TypeScript interfaces and type unions are defined in `src/types.ts`. Do NOT scatter type definitions across component or engine files.
 
 ```
-src/types.ts  →  Cultivator, YearSummary, SimEvent, RichEvent, ToWorker, FromWorker, ...
+src/types.ts  →  Cultivator, YearSummary, SimEvent, RichEvent, ToServer, FromServer, ...
 ```
 
 ---
@@ -14,23 +14,24 @@ src/types.ts  →  Cultivator, YearSummary, SimEvent, RichEvent, ToWorker, FromW
 
 ### Discriminated Unions
 
-Worker messages use discriminated unions on the `type` field:
+WebSocket messages use discriminated unions on the `type` field:
 
 ```typescript
-// Worker input messages
-type ToWorker =
+// Client → Server
+type ToServer =
   | { type: 'start'; speed: number; seed: number; initialPop: number }
   | { type: 'pause' }
   | { type: 'step' }
   | { type: 'setSpeed'; speed: number }
   | { type: 'reset'; seed: number; initialPop: number }
-  | { type: 'ack' };
+  | { type: 'ack'; tickId: number };
 
-// Worker output messages
-type FromWorker =
-  | { type: 'tick'; summaries: YearSummary[]; events: SimEvent[] }
+// Server → Client
+type FromServer =
+  | { type: 'tick'; tickId: number; summaries: YearSummary[]; events: SimEvent[] }
   | { type: 'paused'; reason: 'manual' | 'extinction' }
-  | { type: 'reset-done' };
+  | { type: 'reset-done' }
+  | { type: 'state'; summary: YearSummary | null; running: boolean; speed: number };
 ```
 
 Rich events also use discriminated unions:
@@ -63,7 +64,7 @@ export const LEVEL_COLORS = [
 Use `satisfies` to type-check values without widening:
 
 ```typescript
-worker.postMessage({ type: 'ack' } satisfies ToWorker);
+ws.send(JSON.stringify({ type: 'ack', tickId: maxTickId } satisfies ToServer));
 ```
 
 ### `readonly` Modifier
@@ -124,7 +125,7 @@ import { LEVEL_COUNT, threshold } from '../constants';
 | Domain entities     | `src/types.ts`       | `Cultivator`, `LevelStat`            |
 | Data summaries      | `src/types.ts`       | `YearSummary`, `SimEvent`            |
 | Rich events         | `src/types.ts`       | `RichCombatEvent`, `RichEvent`       |
-| Worker messages     | `src/types.ts`       | `ToWorker`, `FromWorker`             |
+| WebSocket messages | `src/types.ts`       | `ToServer`, `FromServer`           |
 | Engine hooks        | `src/types.ts`       | `EngineHooks`                        |
 | Balance types       | `src/balance.ts`     | `BalanceProfile`, `SigmoidCurve`     |
 | Component props     | Each component file  | `interface Props { ... }`            |

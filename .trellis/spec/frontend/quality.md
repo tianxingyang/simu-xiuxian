@@ -21,9 +21,9 @@ npm run test:watch   # vitest (watch mode)
 
 ## Performance Patterns
 
-### Web Worker Compute Isolation
+### Node.js Backend Compute Isolation
 
-All simulation computation runs in a Web Worker (`engine/worker.ts`). The main thread only handles UI rendering.
+All simulation computation runs on the Node.js backend (`server/runner.ts`). The browser main thread only handles UI rendering. Data is streamed via WebSocket.
 
 ### Object Slot Reuse (No GC Pressure)
 
@@ -124,7 +124,7 @@ const engine = new SimulationEngine(seed, initialPop);
 | `any` type                | Loses type safety             | Use proper types or `unknown`    |
 | `console.log` in prod    | Noise                         | Remove or use profiler           |
 | Direct DOM manipulation   | React manages DOM             | Use state/refs                   |
-| Synchronous heavy compute | Blocks main thread            | Move to Web Worker               |
+| Synchronous heavy compute | Blocks main thread            | Keep in Node.js backend          |
 
 ---
 

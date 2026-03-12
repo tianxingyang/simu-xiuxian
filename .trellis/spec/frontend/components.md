@@ -72,10 +72,9 @@ Usage in `App.tsx`:
 
 ```tsx
 <Dashboard
-  controls={<Controls year={year} ... />}
+  controls={<Controls year={year} connectionStatus={sim.connectionStatus} ... />}
   levelChart={<LevelChart summary={sim.yearSummary} />}
   ...
-/>
 ```
 
 ### Private Helper Components

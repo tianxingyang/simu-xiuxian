@@ -4,22 +4,21 @@
 
 ```
 src/
-├── engine/               # Core simulation (runs in Web Worker)
+├── engine/               # Core simulation logic (shared by server)
 │   ├── simulation.ts     # SimulationEngine class, yearly cycle, breakthrough
 │   ├── combat.ts         # Combat: encounters, defeat outcomes, loot
-│   ├── worker.ts         # Web Worker message handling + batch dispatch
 │   ├── prng.ts           # Deterministic PRNG (mulberry32) + truncated gaussian
 │   ├── benchmark.ts      # Performance benchmark harness
 │   └── profiler.ts       # Inline profiler for hot path instrumentation
 ├── components/           # React UI components
 │   ├── Dashboard.tsx     # Layout shell (render-props pattern)
-│   ├── Controls.tsx      # Simulation control bar
+│   ├── Controls.tsx      # Simulation control bar + connection status indicator
 │   ├── LevelChart.tsx    # Level distribution bar chart (Recharts)
 │   ├── TrendChart.tsx    # Multi-tab trend line chart (Recharts)
 │   ├── EventLog.tsx      # Filterable event log list
 │   └── StatsPanel.tsx    # Statistics panel + level stats table
 ├── hooks/
-│   └── useSimulation.ts  # Worker comm + rAF batching + state
+│   └── useSimulation.ts  # WebSocket comm + rAF batching + reconnection + state
 ├── balance-presets/      # Versioned balance parameter presets
 │   ├── index.ts          # Current preset re-export
 │   └── v2026-03-08.ts    # Dated preset snapshot
@@ -40,11 +39,15 @@ test/                       # Vitest tests + analysis scripts
 ├── lifespan-cap.test.ts    # Lifespan boundary tests
 └── perf-bench.ts           # Performance benchmarks
 
-server/                     # Standalone Node.js server (optional)
-├── index.ts                # Entry + WebSocket
-├── db.ts                   # better-sqlite3 database
-├── runner.ts               # Server-side simulation runner
-└── config.ts               # Server config
+server/                     # Node.js backend (simulation engine + API)
+├── index.ts                # HTTP + WebSocket server entry, cron scheduling
+├── runner.ts               # Server-side simulation runner, batch dispatch, backpressure
+├── identity.ts             # Cultivator identity system: name generation, biography tracking
+├── events.ts               # Event collection + news value scoring (S/A/B/C)
+├── reporter.ts             # Daily report pipeline: aggregate → prompt → DeepSeek → store
+├── bot.ts                  # QQ Bot push (OneBot v11 HTTP API)
+├── db.ts                   # SQLite data layer (better-sqlite3, WAL mode)
+└── config.ts               # Environment variable configuration
 
 scripts/                    # Build/analysis scripts
 data/                       # SQLite database files (server)
@@ -62,6 +65,7 @@ data/                       # SQLite database files (server)
 | TypeScript types        | `src/types.ts`         | `Cultivator`, `YearSummary`      |
 | Constants & formulas    | `src/constants.ts`     | `LEVEL_NAMES`, `threshold()`     |
 | Balance profiles        | `src/balance-presets/` | `v2026-03-08.ts`                 |
+| Server modules          | `server/`              | `runner.ts`, `reporter.ts`       |
 | Tests                   | `test/`                | `distribution.test.ts`           |
 | Styles                  | `src/index.css`        | Single file                      |
 
