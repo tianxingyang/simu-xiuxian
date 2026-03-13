@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "server:dev": "tsx server/index.ts",
     "server:build": "tsup server/index.ts",
+    "cli": "tsx cli.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -23,10 +24,12 @@
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/blessed": "^0.1.27",
     "@types/react": "^19.1.4",
     "@types/react-dom": "^19.1.5",
     "@types/ws": "^8.5.14",
     "@vitejs/plugin-react": "^4.5.2",
+    "blessed": "^0.1.81",
     "tsup": "^8.4.0",
     "tsx": "^4.19.3",
     "typescript": "~5.8.3",

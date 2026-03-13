@@ -197,9 +197,30 @@ export class IdentityManager {
   flushToDB(): void {
     if (!this.pendingInserts.length && !this.dirty.size) return;
 
-    const db = getDB();
-    const run = db.transaction(() => {
-      for (const nc of this.pendingInserts) {
+    const inserts = this.pendingInserts.splice(0);
+    const dirtyIds = [...this.dirty];
+    this.dirty.clear();
+
+    const updates: Parameters<typeof updateNamedCultivators>[0] = [];
+    for (const id of dirtyIds) {
+      const nc = this.active.get(id);
+      if (!nc) continue;
+      updates.push({
+        id: nc.id,
+        killCount: nc.killCount,
+        combatWins: nc.combatWins,
+        combatLosses: nc.combatLosses,
+        promotionYears: JSON.stringify(nc.promotionYears),
+        peakLevel: nc.peakLevel,
+        peakCultivation: nc.peakCultivation,
+        deathYear: nc.deathYear,
+        deathCause: nc.deathCause,
+        killedBy: nc.killedBy,
+      });
+    }
+
+    getDB().transaction(() => {
+      for (const nc of inserts) {
         insertNamedCultivator({
           id: nc.id,
           name: nc.name,
@@ -209,29 +230,8 @@ export class IdentityManager {
           promotionYears: JSON.stringify(nc.promotionYears),
         });
       }
-      this.pendingInserts.length = 0;
-
-      const updates: Parameters<typeof updateNamedCultivators>[0] = [];
-      for (const id of this.dirty) {
-        const nc = this.active.get(id);
-        if (!nc) continue;
-        updates.push({
-          id: nc.id,
-          killCount: nc.killCount,
-          combatWins: nc.combatWins,
-          combatLosses: nc.combatLosses,
-          promotionYears: JSON.stringify(nc.promotionYears),
-          peakLevel: nc.peakLevel,
-          peakCultivation: nc.peakCultivation,
-          deathYear: nc.deathYear,
-          deathCause: nc.deathCause,
-          killedBy: nc.killedBy,
-        });
-      }
       if (updates.length) updateNamedCultivators(updates);
-      this.dirty.clear();
-    });
-    run();
+    })();
 
     for (const [id, nc] of this.active) {
       if (nc.deathYear !== undefined) this.active.delete(id);

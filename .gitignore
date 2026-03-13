@@ -3,3 +3,6 @@ dist/
 *.heaptimeline
 .claude/
 data/
+.env
+.pid/
+.logs/

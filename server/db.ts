@@ -132,7 +132,7 @@ export function insertNamedCultivator(data: {
 }): void {
   getDB()
     .prepare(
-      `INSERT INTO named_cultivators (id, name, named_at_year, peak_level, peak_cultivation, promotion_years)
+      `INSERT OR IGNORE INTO named_cultivators (id, name, named_at_year, peak_level, peak_cultivation, promotion_years)
        VALUES (?, ?, ?, ?, ?, ?)`
     )
     .run(data.id, data.name, data.namedAtYear, data.peakLevel, data.peakCultivation, data.promotionYears);
