@@ -6,6 +6,7 @@ import { IdentityManager } from './identity.js';
 
 const BATCH_SIZES: Record<number, number> = { 1: 100, 2: 500, 3: 1000 };
 const TARGET_INTERVAL = 2000;
+const ACK_TIMEOUT = TARGET_INTERVAL;
 
 export type BroadcastMsg =
   | { type: 'tick'; tickId: number; summaries: YearSummary[]; events: SimEvent[] }
@@ -49,6 +50,7 @@ export class Runner {
   private currentTickId = 0;
   private nextTickId = 1;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private ackTimer: ReturnType<typeof setTimeout> | null = null;
 
   private seed = 42;
   private lastSummary: YearSummary | null = null;
@@ -154,6 +156,7 @@ export class Runner {
       case 'ack': {
         if (!this.awaitingAck || !this.running || this.extinct) return;
         if (typeof cmd.tickId !== 'number' || cmd.tickId !== this.currentTickId) return;
+        this.clearAckTimer();
         this.awaitingAck = false;
         this.currentTickId = 0;
         setTimeout(() => this.runBatch(), 0);
@@ -198,6 +201,11 @@ export class Runner {
     this.awaitingAck = false;
     this.currentTickId = 0;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    this.clearAckTimer();
+  }
+
+  private clearAckTimer(): void {
+    if (this.ackTimer) { clearTimeout(this.ackTimer); this.ackTimer = null; }
   }
 
   private runBatch(): void {
@@ -241,6 +249,13 @@ export class Runner {
       }
       this.awaitingAck = true;
       this.currentTickId = tickId;
+      this.ackTimer = setTimeout(() => {
+        if (!this.awaitingAck || !this.running) return;
+        console.warn(`[runner] ack timeout (tickId=${tickId}), continuing`);
+        this.awaitingAck = false;
+        this.currentTickId = 0;
+        this.runBatch();
+      }, ACK_TIMEOUT);
     };
 
     if (this.extinct) { emit(); return; }
