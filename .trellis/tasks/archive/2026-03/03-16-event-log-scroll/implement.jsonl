@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "src/components/EventLog.tsx", "reason": "Target component to modify"}
+{"file": "src/index.css", "reason": "CSS styles for event log"}
