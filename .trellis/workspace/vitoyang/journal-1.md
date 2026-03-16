@@ -343,3 +343,42 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 名字回收机制
+
+**Date**: 2026-03-16
+**Task**: 名字回收机制
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+**问题**: 修士命名系统因姓氏概率加权，长时间模拟后频繁碰撞，出现 ②③ 编号后缀，破坏沉浸感。
+
+**方案选择**: 讨论了三个方案（提高命名阈值到元婴 / 名字回收 / 组合），最终选择名字回收 — 死亡修士的名字从 `usedNames` 中移除，允许后来者复用。
+
+**改动** (`server/identity.ts`):
+- `flushToDB()`: 死亡修士移除 active 时同步从 `usedNames` 删除
+- `rebuildFromDB()`: 只加载存活修士名字到去重集合
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `152b5c4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
