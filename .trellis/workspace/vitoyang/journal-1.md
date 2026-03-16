@@ -181,3 +181,55 @@ Completed the event-system-and-daily-report OpenSpec change (tasks 7-10) using m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: TUI Console + Runner Robustness
+
+**Date**: 2026-03-14
+**Task**: TUI Console + Runner Robustness
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Feature | Description |
+|---------|-------------|
+| TUI Console | blessed dashboard with grid-navigable actions, service management, simulation control, log tailing |
+| Ack Timeout | Runner auto-continues after ACK_TIMEOUT if no client responds |
+| SQLite Fix | INSERT OR IGNORE + pendingInserts cleanup prevents persist snowball |
+| Vite Proxy | /ws, /api, /health proxied to backend |
+| Speed Control | TUI 'v' hotkey cycles speed ×1→×5→×10 |
+
+**Root Cause**: Simulation appeared to "only run once" due to two issues:
+1. `named_cultivators` INSERT conflict caused every `persistBatch` to fail (snowball effect — pendingInserts never cleared after transaction rollback)
+2. TUI had no visible tick counter, making continuous simulation invisible to user
+
+**Updated Files**:
+- `cli.ts` — new TUI dashboard (blessed)
+- `cli.sh` — wrapper script
+- `server/runner.ts` — ack timeout fallback
+- `server/db.ts` — INSERT OR IGNORE
+- `server/identity.ts` — flushToDB cleanup logic
+- `vite.config.ts` — dev proxy
+- `package.json` — blessed deps + cli script
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `69ac549` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
