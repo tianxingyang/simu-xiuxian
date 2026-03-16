@@ -1,0 +1,9 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "TypeScript conventions for new interfaces and constants"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality rules: naming, no any, no assertions"}
+{"file": ".trellis/tasks/03-16-map-system/prd.md", "reason": "PRD with full requirements and technical approach"}
+{"file": "src/engine/combat.ts", "reason": "Current combat matching algorithm to modify"}
+{"file": "src/engine/simulation.ts", "reason": "Engine lifecycle: spawn, tick, death, level change"}
+{"file": "src/types.ts", "reason": "Cultivator interface and type definitions"}
+{"file": "src/constants.ts", "reason": "Constants file to add map parameters"}

@@ -37,6 +37,7 @@ import {
 import { prngShuffle, truncatedGaussian } from './prng';
 import { tryBreakthrough, type SimulationEngine } from './simulation';
 import { profiler } from './profiler';
+import { buildEncounterProbCache, findSpatialOpponent, fleeCultivator, localEncounterProbability } from './spatial';
 
 type EventBuffer = RichEvent[] | null;
 
@@ -75,9 +76,7 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
   }
 
   profiler.start('processEncounters.buildCache');
-  const snapshotNk = engine._snapshotNk;
   const aliveIds = engine.aliveIds;
-  snapshotNk.fill(0);
   aliveIds.length = 0;
   let snapshotN = 0;
   engine._levelArrayIndex.fill(-1);
@@ -93,7 +92,6 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
       arr.push(id);
       aliveIds.push(id);
     }
-    snapshotNk[level] = arr.length;
     snapshotN += arr.length;
   }
   profiler.end('processEncounters.buildCache');
@@ -103,16 +101,13 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
     return;
   }
 
-  const encounterThresholds = engine._encounterThresholds;
-  for (let level = 1; level < LEVEL_COUNT; level++) {
-    encounterThresholds[level] = snapshotNk[level] / snapshotN;
-  }
-
   profiler.start('processEncounters.buildAliveIds');
   prngShuffle(engine.prng, aliveIds);
   profiler.end('processEncounters.buildAliveIds');
 
   engine._defeatedBuf.fill(0);
+
+  buildEncounterProbCache(engine);
 
   profiler.start('processEncounters.combatLoop');
   for (const id of aliveIds) {
@@ -120,19 +115,12 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
     if (!c.alive) continue;
     if (c.injuredUntil > engine.year || engine._defeatedBuf[id]) continue;
 
-    const nk = snapshotNk[c.level];
-    if (nk <= 1) continue;
+    const encounterProb = localEncounterProbability(c);
+    if (encounterProb <= 0) continue;
+    if (engine.prng() >= encounterProb) continue;
 
-    if (engine.prng() >= encounterThresholds[c.level]) continue;
-
-    const arr = engine.levelArrayCache[c.level];
-    if (arr.length === 0) continue;
-    if (arr.length === 1 && arr[0] === c.id) continue;
-
-    let oppId: number;
-    do { oppId = arr[Math.floor(engine.prng() * arr.length)]; } while (oppId === c.id);
-    const opp = engine.cultivators[oppId];
-    if (!opp.alive || opp.level !== c.level) continue;
+    const opp = findSpatialOpponent(engine, c);
+    if (!opp) continue;
 
     resolveCombat(engine, c, opp, events);
   }
@@ -245,6 +233,7 @@ function resolveCombat(
     engine.aliveCount--;
     engine._deadIds.push(loser.id);
     engine.levelGroups[loser.level].delete(loser.id);
+    engine.spatialIndex.remove(loser.id, loser.level, loser.x, loser.y);
   } else {
     const arr = engine.levelArrayCache[loser.level];
     const idx = engine._levelArrayIndex[loser.id];
@@ -267,6 +256,7 @@ function resolveCombat(
       loser.cultivation = loser.level >= 1 ? threshold(loser.level) : 0;
       engine.levelGroups[oldLevel].delete(loser.id);
       engine.levelGroups[loser.level].add(loser.id);
+      engine.spatialIndex.changeLevel(loser.id, oldLevel, loser.level, loser.x, loser.y);
     } else if (outcomeCode === 2) {
       engine.combatInjuries++;
       loser.injuredUntil = year + INJURY_DURATION;
@@ -281,6 +271,8 @@ function resolveCombat(
       engine.combatLightInjuries++;
       loser.lightInjuryUntil = year + LIGHT_INJURY_DURATION;
     }
+
+    fleeCultivator(engine, loser, winner.x, winner.y);
   }
 
   engine.hooks?.onCombatResult(winner, loser, loserDied, year);

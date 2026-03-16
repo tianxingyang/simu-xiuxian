@@ -1,0 +1,8 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "TypeScript conventions"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality rules"}
+{"file": ".trellis/tasks/03-16-map-system/prd.md", "reason": "PRD requirements to verify against"}
+{"file": "src/engine/combat.ts", "reason": "Verify spatial matching implementation"}
+{"file": "src/engine/simulation.ts", "reason": "Verify lifecycle integration"}
+{"file": "src/types.ts", "reason": "Verify type definitions"}

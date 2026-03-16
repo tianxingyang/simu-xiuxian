@@ -12,6 +12,8 @@ export interface Cultivator {
   alive: boolean;
   cachedCourage: number;
   reachedMaxLevelAt: number;
+  x: number;
+  y: number;
 }
 
 export interface LevelStat {

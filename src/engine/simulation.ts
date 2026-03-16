@@ -1,9 +1,10 @@
 import type { Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
-import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
+import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
 import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
 import { createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
+import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -68,6 +69,7 @@ export class SimulationEngine {
 
   hooks?: EngineHooks;
   milestones = new MilestoneTracker();
+  spatialIndex = new SpatialIndex();
 
   combatDeaths = 0;
   combatDemotions = 0;
@@ -88,8 +90,6 @@ export class SimulationEngine {
   aliveIds: number[] = [];
   levelArrayCache: number[][];
   private _levelCountsBuf = new Array<number>(LEVEL_COUNT).fill(0);
-  _snapshotNk = new Array<number>(LEVEL_COUNT).fill(0);
-  _encounterThresholds = new Float64Array(LEVEL_COUNT);
   _ageSumBuf = new Float64Array(LEVEL_COUNT);
   _courageSumBuf = new Float64Array(LEVEL_COUNT);
   _defeatedBuf = new Uint8Array(0);
@@ -116,6 +116,8 @@ export class SimulationEngine {
   spawnCultivators(count: number): void {
     for (let i = 0; i < count; i++) {
       const courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
+      const x = Math.floor(this.prng() * MAP_SIZE);
+      const y = Math.floor(this.prng() * MAP_SIZE);
       let id: number;
       if (this.freeSlots.length > 0) {
         id = this.freeSlots[this.freeSlots.length - 1];
@@ -134,13 +136,16 @@ export class SimulationEngine {
         c.alive = true;
         c.cachedCourage = effectiveCourage(c);
         c.reachedMaxLevelAt = 0;
+        c.x = x;
+        c.y = y;
       } else {
         id = this.nextId++;
-        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0, reachedMaxLevelAt: 0 };
+        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0, reachedMaxLevelAt: 0, x, y };
         nc.cachedCourage = effectiveCourage(nc);
       }
       this.aliveCount++;
       this.levelGroups[0].add(id);
+      this.spatialIndex.add(id, 0, x, y);
     }
     this.spawned += count;
   }
@@ -182,6 +187,7 @@ export class SimulationEngine {
         this._deadIds.push(c.id);
         const deathLevel = c.level;
         this.levelGroups[deathLevel].delete(c.id);
+        this.spatialIndex.remove(c.id, deathLevel, c.x, c.y);
 
         this.hooks?.onExpiry(c, this.year);
 
@@ -297,6 +303,7 @@ export class SimulationEngine {
     this.spawnCultivators(this.yearlySpawn);
     const events: EventBuffer = collectEvents ? [] : null;
     this.tickCultivators(events);
+    moveCultivators(this);
     processEncounters(this, events);
     this.purgeDead();
     const isExtinct = this.aliveCount === 0;
@@ -338,6 +345,7 @@ export class SimulationEngine {
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
     this.milestones.reset();
+    this.spatialIndex.reset();
     this.year = 1;
     this._summaryYear = 1;
     this.prng = createPRNG(seed);
@@ -428,9 +436,11 @@ export function tryBreakthrough(
     c.maxAge = Math.min(SUSTAINABLE_MAX_AGE[MAX_LEVEL], c.maxAge + lifespanBonus(c.level));
     engine.levelGroups[prevLevel].delete(c.id);
     engine.levelGroups[c.level].add(c.id);
+    engine.spatialIndex.changeLevel(c.id, prevLevel, c.level, c.x, c.y);
     engine.promotionCounts[c.level]++;
     engine.breakthroughSuccesses++;
     if (c.level === MAX_LEVEL) c.reachedMaxLevelAt = engine.year;
+    breakthroughMove(engine, c);
 
     engine.hooks?.onPromotion(c, c.level, year);
 
@@ -506,6 +516,7 @@ export function tryTribulation(
   engine.aliveCount--;
   engine._deadIds.push(c.id);
   engine.levelGroups[deathLevel].delete(c.id);
+  engine.spatialIndex.remove(c.id, deathLevel, c.x, c.y);
 
   if (ascended) {
     engine.ascensions++;
