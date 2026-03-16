@@ -277,7 +277,7 @@ export class IdentityManager {
 
   rebuildFromDB(): void {
     const db = getDB();
-    const names = db.prepare('SELECT name FROM named_cultivators').all() as { name: string }[];
+    const names = db.prepare('SELECT name FROM named_cultivators WHERE death_year IS NULL').all() as { name: string }[];
     for (const r of names) this.usedNames.add(r.name);
 
     const alive = db.prepare(
@@ -428,7 +428,10 @@ export class IdentityManager {
     })();
 
     for (const [id, nc] of this.active) {
-      if (nc.deathYear !== undefined) this.active.delete(id);
+      if (nc.deathYear !== undefined) {
+        this.usedNames.delete(nc.name);
+        this.active.delete(id);
+      }
     }
   }
 
