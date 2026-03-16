@@ -225,6 +225,20 @@ body {
 }
 
 /* Event log */
+.event-pending {
+  text-align: center;
+  padding: 4px 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.event-pending:hover {
+  background: var(--accent-hover);
+}
+
 .event-filter {
   padding: 2px 6px;
   background: var(--bg-input);
