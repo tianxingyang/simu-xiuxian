@@ -233,3 +233,55 @@ Completed the event-system-and-daily-report OpenSpec change (tasks 7-10) using m
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Corpus-based bigram name generator
+
+**Date**: 2026-03-16
+**Task**: Corpus-based bigram name generator
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W modern + 25W ancient names). Replaced independent random character selection with a bigram transition model.
+
+## Changes
+
+| Item | Before | After |
+|------|--------|-------|
+| Single surnames | 60 | 100 |
+| Compound surnames | 14 | 20 |
+| Name generation | Independent random chars (90) | Bigram model (4,921 corpus-validated pairs) |
+| Surname selection | Uniform random | Corpus frequency-weighted |
+| Name capacity | ~600K | ~610K |
+
+## Key Decisions
+- **Bigram over neural model**: Chinese given names are 1-2 chars — too short for neural networks to add value. Bigram captures all learnable context while maintaining PRNG determinism.
+- **Ancient/modern frequency ratio analysis**: Explored using corpus frequency ratios to objectively identify "修仙风" characters. Concluded it works as an exclusion filter but 修仙 aesthetics remain subjective.
+- **Unified surname weights**: Merged single/compound surname pools with corpus-proportional weights instead of hardcoded 85/15 split.
+
+## Files Modified
+- `server/identity.ts` — Name pools, bigram table, weighted selection logic
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4cdbf1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
