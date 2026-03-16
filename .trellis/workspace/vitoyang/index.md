@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-03-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~384 | Active |
+| `journal-1.md` | ~422 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 8 | 2026-03-16 | Event Log Smart Scroll | `edf80c3` |
 | 7 | 2026-03-16 | 名字回收机制 | `152b5c4` |
 | 6 | 2026-03-16 | 32x32 toroidal grid map system | `5f2ce7c` |
 | 5 | 2026-03-16 | Corpus-based bigram name generator | `f4cdbf1` |

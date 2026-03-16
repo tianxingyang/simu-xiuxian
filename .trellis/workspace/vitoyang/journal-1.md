@@ -382,3 +382,41 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Event Log Smart Scroll
+
+**Date**: 2026-03-16
+**Task**: Event Log Smart Scroll
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Change | Description |
+|--------|-------------|
+| EventLog.tsx | 新增 pinned/frozen 机制：滚动离开顶部时冻结列表，显示 "N 条新事件" 提示条 |
+| index.css | 新增 `.event-pending` 样式 |
+
+**Core Logic**: scroll away → freeze snapshot + count pending via ID lookup → click badge or scroll back → resume live
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `edf80c3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
