@@ -75,25 +75,31 @@ export class Runner {
     try {
       this.seed = saved.seed;
       this.speed = clampSpeed(saved.speed);
-      const engine = new SimulationEngine(this.seed, 1000);
-      const target = Math.max(1, saved.current_year);
-      if (target > 1) console.log(`[runner] replaying to year ${target}...`);
-      while (engine.year < target) {
-        if (engine.tickYear(false).isExtinct) break;
+
+      if (saved.snapshot) {
+        this.engine = SimulationEngine.deserialize(saved.snapshot);
+        console.log(`[runner] snapshot restored: year=${this.engine.year}, pop=${this.engine.aliveCount}`);
+      } else {
+        const engine = new SimulationEngine(this.seed, 1000);
+        const target = Math.max(1, saved.current_year);
+        if (target > 1) console.log(`[runner] replaying to year ${target}...`);
+        while (engine.year < target) {
+          if (engine.tickYear(false).isExtinct) break;
+        }
+        this.engine = engine;
+        this.restoreMilestones(saved.highest_levels_ever);
+        console.log(`[runner] replay restored: year=${engine.year}, pop=${engine.aliveCount}`);
       }
-      this.engine = engine;
-      this.restoreMilestones(saved.highest_levels_ever);
 
       this.identity = new IdentityManager(this.seed);
       this.identity.rebuildFromDB();
       this.bindHooks();
 
-      this.extinct = engine.aliveCount === 0;
+      this.extinct = this.engine.aliveCount === 0;
       this.running = false;
       this.awaitingAck = false;
-      this.lastSummary = engine.getSummary();
+      this.lastSummary = this.engine.getSummary();
       resetDisplayEventId();
-      console.log(`[runner] restored: year=${engine.year}, pop=${engine.aliveCount}`);
       return true;
     } catch (err) {
       console.error('[runner] restore failed:', err);
@@ -281,6 +287,7 @@ export class Runner {
       .map(e => ({ year: e.year, type: e.type, rank: e.newsRank, real_ts: now, payload: JSON.stringify(e) }));
 
     try {
+      const snapshot = engine.serialize();
       getDB().transaction(() => {
         this.identity?.flushToDB();
         insertEvents(rows);
@@ -290,6 +297,7 @@ export class Runner {
           speed: this.speed,
           running: this.running && !this.extinct,
           highestLevelsEver: JSON.stringify(engine.milestones.levelEverPopulated),
+          snapshot,
         });
       })();
     } catch (err) {
@@ -306,6 +314,7 @@ export class Runner {
         speed: this.speed,
         running: this.running && !this.extinct,
         highestLevelsEver: JSON.stringify(this.engine.milestones.levelEverPopulated),
+        snapshot: this.engine.serialize(),
       });
     } catch (err) {
       console.error('[runner] save state failed:', err);

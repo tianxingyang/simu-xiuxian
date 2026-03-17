@@ -109,6 +109,16 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
 
   buildEncounterProbCache(engine);
 
+  let eventMinLevel = 0;
+  if (events) {
+    let cumulative = 0;
+    const target = Math.ceil(engine.aliveCount * 0.05);
+    for (let lv = LEVEL_COUNT - 1; lv >= 0; lv--) {
+      cumulative += engine.levelGroups[lv].size;
+      if (cumulative >= target) { eventMinLevel = lv; break; }
+    }
+  }
+
   profiler.start('processEncounters.combatLoop');
   for (const id of aliveIds) {
     const c = engine.cultivators[id];
@@ -122,7 +132,7 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
     const opp = findSpatialOpponent(engine, c);
     if (!opp) continue;
 
-    resolveCombat(engine, c, opp, events);
+    resolveCombat(engine, c, opp, events, eventMinLevel);
   }
   profiler.end('processEncounters.combatLoop');
 
@@ -155,6 +165,7 @@ function resolveCombat(
   a: Cultivator,
   b: Cultivator,
   events: EventBuffer,
+  eventMinLevel: number,
 ): void {
   const year = engine.year;
   const aCultSnap = a.cultivation;
@@ -278,22 +289,24 @@ function resolveCombat(
   engine.hooks?.onCombatResult(winner, loser, loserDied, year);
 
   if (events) {
-    const winnerName = engine.hooks?.getName(winner.id);
-    const loserName = engine.hooks?.getName(loser.id);
-
-    const combatEvent: RichCombatEvent = {
-      type: 'combat',
-      year,
-      newsRank: 'C',
-      winner: { id: winner.id, name: winnerName, level: combatLevel, cultivation: winnerSnap },
-      loser: { id: loser.id, name: loserName, level: combatLevel, cultivation: loserSnap },
-      absorbed: loot,
-      outcome,
-    };
-    combatEvent.newsRank = scoreNewsRank(combatEvent);
-    events.push(combatEvent);
+    if (combatLevel >= eventMinLevel) {
+      const winnerName = engine.hooks?.getName(winner.id);
+      const loserName = engine.hooks?.getName(loser.id);
+      const combatEvent: RichCombatEvent = {
+        type: 'combat',
+        year,
+        newsRank: 'C',
+        winner: { id: winner.id, name: winnerName, level: combatLevel, cultivation: winnerSnap },
+        loser: { id: loser.id, name: loserName, level: combatLevel, cultivation: loserSnap },
+        absorbed: loot,
+        outcome,
+      };
+      combatEvent.newsRank = scoreNewsRank(combatEvent);
+      events.push(combatEvent);
+    }
 
     if (loserDied) {
+      const loserName = engine.hooks?.getName(loser.id);
       const ms = engine.milestones.checkDeath(
         combatLevel, engine.levelGroups[combatLevel].size,
         loser.id, loserName ?? '', year,

@@ -2,7 +2,7 @@ import type { Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEve
 import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
 import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
-import { createPRNG, truncatedGaussian } from './prng';
+import { type PRNG, createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
 import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial';
 
@@ -64,7 +64,7 @@ export class SimulationEngine {
   nextId = 0;
   year = 1;
   private _summaryYear = 1;
-  prng: () => number;
+  prng: PRNG;
   yearlySpawn: number;
 
   hooks?: EngineHooks;
@@ -354,6 +354,177 @@ export class SimulationEngine {
     this.spawnCultivators(initialPop);
     this._defeatedBuf = new Uint8Array(this.nextId);
     this._levelArrayIndex = new Int32Array(this.nextId);
+  }
+
+  serialize(): Buffer {
+    const SNAPSHOT_VERSION = 1;
+    // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
+    const HEADER_SIZE = 1 + 4 * 6;
+    const freeSlotsSize = this.freeSlots.length * 4;
+    // Per cultivator: alive(u8) + age(i32) + cultivation(f64) + level(u8) + courage(f64)
+    //   + maxAge(i32) + injuredUntil(i32) + lightInjuryUntil(i32) + meridianDamagedUntil(i32)
+    //   + breakthroughCooldownUntil(i32) + cachedCourage(f64) + reachedMaxLevelAt(i32) + x(i32) + y(i32)
+    // = 2*u8(2) + 3*f64(24) + 9*i32(36) = 62 bytes
+    const CULTIVATOR_SIZE = 62;
+    const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
+    // Milestones: highestLevelEverReached(i32) + levelEverPopulated(u8 * LEVEL_COUNT)
+    const milestonesSize = 4 + LEVEL_COUNT;
+    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + milestonesSize;
+
+    const buf = Buffer.alloc(totalSize);
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let off = 0;
+
+    // Header
+    dv.setUint8(off, SNAPSHOT_VERSION); off += 1;
+    dv.setInt32(off, this.prng.state, true); off += 4;
+    dv.setInt32(off, this.year, true); off += 4;
+    dv.setInt32(off, this.nextId, true); off += 4;
+    dv.setInt32(off, this.aliveCount, true); off += 4;
+    dv.setInt32(off, this.yearlySpawn, true); off += 4;
+    dv.setInt32(off, this.freeSlots.length, true); off += 4;
+
+    // FreeSlots
+    for (let i = 0; i < this.freeSlots.length; i++) {
+      dv.setInt32(off, this.freeSlots[i], true); off += 4;
+    }
+
+    // Cultivators
+    for (let i = 0; i < this.nextId; i++) {
+      const c = this.cultivators[i];
+      dv.setUint8(off, c.alive ? 1 : 0); off += 1;
+      dv.setInt32(off, c.age, true); off += 4;
+      dv.setFloat64(off, c.cultivation, true); off += 8;
+      dv.setUint8(off, c.level); off += 1;
+      dv.setFloat64(off, c.courage, true); off += 8;
+      dv.setInt32(off, c.maxAge, true); off += 4;
+      dv.setInt32(off, c.injuredUntil, true); off += 4;
+      dv.setInt32(off, c.lightInjuryUntil, true); off += 4;
+      dv.setInt32(off, c.meridianDamagedUntil, true); off += 4;
+      dv.setInt32(off, c.breakthroughCooldownUntil, true); off += 4;
+      dv.setFloat64(off, c.cachedCourage, true); off += 8;
+      dv.setInt32(off, c.reachedMaxLevelAt, true); off += 4;
+      dv.setInt32(off, c.x, true); off += 4;
+      dv.setInt32(off, c.y, true); off += 4;
+    }
+
+    // Milestones
+    dv.setInt32(off, this.milestones.highestLevelEverReached, true); off += 4;
+    for (let i = 0; i < LEVEL_COUNT; i++) {
+      dv.setUint8(off, this.milestones.levelEverPopulated[i] ? 1 : 0); off += 1;
+    }
+
+    return buf;
+  }
+
+  static deserialize(buf: Buffer): SimulationEngine {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    let off = 0;
+
+    // Header
+    const version = dv.getUint8(off); off += 1;
+    if (version !== 1) throw new Error(`Unknown snapshot version: ${version}`);
+    const prngState = dv.getInt32(off, true); off += 4;
+    const year = dv.getInt32(off, true); off += 4;
+    const nextId = dv.getInt32(off, true); off += 4;
+    /* aliveCount from header — skip, recount from cultivators */
+    off += 4;
+    const yearlySpawn = dv.getInt32(off, true); off += 4;
+    const freeSlotsLen = dv.getInt32(off, true); off += 4;
+
+    // FreeSlots
+    const freeSlots: number[] = new Array(freeSlotsLen);
+    for (let i = 0; i < freeSlotsLen; i++) {
+      freeSlots[i] = dv.getInt32(off, true); off += 4;
+    }
+
+    // Cultivators
+    const cultivators: Cultivator[] = new Array(nextId);
+    const levelGroups = initLevelGroups();
+    const spatialIndex = new SpatialIndex();
+    let verifiedAlive = 0;
+
+    for (let i = 0; i < nextId; i++) {
+      const alive = dv.getUint8(off) === 1; off += 1;
+      const age = dv.getInt32(off, true); off += 4;
+      const cultivation = dv.getFloat64(off, true); off += 8;
+      const level = dv.getUint8(off); off += 1;
+      const courage = dv.getFloat64(off, true); off += 8;
+      const maxAge = dv.getInt32(off, true); off += 4;
+      const injuredUntil = dv.getInt32(off, true); off += 4;
+      const lightInjuryUntil = dv.getInt32(off, true); off += 4;
+      const meridianDamagedUntil = dv.getInt32(off, true); off += 4;
+      const breakthroughCooldownUntil = dv.getInt32(off, true); off += 4;
+      const cachedCourage = dv.getFloat64(off, true); off += 8;
+      const reachedMaxLevelAt = dv.getInt32(off, true); off += 4;
+      const x = dv.getInt32(off, true); off += 4;
+      const y = dv.getInt32(off, true); off += 4;
+
+      const c: Cultivator = {
+        id: i, age, cultivation, level, courage, maxAge,
+        injuredUntil, lightInjuryUntil, meridianDamagedUntil,
+        breakthroughCooldownUntil, alive, cachedCourage, reachedMaxLevelAt, x, y,
+      };
+      cultivators[i] = c;
+
+      if (alive) {
+        verifiedAlive++;
+        levelGroups[level].add(i);
+        spatialIndex.add(i, level, x, y);
+      }
+    }
+
+    // Milestones
+    const milestones = new MilestoneTracker();
+    milestones.highestLevelEverReached = dv.getInt32(off, true); off += 4;
+    for (let i = 0; i < LEVEL_COUNT; i++) {
+      milestones.levelEverPopulated[i] = dv.getUint8(off) === 1; off += 1;
+    }
+
+    // Construct engine bypassing constructor
+    const engine = Object.create(SimulationEngine.prototype) as SimulationEngine;
+    engine.prng = createPRNG(prngState);
+    engine.year = year;
+    engine['_summaryYear'] = year > 1 ? year - 1 : 1;
+    engine.nextId = nextId;
+    engine.aliveCount = verifiedAlive;
+    engine.yearlySpawn = yearlySpawn;
+    engine.cultivators = cultivators;
+    engine.freeSlots = freeSlots;
+    engine.levelGroups = levelGroups;
+    engine.aliveLevelIds = levelGroups;
+    engine.spatialIndex = spatialIndex;
+    engine.milestones = milestones;
+    engine.levelArrayCache = initLevelArrayCache();
+    engine.aliveIds = [];
+    engine['_levelCountsBuf'] = new Array<number>(LEVEL_COUNT).fill(0);
+    engine._ageSumBuf = new Float64Array(LEVEL_COUNT);
+    engine._courageSumBuf = new Float64Array(LEVEL_COUNT);
+    engine['_ageBuffers'] = initBuffers();
+    engine['_courageBuffers'] = initBuffers();
+    engine._defeatedBuf = new Uint8Array(nextId);
+    engine._levelArrayIndex = new Int32Array(nextId);
+    engine._deadIds = [];
+    engine.hooks = undefined;
+
+    // Reset yearly counters
+    engine.combatDeaths = 0;
+    engine.combatDemotions = 0;
+    engine.combatInjuries = 0;
+    engine.combatCultLosses = 0;
+    engine.combatLightInjuries = 0;
+    engine.combatMeridianDamages = 0;
+    engine.breakthroughAttempts = 0;
+    engine.breakthroughSuccesses = 0;
+    engine.breakthroughFailures = 0;
+    engine.expiryDeaths = 0;
+    engine.tribulations = 0;
+    engine.ascensions = 0;
+    engine.tribulationDeaths = 0;
+    engine.promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
+    engine.spawned = 0;
+
+    return engine;
   }
 }
 

@@ -43,6 +43,7 @@ export interface SimStateRow {
   speed: number;
   running: number;
   highest_levels_ever: string;
+  snapshot: Buffer | null;
 }
 
 let _db: Database.Database | null = null;
@@ -95,6 +96,11 @@ export function getDB(): Database.Database {
         highest_levels_ever TEXT NOT NULL DEFAULT '[]'
       );
     `);
+    // Migration: add snapshot column if missing
+    const cols = _db.pragma('table_info(sim_state)') as Array<{ name: string }>;
+    if (!cols.some(c => c.name === 'snapshot')) {
+      _db.exec('ALTER TABLE sim_state ADD COLUMN snapshot BLOB');
+    }
   }
   return _db;
 }
@@ -226,7 +232,7 @@ export function clearSimData(): void {
 
 export function getSimState(): SimStateRow | undefined {
   return getDB()
-    .prepare('SELECT current_year, seed, speed, running, highest_levels_ever FROM sim_state WHERE id = 1')
+    .prepare('SELECT current_year, seed, speed, running, highest_levels_ever, snapshot FROM sim_state WHERE id = 1')
     .get() as SimStateRow | undefined;
 }
 
@@ -236,15 +242,17 @@ export function setSimState(data: {
   speed: number;
   running: boolean;
   highestLevelsEver: string;
+  snapshot?: Buffer;
 }): void {
   getDB()
     .prepare(
-      `INSERT INTO sim_state (id, current_year, seed, speed, running, highest_levels_ever)
-       VALUES (1, ?, ?, ?, ?, ?)
+      `INSERT INTO sim_state (id, current_year, seed, speed, running, highest_levels_ever, snapshot)
+       VALUES (1, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          current_year = excluded.current_year, seed = excluded.seed,
          speed = excluded.speed, running = excluded.running,
-         highest_levels_ever = excluded.highest_levels_ever`
+         highest_levels_ever = excluded.highest_levels_ever,
+         snapshot = excluded.snapshot`
     )
-    .run(data.currentYear, data.seed, data.speed, data.running ? 1 : 0, data.highestLevelsEver);
+    .run(data.currentYear, data.seed, data.speed, data.running ? 1 : 0, data.highestLevelsEver, data.snapshot ?? null);
 }
