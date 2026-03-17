@@ -28,14 +28,14 @@ export default memo(function EventLog({ events }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const frozenRef = useRef<SimEvent[] | null>(null);
-  const frozenFirstIdRef = useRef('');
+  const frozenFirstIdRef = useRef(-1);
   const eventsRef = useRef(events);
   eventsRef.current = events;
 
   const displayEvents = pinned ? events : (frozenRef.current ?? events);
 
   const pendingCount = useMemo(() => {
-    if (pinned || !frozenFirstIdRef.current) return 0;
+    if (pinned || frozenFirstIdRef.current < 0) return 0;
     const idx = events.findIndex(e => e.id === frozenFirstIdRef.current);
     return idx < 0 ? events.length : idx;
   }, [events, pinned]);
@@ -49,7 +49,7 @@ export default memo(function EventLog({ events }: Props) {
     if (!pinned && events.length === 0) {
       pinnedRef.current = true;
       frozenRef.current = null;
-      frozenFirstIdRef.current = '';
+      frozenFirstIdRef.current = -1;
       setPinned(true);
     }
   }, [events.length, pinned]);
@@ -62,10 +62,10 @@ export default memo(function EventLog({ events }: Props) {
     pinnedRef.current = atTop;
     if (atTop) {
       frozenRef.current = null;
-      frozenFirstIdRef.current = '';
+      frozenFirstIdRef.current = -1;
     } else {
       frozenRef.current = eventsRef.current;
-      frozenFirstIdRef.current = eventsRef.current[0]?.id ?? '';
+      frozenFirstIdRef.current = eventsRef.current[0]?.id ?? -1;
     }
     setPinned(atTop);
   }, []);
@@ -75,7 +75,7 @@ export default memo(function EventLog({ events }: Props) {
     if (el) el.scrollTop = 0;
     pinnedRef.current = true;
     frozenRef.current = null;
-    frozenFirstIdRef.current = '';
+    frozenFirstIdRef.current = -1;
     setPinned(true);
   }, []);
 
