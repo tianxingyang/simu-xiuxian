@@ -1,13 +1,17 @@
 import { LEVEL_NAMES } from '../src/constants.js';
+import { toYaml } from './yaml.js';
 import type { RichEvent, NewsRank } from '../src/types.js';
 import { llmConfig } from './config.js';
 import {
   type EventRow,
   type NamedCultivatorRow,
   queryEventsByDateRange,
+  queryEventStats,
   queryNamedCultivator,
-  upsertDailyReport,
+  queryLastReportTs,
+  upsertReport,
 } from './db.js';
+import type { Val } from './yaml.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,16 +57,9 @@ export interface PromptMessage {
 
 const UTC8_OFFSET_MS = 8 * 60 * 60 * 1000;
 
-function dateToUtc8Bounds(dateStr: string): { from: number; to: number } {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const utc8Start = Date.UTC(y, m - 1, d) - UTC8_OFFSET_MS;
-  return { from: Math.floor(utc8Start / 1000), to: Math.floor(utc8Start / 1000) + 86400 };
-}
-
-function yesterdayUtc8(): string {
+function nowUtc8DateStr(): string {
   const now = new Date(Date.now() + UTC8_OFFSET_MS);
-  const y = new Date(now.getTime() - 86400_000);
-  return `${y.getUTCFullYear()}-${String(y.getUTCMonth() + 1).padStart(2, '0')}-${String(y.getUTCDate()).padStart(2, '0')}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
 }
 
 function highestLevel(event: RichEvent): number {
@@ -190,24 +187,28 @@ function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
 }
 
 // ---------------------------------------------------------------------------
-// aggregateEvents (date-based, backward compat)
+// aggregateEvents (timestamp-based, optimized: S/A rows + B aggregated)
 // ---------------------------------------------------------------------------
 
-export function aggregateEvents(dateStr: string): AggregatedData {
-  const { from, to } = dateToUtc8Bounds(dateStr);
-  const rows = queryEventsByDateRange(from, to);
-  return classifyRows(rows, dateStr);
-}
+export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
+  // Only load S/A events as rows (small set), B stats via SQL aggregation
+  const rows = queryEventsByDateRange(fromTs, toTs, ['S', 'A']);
+  const data = classifyRows(rows, nowUtc8DateStr());
 
-// ---------------------------------------------------------------------------
-// aggregateEventsByTsRange (timestamp-based, for bot on-demand)
-// ---------------------------------------------------------------------------
+  // Merge B-rank statistics from SQL aggregation
+  const bStats = queryEventStats(fromTs, toTs);
+  for (const { type, cnt } of bStats) {
+    if (type === 'promotion') {
+      // B-rank promotions are lv2~lv7 — counted in aggregate, no per-level breakdown from SQL
+      // We keep the existing zero values and just note the total
+    } else if (type === 'combat') {
+      data.statistics.combat_deaths += cnt;
+    } else if (type === 'expiry') {
+      data.statistics.expiry_deaths += cnt;
+    }
+  }
 
-export function aggregateEventsByTsRange(fromTs: number, toTs: number): AggregatedData {
-  const rows = queryEventsByDateRange(fromTs, toTs);
-  const now = new Date(Date.now() + UTC8_OFFSET_MS);
-  const dateStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-  return classifyRows(rows, dateStr);
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -226,9 +227,9 @@ const SYSTEM_MESSAGE = `你是一位修仙世界的史官，负责撰写每日�
 - 总长度控制在800字以内
 - 如果当日无任何事件，请撰写一份简短的"天下太平"报道`;
 
-function formatEventForPrompt(item: EnrichedEvent): Record<string, unknown> {
+function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   const ev = item.event;
-  const base: Record<string, unknown> = { type: ev.type, year: ev.year, rank: ev.newsRank };
+  const base: Record<string, Val> = { type: ev.type, year: ev.year, rank: ev.newsRank };
 
   switch (ev.type) {
     case 'combat':
@@ -289,12 +290,12 @@ export function buildPrompt(data: AggregatedData): PromptMessage[] {
     years_simulated: data.meta.years_simulated,
     headlines: data.headlines.map(formatEventForPrompt),
     major_events: data.major_events.map(formatEventForPrompt),
-    statistics: data.statistics,
+    statistics: data.statistics as unknown as Record<string, Val>,
   };
 
   return [
     { role: 'system', content: SYSTEM_MESSAGE },
-    { role: 'user', content: JSON.stringify(userContent, null, 2) },
+    { role: 'user', content: toYaml(userContent) },
   ];
 }
 
@@ -331,7 +332,7 @@ export async function callLLM(messages: PromptMessage[]): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// generateDailyReport (full pipeline, for HTTP API backward compat)
+// generateReport (unified pipeline, timestamp-based)
 // ---------------------------------------------------------------------------
 
 let _busy = false;
@@ -340,19 +341,19 @@ export function isBusy(): boolean {
   return _busy;
 }
 
-export async function generateDailyReport(date?: string): Promise<void> {
-  const targetDate = date ?? yesterdayUtc8();
+export async function generateReport(fromTs?: number, toTs?: number): Promise<string | null> {
+  const now = Math.floor(Date.now() / 1000);
+  const from = fromTs ?? queryLastReportTs() ?? (now - 86400);
+  const to = toTs ?? now;
 
   if (_busy) {
-    console.warn(`[reporter] already busy, skipping report for ${targetDate}`);
-    return;
+    console.warn('[reporter] already busy, skipping');
+    return null;
   }
-
-  console.log(`[reporter] generating report for ${targetDate}`);
 
   _busy = true;
   try {
-    const data = aggregateEvents(targetDate);
+    const data = aggregateEvents(from, to);
     const messages = buildPrompt(data);
     const promptJson = JSON.stringify(messages);
 
@@ -368,43 +369,16 @@ export async function generateDailyReport(date?: string): Promise<void> {
       }
     }
 
-    upsertDailyReport({
-      date: targetDate,
+    upsertReport({
+      date: nowUtc8DateStr(),
       yearFrom: data.meta.year_from,
       yearTo: data.meta.year_to,
       prompt: promptJson,
       report,
     });
-    console.log(`[reporter] report stored for ${targetDate}, hasReport=${report !== null}`);
+    console.log(`[reporter] report stored, hasReport=${report !== null}`);
+    return report;
   } finally {
     _busy = false;
   }
-}
-
-// ---------------------------------------------------------------------------
-// generateReportForRange (for bot on-demand generation)
-// ---------------------------------------------------------------------------
-
-export async function generateReportForRange(fromTs: number, toTs: number): Promise<string | null> {
-  const data = aggregateEventsByTsRange(fromTs, toTs);
-  const messages = buildPrompt(data);
-  const promptJson = JSON.stringify(messages);
-
-  let report: string | null = null;
-
-  if (!llmConfig.apiKey) {
-    console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
-  } else {
-    report = await callLLM(messages);
-  }
-
-  upsertDailyReport({
-    date: data.meta.real_date,
-    yearFrom: data.meta.year_from,
-    yearTo: data.meta.year_to,
-    prompt: promptJson,
-    report,
-  });
-
-  return report;
 }

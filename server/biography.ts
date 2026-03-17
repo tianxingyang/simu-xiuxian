@@ -1,4 +1,5 @@
 import { LEVEL_NAMES } from '../src/constants.js';
+import { toYaml } from './yaml.js';
 import type { EventRow, NamedCultivatorRow } from './db.js';
 import { queryNamedCultivatorByName, queryEventsForCultivator } from './db.js';
 import { type PromptMessage, callLLM } from './reporter.js';
@@ -119,7 +120,7 @@ function buildPrompt(
     return { year: e.year, type: e.type, rank: e.rank, ...p };
   });
 
-  const user = JSON.stringify({
+  const user = toYaml({
     cultivator: {
       name: row.name,
       peak_level: levelName(row.peak_level),
@@ -137,7 +138,7 @@ function buildPrompt(
     events: eventData,
     current_year: currentYear,
     memory_level: memory,
-  }, null, 2);
+  });
 
   return [
     { role: 'system', content: system },

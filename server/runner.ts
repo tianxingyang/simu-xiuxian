@@ -2,10 +2,11 @@ import type { EngineHooks, RichEvent, SimEvent, YearSummary } from '../src/types
 import { SimulationEngine } from '../src/engine/simulation.js';
 import { clearSimData, getDB, getSimState, insertEvents, setSimState } from './db.js';
 import { resetDisplayEventId, toDisplayEvent } from './events.js';
+import { runEviction } from './eviction.js';
 import { IdentityManager } from './identity.js';
 
-const BATCH_SIZES: Record<number, number> = { 1: 100, 2: 500, 3: 1000 };
-const TARGET_INTERVAL = 2000;
+const BATCH_SIZES: Record<number, number> = { 1: 1, 2: 3, 3: 5 };
+const TARGET_INTERVAL = 1000;
 const ACK_TIMEOUT = TARGET_INTERVAL;
 
 export type BroadcastMsg =
@@ -251,7 +252,7 @@ export class Runner {
         return;
       }
       if (this.io.clientCount() === 0) {
-        setTimeout(() => this.runBatch(), 0);
+        setImmediate(() => this.runBatch());
         return;
       }
       this.awaitingAck = true;
@@ -283,9 +284,17 @@ export class Runner {
     const engine = this.engine;
     if (!engine) return;
     const now = Math.floor(Date.now() / 1000);
+    const namedIds = this.identity ? new Set([...this.identity['active'].keys()]) : new Set<number>();
     const rows = events
       .filter(e => e.newsRank !== 'C')
-      .map(e => ({ year: e.year, type: e.type, rank: e.newsRank, real_ts: now, payload: JSON.stringify(e) }));
+      .map(e => {
+        const cids = this.getNamedCultivatorIds(e, namedIds);
+        return {
+          year: e.year, type: e.type, rank: e.newsRank, real_ts: now,
+          payload: JSON.stringify(e), protected: cids.length > 0 ? 1 : 0,
+          cultivatorIds: cids.length > 0 ? cids : undefined,
+        };
+      });
 
     try {
       const snapshot = engine.serialize();
@@ -301,9 +310,30 @@ export class Runner {
           snapshot,
         });
       })();
+      runEviction(engine.year);
     } catch (err) {
       console.error('[runner] persist failed:', err);
     }
+  }
+
+  private getNamedCultivatorIds(event: RichEvent, namedIds: Set<number>): number[] {
+    const ids: number[] = [];
+    switch (event.type) {
+      case 'combat':
+        if (namedIds.has(event.winner.id)) ids.push(event.winner.id);
+        if (namedIds.has(event.loser.id)) ids.push(event.loser.id);
+        break;
+      case 'promotion':
+      case 'expiry':
+      case 'breakthrough_fail':
+      case 'tribulation':
+        if (namedIds.has(event.subject.id)) ids.push(event.subject.id);
+        break;
+      case 'milestone':
+        if (namedIds.has(event.detail.cultivatorId)) ids.push(event.detail.cultivatorId);
+        break;
+    }
+    return ids;
   }
 
   private saveState(): void {

@@ -1,7 +1,7 @@
 import WebSocket from 'ws';
 import { config } from './config.js';
 import { getLastRequestTs, setLastRequestTs } from './db.js';
-import { generateReportForRange } from './reporter.js';
+import { generateReport } from './reporter.js';
 import { generateBiography } from './biography.js';
 
 // ---------------------------------------------------------------------------
@@ -61,12 +61,12 @@ async function sendGroupMessage(groupOpenid: string, content: string, msgId: str
 type GetYear = () => number;
 let _getYear: GetYear = () => 1;
 
-async function handleDailyReport(groupOpenid: string, msgId: string): Promise<void> {
+async function handleReport(groupOpenid: string, msgId: string): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const lastTs = getLastRequestTs(groupOpenid) ?? (now - 86400);
 
   try {
-    const report = await generateReportForRange(lastTs, now);
+    const report = await generateReport(lastTs, now);
     setLastRequestTs(groupOpenid, now);
 
     if (report) {
@@ -109,7 +109,7 @@ async function handleMessage(groupOpenid: string, msgId: string, content: string
 
   switch (parsed.cmd) {
     case 'report':
-      await handleDailyReport(groupOpenid, msgId);
+      await handleReport(groupOpenid, msgId);
       break;
     case 'biography':
       await handleBiography(groupOpenid, msgId, parsed.arg);

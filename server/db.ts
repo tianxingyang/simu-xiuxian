@@ -10,6 +10,7 @@ export interface EventRow {
   rank: string;
   real_ts: number;
   payload: string;
+  protected: number;
 }
 
 export interface NamedCultivatorRow {
@@ -27,7 +28,7 @@ export interface NamedCultivatorRow {
   killed_by: string | null;
 }
 
-export interface DailyReportRow {
+export interface ReportRow {
   id: number;
   date: string;
   year_from: number;
@@ -74,11 +75,18 @@ export function getDB(): Database.Database {
         type TEXT NOT NULL,
         rank TEXT NOT NULL,
         real_ts INTEGER NOT NULL,
-        payload TEXT NOT NULL
+        payload TEXT NOT NULL,
+        protected INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS idx_events_real_ts ON events(real_ts);
       CREATE INDEX IF NOT EXISTS idx_events_rank ON events(rank);
-      CREATE TABLE IF NOT EXISTS daily_reports (
+      CREATE INDEX IF NOT EXISTS idx_events_evict ON events(protected, rank, year);
+      CREATE TABLE IF NOT EXISTS event_cultivators (
+        cultivator_id INTEGER NOT NULL,
+        event_id INTEGER NOT NULL,
+        PRIMARY KEY (cultivator_id, event_id)
+      );
+      CREATE TABLE IF NOT EXISTS reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL UNIQUE,
         year_from INTEGER NOT NULL,
@@ -100,6 +108,21 @@ export function getDB(): Database.Database {
         last_request_ts INTEGER NOT NULL
       );
     `);
+    // Migration: move daily_reports → reports
+    const oldTable = _db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_reports'").get();
+    if (oldTable) {
+      _db.exec(`
+        INSERT OR IGNORE INTO reports (id, date, year_from, year_to, prompt, report, created_at)
+          SELECT id, date, year_from, year_to, prompt, report, created_at FROM daily_reports;
+        DROP TABLE daily_reports;
+      `);
+    }
+    // Migration: add protected column to events if missing
+    const eventCols = _db.pragma('table_info(events)') as Array<{ name: string }>;
+    if (!eventCols.some(c => c.name === 'protected')) {
+      _db.exec('ALTER TABLE events ADD COLUMN protected INTEGER NOT NULL DEFAULT 0');
+      _db.exec('CREATE INDEX IF NOT EXISTS idx_events_evict ON events(protected, rank, year)');
+    }
     // Migration: add snapshot column if missing
     const cols = _db.pragma('table_info(sim_state)') as Array<{ name: string }>;
     if (!cols.some(c => c.name === 'snapshot')) {
@@ -116,18 +139,95 @@ export function closeDB(): void {
 
 // --- Events ---
 
-export function insertEvents(events: Omit<EventRow, 'id'>[]): void {
+export function insertEvents(events: (Omit<EventRow, 'id'> & { cultivatorIds?: number[] })[]): void {
   if (!events.length) return;
-  const stmt = getDB().prepare(
-    'INSERT INTO events (year, type, rank, real_ts, payload) VALUES (?, ?, ?, ?, ?)'
+  const db = getDB();
+  const evtStmt = db.prepare(
+    'INSERT INTO events (year, type, rank, real_ts, payload, protected) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  for (const e of events) stmt.run(e.year, e.type, e.rank, e.real_ts, e.payload);
+  const linkStmt = db.prepare(
+    'INSERT OR IGNORE INTO event_cultivators (event_id, cultivator_id) VALUES (?, ?)'
+  );
+  for (const e of events) {
+    const result = evtStmt.run(e.year, e.type, e.rank, e.real_ts, e.payload, e.protected ?? 0);
+    if (e.cultivatorIds?.length) {
+      const eventId = Number(result.lastInsertRowid);
+      for (const cid of e.cultivatorIds) linkStmt.run(eventId, cid);
+    }
+  }
 }
 
-export function queryEventsByDateRange(fromTs: number, toTs: number): EventRow[] {
+
+const EVICT_BATCH_LIMIT = 5000;
+
+export function evictExpiredEvents(currentYear: number, retention: Record<string, number>): number {
+  const db = getDB();
+  let total = 0;
+  for (const [rank, years] of Object.entries(retention)) {
+    const threshold = currentYear - years;
+    if (threshold <= 0) continue;
+    const result = db.prepare(
+      'DELETE FROM events WHERE rowid IN (SELECT rowid FROM events WHERE protected = 0 AND rank = ? AND year < ? LIMIT ?)'
+    ).run(rank, threshold, EVICT_BATCH_LIMIT);
+    total += result.changes;
+  }
+  return total;
+}
+
+export function queryProtectedEventIdsForCultivator(cultivatorId: number): number[] {
+  const rows = getDB().prepare(
+    'SELECT event_id FROM event_cultivators WHERE cultivator_id = ?'
+  ).all(cultivatorId) as { event_id: number }[];
+  return rows.map(r => r.event_id);
+}
+
+export function queryEventCultivatorIds(eventId: number): number[] {
+  const rows = getDB().prepare(
+    'SELECT cultivator_id FROM event_cultivators WHERE event_id = ?'
+  ).all(eventId) as { cultivator_id: number }[];
+  return rows.map(r => r.cultivator_id);
+}
+
+export function unprotectEventsByIds(ids: number[]): void {
+  if (!ids.length) return;
+  const db = getDB();
+  const stmt = db.prepare('UPDATE events SET protected = 0 WHERE id = ?');
+  const delStmt = db.prepare('DELETE FROM event_cultivators WHERE event_id = ?');
+  for (const id of ids) {
+    stmt.run(id);
+    delStmt.run(id);
+  }
+}
+
+export function queryDeadCultivators(): { id: number; peak_level: number; death_year: number }[] {
+  return getDB().prepare(
+    'SELECT id, peak_level, death_year FROM named_cultivators WHERE death_year IS NOT NULL AND death_cause != ?'
+  ).all('ascension') as { id: number; peak_level: number; death_year: number }[];
+}
+
+export function queryRememberedCultivatorIds(): Set<number> {
+  const rows = getDB().prepare(
+    'SELECT id FROM named_cultivators WHERE death_year IS NULL OR death_cause = ?'
+  ).all('ascension') as { id: number }[];
+  return new Set(rows.map(r => r.id));
+}
+
+export function queryEventsByDateRange(fromTs: number, toTs: number, ranks?: string[]): EventRow[] {
+  if (ranks && ranks.length) {
+    const placeholders = ranks.map(() => '?').join(',');
+    return getDB()
+      .prepare(`SELECT * FROM events WHERE real_ts >= ? AND real_ts < ? AND rank IN (${placeholders}) ORDER BY id`)
+      .all(fromTs, toTs, ...ranks) as EventRow[];
+  }
   return getDB()
     .prepare('SELECT * FROM events WHERE real_ts >= ? AND real_ts < ? ORDER BY id')
     .all(fromTs, toTs) as EventRow[];
+}
+
+export function queryEventStats(fromTs: number, toTs: number): { type: string; rank: string; cnt: number }[] {
+  return getDB()
+    .prepare(`SELECT type, rank, COUNT(*) as cnt FROM events WHERE real_ts >= ? AND real_ts < ? AND rank = 'B' GROUP BY type, rank`)
+    .all(fromTs, toTs) as { type: string; rank: string; cnt: number }[];
 }
 
 // --- Named Cultivators ---
@@ -205,9 +305,14 @@ export function queryEventsForCultivator(cultivatorId: number): EventRow[] {
     .all(cultivatorId, cultivatorId, cultivatorId, cultivatorId) as EventRow[];
 }
 
-// --- Daily Reports ---
+// --- Reports ---
 
-export function upsertDailyReport(data: {
+export function queryLastReportTs(): number | null {
+  const row = getDB().prepare('SELECT MAX(created_at) as ts FROM reports').get() as { ts: number | null };
+  return row.ts;
+}
+
+export function upsertReport(data: {
   date: string;
   yearFrom: number;
   yearTo: number;
@@ -217,14 +322,14 @@ export function upsertDailyReport(data: {
   const db = getDB();
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO daily_reports (date, year_from, year_to, prompt, report, created_at)
+    `INSERT INTO reports (date, year_from, year_to, prompt, report, created_at)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(date) DO UPDATE SET
        year_from = excluded.year_from, year_to = excluded.year_to,
        prompt = excluded.prompt, report = excluded.report,
        created_at = excluded.created_at`
   ).run(data.date, data.yearFrom, data.yearTo, data.prompt, data.report, now);
-  const row = db.prepare('SELECT id FROM daily_reports WHERE date = ?').get(data.date) as { id: number };
+  const row = db.prepare('SELECT id FROM reports WHERE date = ?').get(data.date) as { id: number };
   return row.id;
 }
 

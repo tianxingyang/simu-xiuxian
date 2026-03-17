@@ -2,7 +2,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config, llmConfig } from './config.js';
 import { generateBiography } from './biography.js';
-import { generateDailyReport, isBusy } from './reporter.js';
+import { generateReport, isBusy } from './reporter.js';
 import { startBot } from './bot.js';
 import { Runner, type Command } from './runner.js';
 
@@ -57,9 +57,12 @@ const server = createServer((req, res) => {
   if (url.pathname === '/api/report') {
     if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
     if (isBusy()) { json(res, 409, { status: 'busy' }); return; }
-    const date = url.searchParams.get('date') ?? undefined;
-    json(res, 200, { status: 'ok', date: date ?? 'yesterday' });
-    generateDailyReport(date).catch(err => console.error('[server] report generation error:', err));
+    generateReport()
+      .then(report => json(res, 200, { status: 'ok', report }))
+      .catch(err => {
+        console.error('[server] report generation error:', err);
+        json(res, 500, { status: 'error', error: String(err) });
+      });
     return;
   }
 
@@ -89,27 +92,9 @@ const server = createServer((req, res) => {
   }
 
   if (url.pathname === '/api/config/llm') {
-    if (req.method === 'GET') {
-      json(res, 200, { model: llmConfig.model, baseUrl: llmConfig.baseUrl, hasKey: !!llmConfig.apiKey });
-      return;
-    }
-    if (req.method === 'POST') {
-      let body = '';
-      req.on('data', (chunk: Buffer) => { body += chunk; });
-      req.on('end', () => {
-        let parsed: Record<string, unknown>;
-        try { parsed = JSON.parse(body); } catch {
-          json(res, 400, { status: 'bad_request' }); return;
-        }
-        if (typeof parsed.model === 'string') llmConfig.model = parsed.model;
-        if (typeof parsed.baseUrl === 'string') llmConfig.baseUrl = parsed.baseUrl;
-        if (typeof parsed.apiKey === 'string') llmConfig.apiKey = parsed.apiKey;
-        console.log(`[server] LLM config updated: model=${llmConfig.model}`);
-        json(res, 200, { status: 'ok', model: llmConfig.model, baseUrl: llmConfig.baseUrl });
-      });
-      return;
-    }
-    json(res, 405, { status: 'method_not_allowed' }); return;
+    if (req.method !== 'GET') { json(res, 405, { status: 'method_not_allowed' }); return; }
+    json(res, 200, { model: llmConfig.model, baseUrl: llmConfig.baseUrl, hasKey: !!llmConfig.apiKey });
+    return;
   }
 
   json(res, 404, { status: 'not_found' });

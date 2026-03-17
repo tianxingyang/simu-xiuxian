@@ -307,6 +307,7 @@ const menuGrid: { group: string; items: MenuItem[] }[] = [
     { key: 'e', label: 'Env Config', color: 'green' },
     { key: 'm', label: 'Model', color: 'green' },
     { key: 'd', label: 'Report', color: 'green' },
+    { key: 'b', label: 'Bio', color: 'green' },
     { key: 'l', label: 'Logs', color: 'green' },
     { key: 'w', label: 'Reset DB', color: 'green' },
     { key: 's', label: 'Status', color: 'green' },
@@ -515,14 +516,51 @@ async function actionEnvConfig(): Promise<void> {
 async function actionReport(): Promise<void> {
   const be = isRunning('backend');
   if (!be.running) { logMsg('{red-fg}Start backend first{/}'); return; }
-  const date = await prompt('Date (blank=yesterday)', '');
   const port = getPort();
-  const url = `http://localhost:${port}/api/report` + (date ? `?date=${date}` : '');
-  logMsg(`{white-fg}POST ${url}{/}`);
+  const url = `http://localhost:${port}/api/report`;
+  logMsg(`{white-fg}POST ${url} (generating...){/}`);
   try {
     const resp = await fetch(url, { method: 'POST' });
-    const body = await resp.text();
-    logMsg(resp.ok ? `{green-fg}OK:{/} ${body}` : `{red-fg}${resp.status}:{/} ${body}`);
+    const body = await resp.json() as { status: string; report?: string | null; error?: string };
+    if (!resp.ok) {
+      logMsg(`{red-fg}${resp.status}: ${body.error ?? body.status}{/}`);
+      return;
+    }
+    if (body.report) {
+      logMsg('{green-fg}── Report ──{/}');
+      for (const line of body.report.split('\n')) logMsg(line);
+      logMsg('{green-fg}── End ──{/}');
+    } else {
+      logMsg('{yellow-fg}Report generated but no LLM output (check API key){/}');
+    }
+  } catch (e) {
+    logMsg(`{red-fg}Failed:{/} ${(e as Error).message}`);
+  }
+}
+
+async function actionBiography(): Promise<void> {
+  const be = isRunning('backend');
+  if (!be.running) { logMsg('{red-fg}Start backend first{/}'); return; }
+  const name = await prompt('Cultivator name', '');
+  if (!name) { logMsg('{white-fg}Cancelled{/}'); return; }
+  const port = getPort();
+  const url = `http://localhost:${port}/api/biography`;
+  logMsg(`{white-fg}POST ${url} name=${name}{/}`);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const body = await resp.json() as { status: string; biography?: string; cultivator?: { peakLevel: string; isAlive: boolean; memoryLevel: string }; error?: string };
+    if (body.status === 'ok' || body.status === 'not_found' || body.status === 'forgotten') {
+      if (body.cultivator) {
+        logMsg(`{cyan-fg}[${body.cultivator.peakLevel}] alive=${body.cultivator.isAlive} memory=${body.cultivator.memoryLevel}{/}`);
+      }
+      logMsg(`{green-fg}${body.biography ?? '(no text)'}{/}`);
+    } else {
+      logMsg(`{red-fg}Error: ${body.error ?? body.status}{/}`);
+    }
   } catch (e) {
     logMsg(`{red-fg}Failed:{/} ${(e as Error).message}`);
   }
@@ -565,17 +603,6 @@ async function actionSwitchModel(): Promise<void> {
     env.LLM_MODEL = model;
     saveEnv(env);
     logMsg(`{green-fg}Model → {bold}${model}{/}`);
-    try {
-      const resp = await fetch(`http://localhost:${getPort()}/api/config/llm`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model }),
-      });
-      if (resp.ok) logMsg('{green-fg}Applied (hot reload){/}');
-      else logMsg('{yellow-fg}Backend unreachable, will apply on next restart{/}');
-    } catch {
-      logMsg('{yellow-fg}Backend unreachable, will apply on next restart{/}');
-    }
   }
 }
 
@@ -615,6 +642,7 @@ function execByKey(key: string): void {
     case 'e': withLock(actionEnvConfig); break;
     case 'm': withLock(actionSwitchModel); break;
     case 'd': withLock(actionReport); break;
+    case 'b': withLock(actionBiography); break;
     case 'l': logBox.focus(); screen.render(); break;
     case 'w': withLock(actionResetDb); break;
     case 's': withLock(actionStatus); break;

@@ -1,14 +1,35 @@
+import { readFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const ENV_FILE = resolve(ROOT, '.env');
+
+function readEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (existsSync(ENV_FILE)) {
+    for (const line of readFileSync(ENV_FILE, 'utf-8').split('\n')) {
+      const m = line.match(/^([A-Z_]+)="(.*)"/);
+      if (m) env[m[1]] = m[2];
+    }
+  }
+  return env;
+}
+
+function envVal(key: string, fallback: string): string {
+  return process.env[key] || readEnv()[key] || fallback;
+}
+
 export const config = {
-  port: Number(process.env.PORT ?? 3001),
-  host: process.env.HOST ?? '0.0.0.0',
-  dbPath: process.env.DB_PATH ?? './data/simu-xiuxian.db',
-  qqBotAppId: process.env.QQ_BOT_APP_ID ?? '',
-  qqBotAppSecret: process.env.QQ_BOT_APP_SECRET ?? '',
+  port: Number(envVal('PORT', '3001')),
+  host: envVal('HOST', '0.0.0.0'),
+  dbPath: envVal('DB_PATH', './data/simu-xiuxian.db'),
+  qqBotAppId: envVal('QQ_BOT_APP_ID', ''),
+  qqBotAppSecret: envVal('QQ_BOT_APP_SECRET', ''),
 } as const;
 
-/** Mutable LLM config — can be updated at runtime via POST /api/config/llm */
 export const llmConfig = {
-  baseUrl: process.env.LLM_BASE_URL ?? 'https://openrouter.ai/api/v1',
-  apiKey: process.env.LLM_API_KEY ?? '',
-  model: process.env.LLM_MODEL ?? 'deepseek/deepseek-chat',
+  get baseUrl() { return envVal('LLM_BASE_URL', 'https://openrouter.ai/api/v1'); },
+  get apiKey() { return envVal('LLM_API_KEY', ''); },
+  get model() { return envVal('LLM_MODEL', 'deepseek/deepseek-chat'); },
 };
