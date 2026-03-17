@@ -595,3 +595,59 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: Event eviction, report/biography CLI, config auto-reload
+
+**Date**: 2026-03-18
+**Task**: Event eviction, report/biography CLI, config auto-reload
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Changes
+
+| Area | Description |
+|------|-------------|
+| CLI | 新增传记测试入口(b键)、日报生成后直接展示 LLM 输出 |
+| Config | llmConfig 改为 getter 实时读 .env，移除 CLI 同步机制 |
+| Reporter | 统一为时间戳范围查询，删除日期方式；LLM prompt 改用 YAML 格式省 token |
+| DB | 新增 event_cultivators 关联表、protected 字段、记忆曲线淘汰机制 |
+| Eviction | Ebbinghaus 遗忘曲线：B=200年/A=2000年/S=15000年，分批删除+decay 扫描 |
+| Runner | 模拟速度调整为 1/3/5 年/秒，setImmediate 让出事件循环 |
+| Rename | daily_reports → reports（含 DB 迁移） |
+
+## Key Decisions
+
+- 事件淘汰基于记忆曲线而非简单保留期
+- 用 event_cultivators 关联表替代 json_extract 全表扫描（性能从阻塞→<100ms）
+- eviction 分 fast path（10s 删过期）和 slow path（60s decay 扫描）
+- protectEventsForCultivator 的 backfill 方案放弃（全表扫描不可行），改为插入时标记
+
+## New Files
+
+- `server/eviction.ts` — 淘汰模块
+- `server/yaml.ts` — 轻量 YAML 序列化器
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe6d1ca` | (see git log) |
+| `c4e2411` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
