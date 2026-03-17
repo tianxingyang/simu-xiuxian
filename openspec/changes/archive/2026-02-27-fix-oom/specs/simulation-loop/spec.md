@@ -51,7 +51,7 @@ Worker 在批量模式下发送 `tick` 消息后 SHALL 设置 `awaitingAck = tru
 **Falsification**: 随机 start/pause/setSpeed/step 命令 + 变化的消息延迟，检测是否存在 `running=true ∧ awaitingAck=true` 持续超过一个 rAF 周期的死锁。
 
 #### P5: Batch size bound
-**Invariant**: `yearsPerBatch ∈ {100, 500, 1000}` — 连续模式批次大小严格受限于 BATCH_SIZES 映射。
+**Invariant**: `yearsPerBatch ∈ {1, 3, 5}` — 连续模式批次大小严格受限于 BATCH_SIZES 映射（速度档 ×1/×2/×3 对应 1/3/5 年/秒）。
 **Falsification**: 运行中切换 speed tier，断言每次 tick 的 summaries.length 属于允许集合。
 
 ## MODIFIED Requirements
