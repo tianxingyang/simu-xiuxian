@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "src/engine/prng.ts", "reason": "PRNG serialization"}
+{"file": "src/engine/simulation.ts", "reason": "Engine serialize/deserialize"}
+{"file": "server/runner.ts", "reason": "Runner restore with snapshot"}
+{"file": "server/db.ts", "reason": "DB schema + snapshot storage"}
+{"file": "src/types.ts", "reason": "Cultivator type reference"}
+{"file": "src/engine/spatial.ts", "reason": "SpatialIndex rebuild"}

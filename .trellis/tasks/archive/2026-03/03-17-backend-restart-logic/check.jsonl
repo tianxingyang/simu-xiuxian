@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "src/engine/prng.ts", "reason": "Verify PRNG state exposure"}
+{"file": "src/engine/simulation.ts", "reason": "Verify serialize/deserialize correctness"}
+{"file": "server/runner.ts", "reason": "Verify restore fallback logic"}
+{"file": "server/db.ts", "reason": "Verify schema migration"}
