@@ -420,3 +420,49 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 角色生平传记 API
+
+**Date**: 2026-03-17
+**Task**: 角色生平传记 API
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 模块 | 变更 |
+|------|------|
+| `server/biography.ts` | **新增** 传记生成核心模块：艾宾浩斯遗忘曲线记忆衰减、内存缓存、说书人风格 prompt 构建 |
+| `server/db.ts` | 新增 `queryNamedCultivatorByName` 和 `queryEventsForCultivator` 查询函数 |
+| `server/reporter.ts` | `callDeepSeek` → `callLLM`，导出 `PromptMessage` 类型 |
+| `server/config.ts` | LLM 配置迁移：`DEEPSEEK_API_KEY` → `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL`（默认 OpenRouter） |
+| `server/index.ts` | 注册 `POST /api/biography` 端点 |
+| `cli.ts` | ENV_SCHEMA 更新 + 新增 `m Model` 快捷键切换 LLM 模型 |
+
+**设计要点**:
+- 记忆衰减使用艾宾浩斯遗忘曲线 `R(t) = e^(-t/S)`，等级越高记忆越久，飞升者永不遗忘
+- 四级记忆：鲜活 → 模糊 → 传说 → 遗忘，控制 LLM 叙事详细程度
+- 简单内存缓存（6h TTL），避免重复 LLM 调用
+- LLM 端点可配置，支持 OpenRouter 切换任意模型
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d3cf62` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
