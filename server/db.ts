@@ -95,6 +95,10 @@ export function getDB(): Database.Database {
         running INTEGER NOT NULL DEFAULT 0,
         highest_levels_ever TEXT NOT NULL DEFAULT '[]'
       );
+      CREATE TABLE IF NOT EXISTS bot_request_log (
+        group_openid TEXT PRIMARY KEY,
+        last_request_ts INTEGER NOT NULL
+      );
     `);
     // Migration: add snapshot column if missing
     const cols = _db.pragma('table_info(sim_state)') as Array<{ name: string }>;
@@ -255,4 +259,22 @@ export function setSimState(data: {
          snapshot = excluded.snapshot`
     )
     .run(data.currentYear, data.seed, data.speed, data.running ? 1 : 0, data.highestLevelsEver, data.snapshot ?? null);
+}
+
+// --- Bot Request Log ---
+
+export function getLastRequestTs(groupOpenid: string): number | null {
+  const row = getDB()
+    .prepare('SELECT last_request_ts FROM bot_request_log WHERE group_openid = ?')
+    .get(groupOpenid) as { last_request_ts: number } | undefined;
+  return row?.last_request_ts ?? null;
+}
+
+export function setLastRequestTs(groupOpenid: string, ts: number): void {
+  getDB()
+    .prepare(
+      `INSERT INTO bot_request_log (group_openid, last_request_ts) VALUES (?, ?)
+       ON CONFLICT(group_openid) DO UPDATE SET last_request_ts = excluded.last_request_ts`
+    )
+    .run(groupOpenid, ts);
 }

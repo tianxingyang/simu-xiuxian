@@ -2,10 +2,8 @@ export const config = {
   port: Number(process.env.PORT ?? 3001),
   host: process.env.HOST ?? '0.0.0.0',
   dbPath: process.env.DB_PATH ?? './data/simu-xiuxian.db',
-  onebotHttpUrl: process.env.ONEBOT_HTTP_URL ?? '',
-  onebotToken: process.env.ONEBOT_TOKEN ?? '',
-  qqGroupId: Number(process.env.QQ_GROUP_ID ?? 0),
-  reportCron: process.env.REPORT_CRON ?? '0 8 * * *',
+  qqBotAppId: process.env.QQ_BOT_APP_ID ?? '',
+  qqBotAppSecret: process.env.QQ_BOT_APP_SECRET ?? '',
 } as const;
 
 /** Mutable LLM config — can be updated at runtime via POST /api/config/llm */

@@ -24,10 +24,8 @@ const ENV_SCHEMA: EnvEntry[] = [
   { key: 'LLM_BASE_URL', default: 'https://openrouter.ai/api/v1', desc: 'LLM API URL' },
   { key: 'LLM_API_KEY', default: '', desc: 'LLM API key', sensitive: true },
   { key: 'LLM_MODEL', default: 'deepseek/deepseek-chat', desc: 'LLM model' },
-  { key: 'ONEBOT_HTTP_URL', default: '', desc: 'OneBot URL' },
-  { key: 'ONEBOT_TOKEN', default: '', desc: 'OneBot token', sensitive: true },
-  { key: 'QQ_GROUP_ID', default: '0', desc: 'QQ group ID' },
-  { key: 'REPORT_CRON', default: '0 8 * * *', desc: 'Report cron' },
+  { key: 'QQ_BOT_APP_ID', default: '', desc: 'QQ Bot AppID' },
+  { key: 'QQ_BOT_APP_SECRET', default: '', desc: 'QQ Bot AppSecret', sensitive: true },
   { key: 'VITE_WS_URL', default: '', desc: 'WS URL override' },
 ];
 
@@ -555,7 +553,7 @@ async function actionStatus(): Promise<void> {
   logMsg(`SimWS:    ${sim.connected ? '{green-fg}connected{/}' : '{white-fg}disconnected{/}'}`);
   logMsg(`PORT=${env.PORT || '3001'}  DB=${env.DB_PATH || '(default)'}`);
   logMsg(`LLM_KEY=${env.LLM_API_KEY ? '{green-fg}set{/}' : '{white-fg}unset{/}'}  Model=${env.LLM_MODEL || 'deepseek/deepseek-chat'}`);
-  logMsg(`ONEBOT=${env.ONEBOT_HTTP_URL || '{white-fg}unset{/}'}`);
+  logMsg(`QQ_BOT=${env.QQ_BOT_APP_ID ? '{green-fg}configured{/}' : '{white-fg}unset{/}'}`);
 }
 
 async function actionSwitchModel(): Promise<void> {

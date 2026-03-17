@@ -1,11 +1,9 @@
 import { LEVEL_NAMES } from '../src/constants.js';
 import type { RichEvent, NewsRank } from '../src/types.js';
 import { llmConfig } from './config.js';
-import { pushToQQ } from './bot.js';
 import {
   type EventRow,
   type NamedCultivatorRow,
-  getDB,
   queryEventsByDateRange,
   queryNamedCultivator,
   upsertDailyReport,
@@ -109,14 +107,7 @@ function enrichEvent(row: EventRow): EnrichedEvent {
   return { event, event_id: row.id, bios: [] };
 }
 
-// ---------------------------------------------------------------------------
-// aggregateEvents
-// ---------------------------------------------------------------------------
-
-export function aggregateEvents(dateStr: string): AggregatedData {
-  const { from, to } = dateToUtc8Bounds(dateStr);
-  const rows = queryEventsByDateRange(from, to);
-
+function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
   const headlines: EnrichedEvent[] = [];
   const aEvents: EnrichedEvent[] = [];
   const stats: Statistics = {
@@ -144,7 +135,6 @@ export function aggregateEvents(dateStr: string): AggregatedData {
     } else if (rank === 'A') {
       aEvents.push(enriched);
     } else {
-      // B-level: aggregate into statistics
       if (ev.type === 'promotion') {
         const key = `lv${ev.toLevel}`;
         if (key in stats.promotions) stats.promotions[key]++;
@@ -158,10 +148,8 @@ export function aggregateEvents(dateStr: string): AggregatedData {
     }
   }
 
-  // Sort headlines by year asc
   headlines.sort((a, b) => a.event.year - b.event.year);
 
-  // Sort A events: highest level desc -> year asc -> event_id asc
   aEvents.sort((a, b) => {
     const lvDiff = highestLevel(b.event) - highestLevel(a.event);
     if (lvDiff !== 0) return lvDiff;
@@ -170,10 +158,8 @@ export function aggregateEvents(dateStr: string): AggregatedData {
     return a.event_id - b.event_id;
   });
 
-  // Cap at 15
   const major_events = aEvents.slice(0, 15);
 
-  // Bio enrichment for S/A events
   for (const item of [...headlines, ...major_events]) {
     const ids = extractNamedIds(item.event);
     for (const id of ids) {
@@ -186,10 +172,6 @@ export function aggregateEvents(dateStr: string): AggregatedData {
     }
   }
 
-  // Compute population from sim_state if possible; fallback to 0
-  let populationStart = 0;
-  let populationEnd = 0;
-
   if (yearFrom === Number.MAX_SAFE_INTEGER) {
     yearFrom = 0;
     yearTo = 0;
@@ -200,11 +182,32 @@ export function aggregateEvents(dateStr: string): AggregatedData {
     year_from: yearFrom,
     year_to: yearTo,
     years_simulated: yearTo > yearFrom ? yearTo - yearFrom : 0,
-    population_start: populationStart,
-    population_end: populationEnd,
+    population_start: 0,
+    population_end: 0,
   };
 
   return { headlines, major_events, statistics: stats, meta };
+}
+
+// ---------------------------------------------------------------------------
+// aggregateEvents (date-based, backward compat)
+// ---------------------------------------------------------------------------
+
+export function aggregateEvents(dateStr: string): AggregatedData {
+  const { from, to } = dateToUtc8Bounds(dateStr);
+  const rows = queryEventsByDateRange(from, to);
+  return classifyRows(rows, dateStr);
+}
+
+// ---------------------------------------------------------------------------
+// aggregateEventsByTsRange (timestamp-based, for bot on-demand)
+// ---------------------------------------------------------------------------
+
+export function aggregateEventsByTsRange(fromTs: number, toTs: number): AggregatedData {
+  const rows = queryEventsByDateRange(fromTs, toTs);
+  const now = new Date(Date.now() + UTC8_OFFSET_MS);
+  const dateStr = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+  return classifyRows(rows, dateStr);
 }
 
 // ---------------------------------------------------------------------------
@@ -328,7 +331,7 @@ export async function callLLM(messages: PromptMessage[]): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// generateDailyReport (full pipeline)
+// generateDailyReport (full pipeline, for HTTP API backward compat)
 // ---------------------------------------------------------------------------
 
 let _busy = false;
@@ -349,14 +352,10 @@ export async function generateDailyReport(date?: string): Promise<void> {
 
   _busy = true;
   try {
-    // 1. Aggregate
     const data = aggregateEvents(targetDate);
-
-    // 2. Build prompt
     const messages = buildPrompt(data);
     const promptJson = JSON.stringify(messages);
 
-    // 3. Call LLM (or skip)
     let report: string | null = null;
 
     if (!llmConfig.apiKey) {
@@ -369,7 +368,6 @@ export async function generateDailyReport(date?: string): Promise<void> {
       }
     }
 
-    // 4. Store
     upsertDailyReport({
       date: targetDate,
       yearFrom: data.meta.year_from,
@@ -378,32 +376,35 @@ export async function generateDailyReport(date?: string): Promise<void> {
       report,
     });
     console.log(`[reporter] report stored for ${targetDate}, hasReport=${report !== null}`);
-
-    // 5. Push (only if report was generated)
-    if (report) {
-      await pushToQQ(report);
-    }
   } finally {
     _busy = false;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Backfill check
+// generateReportForRange (for bot on-demand generation)
 // ---------------------------------------------------------------------------
 
-export function checkMissedReport(): boolean {
-  const yesterday = yesterdayUtc8();
-  const db = getDB();
+export async function generateReportForRange(fromTs: number, toTs: number): Promise<string | null> {
+  const data = aggregateEventsByTsRange(fromTs, toTs);
+  const messages = buildPrompt(data);
+  const promptJson = JSON.stringify(messages);
 
-  const existing = db
-    .prepare('SELECT id FROM daily_reports WHERE date = ?')
-    .get(yesterday) as { id: number } | undefined;
-  if (existing) return false;
+  let report: string | null = null;
 
-  const { from, to } = dateToUtc8Bounds(yesterday);
-  const hasEvents = db
-    .prepare('SELECT 1 FROM events WHERE real_ts >= ? AND real_ts < ? LIMIT 1')
-    .get(from, to);
-  return !!hasEvents;
+  if (!llmConfig.apiKey) {
+    console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
+  } else {
+    report = await callLLM(messages);
+  }
+
+  upsertDailyReport({
+    date: data.meta.real_date,
+    yearFrom: data.meta.year_from,
+    yearTo: data.meta.year_to,
+    prompt: promptJson,
+    report,
+  });
+
+  return report;
 }

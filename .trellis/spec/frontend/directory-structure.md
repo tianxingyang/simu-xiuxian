@@ -40,14 +40,15 @@ test/                       # Vitest tests + analysis scripts
 └── perf-bench.ts           # Performance benchmarks
 
 server/                     # Node.js backend (simulation engine + API)
-├── index.ts                # HTTP + WebSocket server entry, cron scheduling
+├── index.ts                # HTTP + WebSocket server entry
 ├── runner.ts               # Server-side simulation runner, batch dispatch, backpressure
 ├── identity.ts             # Cultivator identity system: name generation, biography tracking
+├── biography.ts            # Cultivator biography: Ebbinghaus memory decay + LLM generation
 ├── events.ts               # Event collection + news value scoring (S/A/B/C)
-├── reporter.ts             # Daily report pipeline: aggregate → prompt → DeepSeek → store
-├── bot.ts                  # QQ Bot push (OneBot v11 HTTP API)
+├── reporter.ts             # Daily report pipeline: aggregate → prompt → LLM → store
+├── bot.ts                  # QQ Bot (official API v2 Gateway + passive reply)
 ├── db.ts                   # SQLite data layer (better-sqlite3, WAL mode)
-└── config.ts               # Environment variable configuration
+└── config.ts               # Environment variable configuration (LLM runtime hot-reload)
 
 scripts/                    # Build/analysis scripts
 data/                       # SQLite database files (server)

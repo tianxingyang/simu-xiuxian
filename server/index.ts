@@ -1,9 +1,9 @@
 import { createServer, type ServerResponse } from 'node:http';
-import cron from 'node-cron';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config, llmConfig } from './config.js';
 import { generateBiography } from './biography.js';
-import { generateDailyReport, isBusy, checkMissedReport } from './reporter.js';
+import { generateDailyReport, isBusy } from './reporter.js';
+import { startBot } from './bot.js';
 import { Runner, type Command } from './runner.js';
 
 function json(res: ServerResponse, status: number, data: unknown): void {
@@ -143,17 +143,5 @@ wss.on('connection', (ws) => {
 
 server.listen(config.port, config.host, () => {
   console.log(`[server] http://${config.host}:${config.port}`);
-
-  // Cron: daily report generation
-  cron.schedule(config.reportCron, () => {
-    console.log('[cron] triggering daily report');
-    generateDailyReport().catch(err => console.error('[cron] report error:', err));
-  }, { timezone: 'Asia/Shanghai' });
-  console.log(`[server] report cron scheduled: "${config.reportCron}" Asia/Shanghai`);
-
-  // Startup backfill: check if yesterday's report is missing
-  if (checkMissedReport()) {
-    console.log('[server] missed report detected, backfilling...');
-    generateDailyReport().catch(err => console.error('[server] backfill error:', err));
-  }
+  startBot(() => runner.getState().year);
 });

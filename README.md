@@ -15,7 +15,7 @@
 
 ---
 
-一个修仙世界演化模拟器。模拟修仙者的修炼、突破、战斗与陨落，实时可视化种群动态与境界分布。后端服务持续运行模拟引擎，通过 WebSocket 将实时数据推送至前端仪表盘，并每日聚合事件经 LLM 润色后生成"修仙世界日报"推送至 QQ 群。
+一个修仙世界演化模拟器。模拟修仙者在 32×32 环面地图上的修炼、突破、战斗与陨落，实时可视化种群动态与境界分布。后端服务持续运行模拟引擎，通过 WebSocket 将实时数据推送至前端仪表盘与 TUI 控制台，并按需聚合事件经 LLM 润色后生成"修仙世界日报"，通过 QQ 官方 Bot API v2 被动回复至群聊。支持查询具名修士传记，记忆细节随时间按艾宾浩斯遗忘曲线衰减。
 
 ## Features
 
@@ -23,9 +23,13 @@
 
 炼气 → 筑基 → 结丹 → 元婴 → 化神 → 炼虚 → 合体 → 大乘，八大境界（Lv0–Lv7）逐级突破。Lv0→Lv1 修为达标自动升级；Lv1+ 需通过**突破概率门**判定，突破概率随境界升高而递减，失败触发冷却期并可能附带修为损失或受伤惩罚。
 
+### 空间系统
+
+修士分布在 32×32 环面网格地图上，战斗匹配从全局同境界池改为**空间邻域匹配**——遭遇半径随境界递增（Lv0=2 至 Lv7=16）。修士具备随机游走行为，战败后逃窜、突破后位移，高境界修士活动范围更大。
+
 ### 战斗系统
 
-同境界修仙者随机遭遇，基于**勇气值**与**胜率预估**决定战斗意愿：
+同境界且处于遭遇半径内的修仙者随机遭遇，基于**勇气值**与**胜率预估**决定战斗意愿：
 - **双方皆战** — 直接进入战斗
 - **一方想战一方退避** — 触发**避战判定**（成功概率受双方修为差距影响），避战失败则扣减 5% 修为后被迫应战
 - **双方皆退** — 无事发生
@@ -51,7 +55,13 @@
 
 ### 修士身份系统
 
-修士晋升至结丹（Lv2）时获得修仙风格姓名（姓氏池 + 名字用字池随机组合，PRNG 驱动可复现），并开始追踪个体履历：击杀数、战斗胜败、晋升记录、巅峰修为、死因等。
+修士晋升至结丹（Lv2）时获得修仙风格姓名，并开始追踪个体履历：击杀数、战斗胜败、晋升记录、巅峰修为、死因等。
+
+姓名生成基于 **120W 现代 + 25W 古代中文姓名语料** 训练的**二元组转移模型**（bigram），包含 100 个单姓、20 个复姓、4921 组语料验证字对，总唯一姓名容量约 61 万。死亡修士姓名自动回收，避免重名后缀。
+
+### 修士传记
+
+通过 `POST /api/biography` 查询具名修士的叙事传记。LLM 以"茶馆说书人"视角生成，记忆细节随时间按 **Ebbinghaus 遗忘曲线** R(t)=e^(−t/S) 衰减——境界越高被铭记越久（结丹 100 年，大乘 15000 年），飞升者永不遗忘。
 
 ### 结构化事件与新闻评级
 
@@ -66,15 +76,19 @@
 
 ### 修仙世界日报
 
-每日定时聚合模拟事件，按新闻价值筛选分级，构建结构化 Prompt 发送至 DeepSeek API，由 LLM 以"修仙史官"视角润色生成日报文本（~800字），通过 QQ 机器人（OneBot v11）推送至群。
+在群聊中 @机器人 发送"日报"按需聚合模拟事件，按新闻价值筛选分级，构建结构化 Prompt 发送至 LLM（默认 OpenRouter，可配置任意兼容 API），由"修仙史官"视角润色生成日报文本（~800字），通过 QQ 官方 Bot API v2 被动回复至群。发送"传记 <名字>"查询修士传记。支持运行时热切换 LLM 模型（`POST /api/config/llm`），无需重启服务。
 
 ### 可视化仪表盘
 
 - 境界分布柱状图
 - 种群趋势折线图（人口 / 平均年龄 / 平均勇气，Lv1–Lv7 分线展示）
-- 事件日志（战斗、晋升、陨落，含败者结局详情）
+- 事件日志（战斗、晋升、陨落，含败者结局详情；滚动时自动冻结列表并显示"N 条新事件"徽标）
 - 统计面板（总人口、新增、死亡分项、晋升、境界统计表格含年龄/勇气均值和中位数）
 - 连接状态指示（connected / connecting / disconnected）
+
+### TUI 控制台
+
+基于 blessed 的终端仪表盘（`npm run cli`），提供网格导航操作面板、服务生命周期管理、WebSocket 模拟控制、实时状态展示和日志尾随，适合无 GUI 环境下管理模拟。
 
 ### 模拟控制
 
@@ -85,12 +99,13 @@
 
 ### 高性能架构
 
-- Node.js 后端持续运行引擎 + WebSocket 实时推送 + ACK 背压控制
+- Node.js 后端持续运行引擎 + WebSocket 实时推送 + ACK 背压控制（含超时回退防卡死）
+- **二进制快照恢复**——重启时将完整引擎状态（PRNG、修士、里程碑）序列化为 binary buffer 存入 `sim_state`，恢复时间从 O(years) 降至 O(population)，无快照时降级为逐年回放并立即持久化快照
 - 前端断线自动重连（指数退避 1s–30s）
 - 密集数组存储 + 对象槽位复用（无 GC 抖动）
 - rAF 渲染节流（多条 WebSocket 消息合并为单次 React setState）
 - 趋势数据自动降采样（上限 2000 点）
-- SQLite 持久化（WAL 模式，事件/修士/日报/引擎状态）
+- SQLite 持久化（WAL 模式，事件/修士/日报/引擎状态/快照）
 
 ## Tech Stack
 
@@ -99,10 +114,12 @@
 | Frontend | React 19 + Recharts |
 | Backend | Node.js + WebSocket (ws) |
 | Database | SQLite (better-sqlite3) |
-| LLM | DeepSeek API |
-| Bot | OneBot v11 (NapCat/LLOneBot) |
+| LLM | OpenRouter / DeepSeek / 任意 OpenAI 兼容 API |
+| Bot | QQ Bot API v2 (官方) |
 | Language | TypeScript 5.8 |
 | Build | Vite 6 (frontend) + tsx/tsup (backend) |
+| TUI | blessed (terminal dashboard) |
+| Test | Vitest |
 
 ## Getting Started
 
@@ -116,8 +133,14 @@ npm run server:dev
 # 启动前端开发服务器（另一个终端）
 npm run dev
 
+# 或使用 TUI 控制台（集成服务管理 + 模拟控制）
+npm run cli
+
 # 构建生产版本
 npm run build
+
+# 运行测试
+npm test
 ```
 
 ### 环境变量
@@ -125,11 +148,11 @@ npm run build
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `3001` | 后端服务端口 |
-| `DEEPSEEK_API_KEY` | — | DeepSeek API Key（不设置则跳过 LLM 调用） |
-| `ONEBOT_HTTP_URL` | — | OneBot HTTP API 地址（不设置则跳过 QQ 推送） |
-| `QQ_GROUP_ID` | — | 推送目标 QQ 群号 |
-| `ONEBOT_TOKEN` | — | OneBot 认证令牌（可选） |
-| `REPORT_CRON` | `0 8 * * *` | 日报定时触发 cron 表达式（Asia/Shanghai） |
+| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | LLM API 基础地址（兼容 OpenAI 格式） |
+| `LLM_API_KEY` | — | LLM API Key（不设置则跳过 LLM 调用） |
+| `LLM_MODEL` | `deepseek/deepseek-chat` | LLM 模型名称（运行时可通过 API 热切换） |
+| `QQ_BOT_APP_ID` | — | QQ 机器人 AppID（不设置则不启动 Bot） |
+| `QQ_BOT_APP_SECRET` | — | QQ 机器人 AppSecret |
 | `DB_PATH` | `./data/simu-xiuxian.db` | SQLite 数据库路径 |
 | `VITE_WS_URL` | — | 前端 WebSocket 地址覆盖（默认从 origin 推导） |
 
@@ -140,32 +163,38 @@ npm run build
 ```
 src/
 ├── engine/
-│   ├── simulation.ts   # 核心模拟：年度循环、修炼、突破、寿尽、战败结局
-│   ├── combat.ts       # 战斗系统：遭遇、避战、胜负判定、机缘掠夺
-│   ├── prng.ts         # 伪随机数生成器 + 截断正态分布
-│   ├── benchmark.ts    # 性能基准测试
-│   └── profiler.ts     # 性能分析工具
+│   ├── simulation.ts    # 核心模拟：年度循环、修炼、突破、寿尽、战败结局、快照序列化
+│   ├── combat.ts        # 战斗系统：空间邻域遭遇、避战、胜负判定、机缘掠夺
+│   ├── spatial.ts       # 空间索引：32×32 环面网格、遭遇半径、移动逻辑
+│   ├── prng.ts          # 伪随机数生成器 + 截断正态分布
+│   ├── benchmark.ts     # 性能基准测试
+│   └── profiler.ts      # 性能分析工具
 ├── components/
-│   ├── Dashboard.tsx    # 主面板布局
-│   ├── LevelChart.tsx   # 境界分布图
-│   ├── TrendChart.tsx   # 趋势图（人口/年龄/勇气三 Tab）
-│   ├── EventLog.tsx     # 事件日志
-│   ├── StatsPanel.tsx   # 统计面板 + 境界统计表格
-│   └── Controls.tsx     # 控制栏 + 连接状态指示
+│   ├── Dashboard.tsx     # 主面板布局
+│   ├── LevelChart.tsx    # 境界分布图
+│   ├── TrendChart.tsx    # 趋势图（人口/年龄/勇气三 Tab）
+│   ├── EventLog.tsx      # 事件日志（滚动冻结 + 新事件徽标）
+│   ├── StatsPanel.tsx    # 统计面板 + 境界统计表格
+│   └── Controls.tsx      # 控制栏 + 连接状态指示
 ├── hooks/
-│   └── useSimulation.ts # WebSocket 通信 + rAF 缓冲合并 + 断线重连
-├── constants.ts         # 境界阈值、战斗参数、突破概率、伤害常量
-└── types.ts             # TypeScript 类型定义
+│   └── useSimulation.ts  # WebSocket 通信 + rAF 缓冲合并 + 断线重连
+├── balance.ts            # 平衡参数
+├── balance-presets/      # 历史平衡性预设版本
+├── constants.ts          # 境界阈值、战斗参数、突破概率、空间常量
+└── types.ts              # TypeScript 类型定义
 
 server/
-├── index.ts             # HTTP + WebSocket server 入口
-├── runner.ts            # 引擎运行器：生命周期管理、批量调度、背压控制
-├── identity.ts          # 修士身份系统：姓名生成、履历追踪
-├── events.ts            # 事件收集 + 新闻价值评分
-├── reporter.ts          # 日报管线：聚合 → Prompt → DeepSeek → 存储
-├── bot.ts               # QQ Bot 推送（OneBot v11）
-├── db.ts                # SQLite 数据层
-└── config.ts            # 环境变量配置
+├── index.ts              # HTTP + WebSocket server 入口 + REST API
+├── runner.ts             # 引擎运行器：生命周期管理、批量调度、背压控制、快照持久化
+├── identity.ts           # 修士身份系统：语料库二元组姓名生成、履历追踪、姓名回收
+├── biography.ts          # 修士传记：Ebbinghaus 记忆衰减 + LLM 叙事生成
+├── events.ts             # 事件收集 + 新闻价值评分
+├── reporter.ts           # 日报管线：聚合 → Prompt → LLM → 存储
+├── bot.ts                # QQ Bot (官方 API v2 Gateway + 被动回复)
+├── db.ts                 # SQLite 数据层
+└── config.ts             # 环境变量配置（LLM 运行时热重载）
+
+cli.ts                    # TUI 控制台（blessed 终端仪表盘）
 ```
 
 ## License
