@@ -1,6 +1,6 @@
 import { LEVEL_NAMES } from '../src/constants.js';
 import type { RichEvent, NewsRank } from '../src/types.js';
-import { config } from './config.js';
+import { llmConfig } from './config.js';
 import { pushToQQ } from './bot.js';
 import {
   type EventRow,
@@ -300,15 +300,15 @@ export function buildPrompt(data: AggregatedData): PromptMessage[] {
 // ---------------------------------------------------------------------------
 
 export async function callLLM(messages: PromptMessage[]): Promise<string> {
-  const url = `${config.llmBaseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const url = `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.llmApiKey}`,
+      Authorization: `Bearer ${llmConfig.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.llmModel,
+      model: llmConfig.model,
       messages,
       temperature: 0.7,
       max_tokens: 2000,
@@ -359,7 +359,7 @@ export async function generateDailyReport(date?: string): Promise<void> {
     // 3. Call LLM (or skip)
     let report: string | null = null;
 
-    if (!config.llmApiKey) {
+    if (!llmConfig.apiKey) {
       console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
     } else {
       try {

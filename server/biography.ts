@@ -2,7 +2,7 @@ import { LEVEL_NAMES } from '../src/constants.js';
 import type { EventRow, NamedCultivatorRow } from './db.js';
 import { queryNamedCultivatorByName, queryEventsForCultivator } from './db.js';
 import { type PromptMessage, callLLM } from './reporter.js';
-import { config } from './config.js';
+import { llmConfig } from './config.js';
 
 // ---------------------------------------------------------------------------
 // Memory Decay — Ebbinghaus forgetting curve: R(t) = e^(-t/S)
@@ -189,7 +189,7 @@ export async function generateBiography(
   }
 
   // --- no API key ---
-  if (!config.llmApiKey) {
+  if (!llmConfig.apiKey) {
     return { status: 'error', error: 'LLM_API_KEY not configured' };
   }
 

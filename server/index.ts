@@ -1,7 +1,7 @@
 import { createServer, type ServerResponse } from 'node:http';
 import cron from 'node-cron';
 import { WebSocket, WebSocketServer } from 'ws';
-import { config } from './config.js';
+import { config, llmConfig } from './config.js';
 import { generateBiography } from './biography.js';
 import { generateDailyReport, isBusy, checkMissedReport } from './reporter.js';
 import { Runner, type Command } from './runner.js';
@@ -86,6 +86,30 @@ const server = createServer((req, res) => {
         });
     });
     return;
+  }
+
+  if (url.pathname === '/api/config/llm') {
+    if (req.method === 'GET') {
+      json(res, 200, { model: llmConfig.model, baseUrl: llmConfig.baseUrl, hasKey: !!llmConfig.apiKey });
+      return;
+    }
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', (chunk: Buffer) => { body += chunk; });
+      req.on('end', () => {
+        let parsed: Record<string, unknown>;
+        try { parsed = JSON.parse(body); } catch {
+          json(res, 400, { status: 'bad_request' }); return;
+        }
+        if (typeof parsed.model === 'string') llmConfig.model = parsed.model;
+        if (typeof parsed.baseUrl === 'string') llmConfig.baseUrl = parsed.baseUrl;
+        if (typeof parsed.apiKey === 'string') llmConfig.apiKey = parsed.apiKey;
+        console.log(`[server] LLM config updated: model=${llmConfig.model}`);
+        json(res, 200, { status: 'ok', model: llmConfig.model, baseUrl: llmConfig.baseUrl });
+      });
+      return;
+    }
+    json(res, 405, { status: 'method_not_allowed' }); return;
   }
 
   json(res, 404, { status: 'not_found' });

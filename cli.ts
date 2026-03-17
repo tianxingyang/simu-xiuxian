@@ -567,7 +567,17 @@ async function actionSwitchModel(): Promise<void> {
     env.LLM_MODEL = model;
     saveEnv(env);
     logMsg(`{green-fg}Model → {bold}${model}{/}`);
-    logMsg('{yellow-fg}Restart backend to apply{/}');
+    try {
+      const resp = await fetch(`http://localhost:${getPort()}/api/config/llm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model }),
+      });
+      if (resp.ok) logMsg('{green-fg}Applied (hot reload){/}');
+      else logMsg('{yellow-fg}Backend unreachable, will apply on next restart{/}');
+    } catch {
+      logMsg('{yellow-fg}Backend unreachable, will apply on next restart{/}');
+    }
   }
 }
 
