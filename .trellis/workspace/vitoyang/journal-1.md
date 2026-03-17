@@ -548,3 +548,50 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Migrate QQ Bot from OneBot v11 to Official API v2
+
+**Date**: 2026-03-17
+**Task**: Migrate QQ Bot from OneBot v11 to Official API v2
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 改动 | 说明 |
+|------|------|
+| server/bot.ts | 全部重写：OAuth Token 管理、QQ Bot Gateway WebSocket（心跳/鉴权/Resume/断线重连）、被动消息回复、"日报"和"传记"命令路由 |
+| server/config.ts | 移除 onebotHttpUrl/onebotToken/qqGroupId/reportCron，新增 qqBotAppId/qqBotAppSecret |
+| server/db.ts | 新增 bot_request_log 表（per-group last_request_ts），UPSERT 访问函数 |
+| server/reporter.ts | 提取 classifyRows 共享逻辑，新增 aggregateEventsByTsRange + generateReportForRange，移除 pushToQQ 和 checkMissedReport |
+| server/index.ts | 移除 node-cron 和定时任务，启动时调用 startBot() |
+| cli.ts | ENV_SCHEMA 和状态显示从 OneBot 更新为 QQ Bot |
+| package.json | 移除 node-cron 依赖 |
+| README.md | 更新技术栈、环境变量、功能描述 |
+
+**关键设计决策**：
+- QQ Bot API v2 自 2025-04-21 起停用主动推送，因此日报改为按需生成（用户 @机器人 触发）
+- 日报覆盖「上次请求时间 → 本次请求时间」的事件，首次请求默认回溯 24 小时
+- 新增传记查询命令，复用已有 generateBiography 系统
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57cb5c1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

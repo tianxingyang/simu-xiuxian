@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-03-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~550 | Active |
+| `journal-1.md` | ~597 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 12 | 2026-03-17 | Migrate QQ Bot from OneBot v11 to Official API v2 | `57cb5c1` |
 | 11 | 2026-03-17 | LLM 模型热切换 | `904440e` |
 | 10 | 2026-03-17 | 后端重启快照优化 + EventLog类型修复 | `7cb2521`, `b343e7c` |
 | 9 | 2026-03-17 | 角色生平传记 API | `6d3cf62` |
