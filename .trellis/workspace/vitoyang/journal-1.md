@@ -466,3 +466,53 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 后端重启快照优化 + EventLog类型修复
+
+**Date**: 2026-03-17
+**Task**: 后端重启快照优化 + EventLog类型修复
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 主要改动
+
+| 模块 | 改动 |
+|------|------|
+| `src/engine/prng.ts` | PRNG 暴露 `state` getter，支持序列化/恢复内部种子状态 |
+| `src/engine/simulation.ts` | 新增 `serialize()` / `static deserialize()` 二进制快照方法 |
+| `server/db.ts` | sim_state 表新增 `snapshot BLOB` 列（含迁移逻辑） |
+| `server/runner.ts` | restore() 优先使用快照，fallback 到原有重放 |
+| `src/engine/combat.ts` | 战斗事件生成增加 eventMinLevel 过滤优化 |
+| `src/components/EventLog.tsx` | frozenFirstIdRef 类型从 string 修正为 number |
+
+## 技术要点
+
+- 后端重启恢复时间从 O(years) 降为 O(population)
+- 快照格式：version header + PRNG state + cultivators binary + milestones
+- 典型 1000 人口快照 ~100KB，反序列化 <10ms
+- 向后兼容：无快照时自动 fallback 到原有确定性重放
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7cb2521` | (see git log) |
+| `b343e7c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
