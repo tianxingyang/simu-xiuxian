@@ -21,7 +21,9 @@ const ENV_SCHEMA: EnvEntry[] = [
   { key: 'PORT', default: '3001', desc: 'Backend port' },
   { key: 'HOST', default: '0.0.0.0', desc: 'Bind address' },
   { key: 'DB_PATH', default: './data/simu-xiuxian.db', desc: 'SQLite path' },
-  { key: 'DEEPSEEK_API_KEY', default: '', desc: 'DeepSeek key', sensitive: true },
+  { key: 'LLM_BASE_URL', default: 'https://openrouter.ai/api/v1', desc: 'LLM API URL' },
+  { key: 'LLM_API_KEY', default: '', desc: 'LLM API key', sensitive: true },
+  { key: 'LLM_MODEL', default: 'deepseek/deepseek-chat', desc: 'LLM model' },
   { key: 'ONEBOT_HTTP_URL', default: '', desc: 'OneBot URL' },
   { key: 'ONEBOT_TOKEN', default: '', desc: 'OneBot token', sensitive: true },
   { key: 'QQ_GROUP_ID', default: '0', desc: 'QQ group ID' },
@@ -305,6 +307,7 @@ const menuGrid: { group: string; items: MenuItem[] }[] = [
   ]},
   { group: 'Tools', items: [
     { key: 'e', label: 'Env Config', color: 'green' },
+    { key: 'm', label: 'Model', color: 'green' },
     { key: 'd', label: 'Report', color: 'green' },
     { key: 'l', label: 'Logs', color: 'green' },
     { key: 'w', label: 'Reset DB', color: 'green' },
@@ -551,7 +554,21 @@ async function actionStatus(): Promise<void> {
   logMsg(`Frontend: ${fe.running ? `{green-fg}● PID ${fe.pid}{/}` : '{white-fg}○ stopped{/}'}`);
   logMsg(`SimWS:    ${sim.connected ? '{green-fg}connected{/}' : '{white-fg}disconnected{/}'}`);
   logMsg(`PORT=${env.PORT || '3001'}  DB=${env.DB_PATH || '(default)'}`);
-  logMsg(`DEEPSEEK=${env.DEEPSEEK_API_KEY ? '{green-fg}set{/}' : '{white-fg}unset{/}'}  ONEBOT=${env.ONEBOT_HTTP_URL || '{white-fg}unset{/}'}`);
+  logMsg(`LLM_KEY=${env.LLM_API_KEY ? '{green-fg}set{/}' : '{white-fg}unset{/}'}  Model=${env.LLM_MODEL || 'deepseek/deepseek-chat'}`);
+  logMsg(`ONEBOT=${env.ONEBOT_HTTP_URL || '{white-fg}unset{/}'}`);
+}
+
+async function actionSwitchModel(): Promise<void> {
+  const env = loadEnv();
+  const current = env.LLM_MODEL || 'deepseek/deepseek-chat';
+  logMsg(`{white-fg}Current model: {bold}${current}{/}`);
+  const model = await prompt('LLM_MODEL', current);
+  if (model !== current) {
+    env.LLM_MODEL = model;
+    saveEnv(env);
+    logMsg(`{green-fg}Model → {bold}${model}{/}`);
+    logMsg('{yellow-fg}Restart backend to apply{/}');
+  }
 }
 
 // ─── action dispatch ─────────────────────────────────────────────────────────
@@ -588,6 +605,7 @@ function execByKey(key: string): void {
       logMsg(wsSend({ type: 'reset', seed, initialPop: pop }));
     }); break;
     case 'e': withLock(actionEnvConfig); break;
+    case 'm': withLock(actionSwitchModel); break;
     case 'd': withLock(actionReport); break;
     case 'l': logBox.focus(); screen.render(); break;
     case 'w': withLock(actionResetDb); break;

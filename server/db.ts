@@ -176,6 +176,25 @@ export function queryNamedCultivator(id: number): NamedCultivatorRow | undefined
     .get(id) as NamedCultivatorRow | undefined;
 }
 
+export function queryNamedCultivatorByName(name: string): NamedCultivatorRow | undefined {
+  return getDB()
+    .prepare('SELECT * FROM named_cultivators WHERE name = ?')
+    .get(name) as NamedCultivatorRow | undefined;
+}
+
+export function queryEventsForCultivator(cultivatorId: number): EventRow[] {
+  return getDB()
+    .prepare(
+      `SELECT * FROM events WHERE
+        json_extract(payload, '$.winner.id') = ?
+        OR json_extract(payload, '$.loser.id') = ?
+        OR json_extract(payload, '$.subject.id') = ?
+        OR json_extract(payload, '$.detail.cultivatorId') = ?
+      ORDER BY year, id`
+    )
+    .all(cultivatorId, cultivatorId, cultivatorId, cultivatorId) as EventRow[];
+}
+
 // --- Daily Reports ---
 
 export function upsertDailyReport(data: {

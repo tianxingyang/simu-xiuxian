@@ -1,0 +1,7 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "server/identity.ts", "reason": "NamedCultivator interface and IdentityManager"}
+{"file": "server/db.ts", "reason": "DB schema and query functions"}
+{"file": "server/reporter.ts", "reason": "callDeepSeek and prompt pattern"}
+{"file": "server/index.ts", "reason": "HTTP endpoint registration"}
+{"file": "src/constants.ts", "reason": "LEVEL_NAMES"}

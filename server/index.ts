@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import cron from 'node-cron';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config } from './config.js';
+import { generateBiography } from './biography.js';
 import { generateDailyReport, isBusy, checkMissedReport } from './reporter.js';
 import { Runner, type Command } from './runner.js';
 
@@ -59,6 +60,31 @@ const server = createServer((req, res) => {
     const date = url.searchParams.get('date') ?? undefined;
     json(res, 200, { status: 'ok', date: date ?? 'yesterday' });
     generateDailyReport(date).catch(err => console.error('[server] report generation error:', err));
+    return;
+  }
+
+  if (url.pathname === '/api/biography') {
+    if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk; });
+    req.on('end', () => {
+      let parsed: Record<string, unknown>;
+      try { parsed = JSON.parse(body); } catch {
+        json(res, 400, { status: 'bad_request', error: 'Invalid JSON' });
+        return;
+      }
+      if (!parsed.name || typeof parsed.name !== 'string') {
+        json(res, 400, { status: 'bad_request', error: 'Missing "name" field' });
+        return;
+      }
+      const currentYear = runner.getState().year;
+      generateBiography(parsed.name.trim(), currentYear)
+        .then(result => json(res, result.status === 'error' ? 500 : 200, result))
+        .catch(err => {
+          console.error('[server] biography error:', err);
+          json(res, 500, { status: 'error', error: 'Internal server error' });
+        });
+    });
     return;
   }
 

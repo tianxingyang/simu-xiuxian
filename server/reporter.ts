@@ -44,7 +44,7 @@ interface AggregatedData {
   meta: Meta;
 }
 
-interface PromptMessage {
+export interface PromptMessage {
   role: 'system' | 'user';
   content: string;
 }
@@ -296,18 +296,19 @@ export function buildPrompt(data: AggregatedData): PromptMessage[] {
 }
 
 // ---------------------------------------------------------------------------
-// callDeepSeek
+// callLLM — OpenAI-compatible endpoint (OpenRouter / DeepSeek / etc.)
 // ---------------------------------------------------------------------------
 
-export async function callDeepSeek(messages: PromptMessage[]): Promise<string> {
-  const resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+export async function callLLM(messages: PromptMessage[]): Promise<string> {
+  const url = `${config.llmBaseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.deepseekApiKey}`,
+      Authorization: `Bearer ${config.llmApiKey}`,
     },
     body: JSON.stringify({
-      model: 'deepseek-chat',
+      model: config.llmModel,
       messages,
       temperature: 0.7,
       max_tokens: 2000,
@@ -316,7 +317,7 @@ export async function callDeepSeek(messages: PromptMessage[]): Promise<string> {
 
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
-    throw new Error(`DeepSeek API error: ${resp.status} ${body}`);
+    throw new Error(`LLM API error: ${resp.status} ${body}`);
   }
 
   const json = (await resp.json()) as {
@@ -358,13 +359,13 @@ export async function generateDailyReport(date?: string): Promise<void> {
     // 3. Call LLM (or skip)
     let report: string | null = null;
 
-    if (!config.deepseekApiKey) {
-      console.warn('[reporter] DEEPSEEK_API_KEY not set, skipping LLM call');
+    if (!config.llmApiKey) {
+      console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
     } else {
       try {
-        report = await callDeepSeek(messages);
+        report = await callLLM(messages);
       } catch (err) {
-        console.error('[reporter] DeepSeek call failed:', err);
+        console.error('[reporter] LLM call failed:', err);
       }
     }
 
