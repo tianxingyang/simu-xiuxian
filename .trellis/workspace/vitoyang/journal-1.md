@@ -516,3 +516,35 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: LLM 模型热切换
+
+**Date**: 2026-03-17
+**Task**: LLM 模型热切换
+
+### Summary
+
+将 LLM 配置从 as const 冻结对象拆分为可变 llmConfig，新增 GET/POST /api/config/llm 端点，CLI 切换模型后自动热更新无需重启后端
+
+### Main Changes
+
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `904440e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
