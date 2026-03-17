@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "server/bot.ts", "reason": "Verify QQ Bot API v2 implementation"}
+{"file": "server/config.ts", "reason": "Verify config cleanup"}
+{"file": "server/reporter.ts", "reason": "Verify timestamp range aggregation"}

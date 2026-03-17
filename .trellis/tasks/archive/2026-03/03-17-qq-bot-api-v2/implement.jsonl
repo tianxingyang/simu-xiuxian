@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "server/bot.ts", "reason": "Current OneBot implementation to replace"}
+{"file": "server/config.ts", "reason": "Config to update"}
+{"file": "server/reporter.ts", "reason": "Reporter to modify for timestamp range"}
+{"file": "server/db.ts", "reason": "DB layer - add bot_request_log table"}
+{"file": "server/index.ts", "reason": "Server entry - remove cron, init bot"}
+{"file": "server/biography.ts", "reason": "Biography system to call from bot"}
