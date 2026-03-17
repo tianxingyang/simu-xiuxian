@@ -100,6 +100,7 @@ export class Runner {
       this.awaitingAck = false;
       this.lastSummary = this.engine.getSummary();
       resetDisplayEventId();
+      if (!saved.snapshot) this.saveState();
       return true;
     } catch (err) {
       console.error('[runner] restore failed:', err);
