@@ -185,7 +185,7 @@ export function evictExpiredEvents(currentYear: number, retention: Record<string
 export function processMemoryDecayBatch(
   currentYear: number,
   memoryYears: Record<number, number>,
-): { marked: number; unprotected: number } {
+): { marked: number; unprotected: number; purged: number } {
   const db = getDB();
   const caseParts = Object.entries(memoryYears)
     .map(([level, years]) => `WHEN ${Number(level)} THEN ${Number(years)}`)
@@ -201,7 +201,10 @@ export function processMemoryDecayBatch(
         AND (? - death_year) > ${caseExpr}
     `).run(currentYear);
 
-    if (markResult.changes === 0) return { marked: 0, unprotected: 0 };
+    if (markResult.changes === 0) {
+      const purgeResult = db.prepare('DELETE FROM named_cultivators WHERE forgotten = 1').run();
+      return { marked: 0, unprotected: 0, purged: purgeResult.changes };
+    }
 
     const orphaned = db.prepare(`
       SELECT DISTINCT ec.event_id FROM event_cultivators ec
@@ -214,7 +217,10 @@ export function processMemoryDecayBatch(
       )
     `).all() as { event_id: number }[];
 
-    if (!orphaned.length) return { marked: markResult.changes, unprotected: 0 };
+    if (!orphaned.length) {
+      const purgeResult = db.prepare('DELETE FROM named_cultivators WHERE forgotten = 1').run();
+      return { marked: markResult.changes, unprotected: 0, purged: purgeResult.changes };
+    }
 
     const ids = orphaned.map(r => r.event_id);
     const CHUNK = 500;
@@ -225,7 +231,8 @@ export function processMemoryDecayBatch(
       db.prepare(`DELETE FROM event_cultivators WHERE event_id IN (${ph})`).run(...chunk);
     }
 
-    return { marked: markResult.changes, unprotected: ids.length };
+    const purgeResult = db.prepare('DELETE FROM named_cultivators WHERE forgotten = 1').run();
+    return { marked: markResult.changes, unprotected: ids.length, purged: purgeResult.changes };
   });
 
   return txn();

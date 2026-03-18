@@ -24,9 +24,9 @@ export function runEviction(currentYear: number): void {
 
   if (now - _lastDecayRealTs >= DECAY_REAL_INTERVAL) {
     _lastDecayRealTs = now;
-    const { marked, unprotected } = processMemoryDecayBatch(currentYear, CULTIVATOR_MEMORY_YEARS);
-    if (marked > 0 || unprotected > 0) {
-      console.log(`[eviction] decay: ${marked} forgotten, ${unprotected} events unprotected at year ${currentYear}`);
+    const { marked, unprotected, purged } = processMemoryDecayBatch(currentYear, CULTIVATOR_MEMORY_YEARS);
+    if (marked > 0 || unprotected > 0 || purged > 0) {
+      console.log(`[eviction] decay: ${marked} forgotten, ${unprotected} events unprotected, ${purged} cultivators purged at year ${currentYear}`);
     }
   }
 }
