@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const ENV_FILE = resolve(ROOT, '.env');
 
-function readEnv(): Record<string, string> {
+const _envCache = loadEnv();
+
+function loadEnv(): Record<string, string> {
   const env: Record<string, string> = {};
   if (existsSync(ENV_FILE)) {
     for (const line of readFileSync(ENV_FILE, 'utf-8').split('\n')) {
@@ -17,7 +19,7 @@ function readEnv(): Record<string, string> {
 }
 
 function envVal(key: string, fallback: string): string {
-  return process.env[key] || readEnv()[key] || fallback;
+  return process.env[key] || _envCache[key] || fallback;
 }
 
 export const config = {
@@ -29,7 +31,7 @@ export const config = {
 } as const;
 
 export const llmConfig = {
-  get baseUrl() { return envVal('LLM_BASE_URL', 'https://openrouter.ai/api/v1'); },
-  get apiKey() { return envVal('LLM_API_KEY', ''); },
-  get model() { return envVal('LLM_MODEL', 'deepseek/deepseek-chat'); },
-};
+  baseUrl: envVal('LLM_BASE_URL', 'https://openrouter.ai/api/v1'),
+  apiKey: envVal('LLM_API_KEY', ''),
+  model: envVal('LLM_MODEL', 'deepseek/deepseek-chat'),
+} as const;

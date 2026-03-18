@@ -307,12 +307,17 @@ export function buildPrompt(data: AggregatedData): PromptMessage[] {
 // callLLM — OpenAI-compatible endpoint (OpenRouter / DeepSeek / etc.)
 // ---------------------------------------------------------------------------
 
-export async function callLLM(messages: PromptMessage[]): Promise<string> {
+export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): Promise<string> {
   const url = `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   console.log(`[reporter] LLM request: model=${llmConfig.model} url=${url}`);
   const t0 = Date.now();
+  if (signal?.aborted) throw new Error('Aborted');
+
   const ac = new AbortController();
   const totalTimer = setTimeout(() => { console.warn('[reporter] LLM total timeout (120s), aborting'); ac.abort(); }, 120_000);
+
+  const onExternalAbort = () => { ac.abort(); };
+  signal?.addEventListener('abort', onExternalAbort, { once: true });
 
   let resp: Response;
   try {
@@ -339,12 +344,14 @@ export async function callLLM(messages: PromptMessage[]): Promise<string> {
     });
   } catch (err) {
     clearTimeout(totalTimer);
+    signal?.removeEventListener('abort', onExternalAbort);
     console.error(`[reporter] LLM fetch failed after ${Date.now() - t0}ms:`, err);
     throw err;
   }
 
   if (!resp.ok) {
     clearTimeout(totalTimer);
+    signal?.removeEventListener('abort', onExternalAbort);
     const body = await resp.text().catch(() => '');
     console.error(`[reporter] LLM API error: ${resp.status} ${body}`);
     throw new Error(`LLM API error: ${resp.status} ${body}`);
@@ -353,7 +360,7 @@ export async function callLLM(messages: PromptMessage[]): Promise<string> {
   console.log(`[reporter] LLM response received in ${Date.now() - t0}ms, reading stream...`);
 
   const reader = resp.body?.getReader();
-  if (!reader) { clearTimeout(totalTimer); throw new Error('LLM API returned no body'); }
+  if (!reader) { clearTimeout(totalTimer); signal?.removeEventListener('abort', onExternalAbort); throw new Error('LLM API returned no body'); }
 
   const chunks: string[] = [];
   const decoder = new TextDecoder();
@@ -397,6 +404,7 @@ export async function callLLM(messages: PromptMessage[]): Promise<string> {
   } finally {
     clearTimeout(totalTimer);
     if (staleTimer) clearTimeout(staleTimer);
+    signal?.removeEventListener('abort', onExternalAbort);
     reader.releaseLock();
   }
 
@@ -411,51 +419,33 @@ export async function callLLM(messages: PromptMessage[]): Promise<string> {
 // generateReport (unified pipeline, timestamp-based)
 // ---------------------------------------------------------------------------
 
-let _busy = false;
-
-export function isBusy(): boolean {
-  return _busy;
-}
-
-export async function generateReport(fromTs?: number, toTs?: number): Promise<string | null> {
+export async function generateReport(fromTs?: number, toTs?: number, signal?: AbortSignal): Promise<string | null> {
   const now = Math.floor(Date.now() / 1000);
   const from = fromTs ?? queryLastReportTs() ?? (now - 86400);
   const to = toTs ?? now;
 
-  if (_busy) {
-    console.warn('[reporter] already busy, skipping');
-    return null;
-  }
+  if (signal?.aborted) throw new Error('Aborted before start');
 
-  _busy = true;
   console.log(`[reporter] generating report: fromTs=${from} toTs=${to}`);
-  try {
-    const data = aggregateEvents(from, to);
-    const messages = buildPrompt(data);
-    const promptJson = JSON.stringify(messages);
+  const data = aggregateEvents(from, to);
+  const messages = buildPrompt(data);
+  const promptJson = JSON.stringify(messages);
 
-    let report: string | null = null;
+  let report: string | null = null;
 
-    if (!llmConfig.apiKey) {
-      console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
-    } else {
-      try {
-        report = await callLLM(messages);
-      } catch (err) {
-        console.error('[reporter] LLM call failed:', err);
-      }
-    }
-
-    upsertReport({
-      date: nowUtc8DateStr(),
-      yearFrom: data.meta.year_from,
-      yearTo: data.meta.year_to,
-      prompt: promptJson,
-      report,
-    });
-    console.log(`[reporter] report stored (${report ? report.length + ' chars' : 'no LLM output'}), year=${data.meta.year_from}~${data.meta.year_to}`);
-    return report;
-  } finally {
-    _busy = false;
+  if (!llmConfig.apiKey) {
+    console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
+  } else {
+    report = await callLLM(messages, signal);
   }
+
+  upsertReport({
+    date: nowUtc8DateStr(),
+    yearFrom: data.meta.year_from,
+    yearTo: data.meta.year_to,
+    prompt: promptJson,
+    report,
+  });
+  console.log(`[reporter] report stored (${report ? report.length + ' chars' : 'no LLM output'}), year=${data.meta.year_from}~${data.meta.year_to}`);
+  return report;
 }

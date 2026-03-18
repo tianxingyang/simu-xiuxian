@@ -1,10 +1,11 @@
 import { createServer, type ServerResponse } from 'node:http';
+import { fork, type ChildProcess } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config, llmConfig } from './config.js';
-import { generateBiography } from './biography.js';
-import { generateReport, isBusy } from './reporter.js';
-import { startBot } from './bot.js';
-import { Runner, type Command } from './runner.js';
+import { startBot, stopBot, onLlmResult, onLlmWorkerDied } from './bot.js';
+import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent } from './ipc.js';
+import type { StateSnapshot } from './runner.js';
 
 // Prepend HH:MM:SS timestamp to all console output
 {
@@ -17,6 +18,10 @@ import { Runner, type Command } from './runner.js';
   console.error = (...args: unknown[]) => origErr(ts(), ...args);
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 function json(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(data));
@@ -26,59 +31,263 @@ function isNum(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
 }
 
-function parseCommand(raw: string): Command | null {
+function parseWsCommand(raw: string): SimCommand | null {
   let msg: Record<string, unknown>;
   try { msg = JSON.parse(raw); } catch { return null; }
   if (!msg || typeof msg.type !== 'string') return null;
   switch (msg.type) {
     case 'start':
       return isNum(msg.speed) && isNum(msg.seed) && isNum(msg.initialPop)
-        ? { type: 'start', speed: msg.speed, seed: msg.seed, initialPop: msg.initialPop } : null;
-    case 'pause': return { type: 'pause' };
-    case 'step': return { type: 'step' };
-    case 'setSpeed': return isNum(msg.speed) ? { type: 'setSpeed', speed: msg.speed } : null;
+        ? { type: 'sim:start', speed: msg.speed, seed: msg.seed, initialPop: msg.initialPop } : null;
+    case 'pause': return { type: 'sim:pause' };
+    case 'step': return { type: 'sim:step' };
+    case 'setSpeed': return isNum(msg.speed) ? { type: 'sim:setSpeed', speed: msg.speed } : null;
     case 'reset':
       return isNum(msg.seed) && isNum(msg.initialPop)
-        ? { type: 'reset', seed: msg.seed, initialPop: msg.initialPop } : null;
-    case 'ack': return { type: 'ack', tickId: isNum(msg.tickId) ? msg.tickId : undefined };
+        ? { type: 'sim:reset', seed: msg.seed, initialPop: msg.initialPop } : null;
+    case 'ack': return isNum(msg.tickId) ? { type: 'sim:ack', tickId: msg.tickId } : null;
     default: return null;
   }
 }
 
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
 const clients = new Set<WebSocket>();
+let cachedState: StateSnapshot = { year: 1, running: false, speed: 1, summary: null };
 
-const runner = new Runner({
-  broadcast(msg) {
-    const data = JSON.stringify(msg);
-    for (const ws of clients) if (ws.readyState === WebSocket.OPEN) ws.send(data);
-  },
-  clientCount: () => clients.size,
-});
+let simReady = false;
+let llmReady = false;
 
-if (runner.restore()) console.log('[server] sim_state restored');
+// ---------------------------------------------------------------------------
+// Job registry for HTTP requests to LLM worker
+// ---------------------------------------------------------------------------
+
+let _jobCounter = 0;
+let activeReportJobId: string | null = null;
+
+interface PendingJob {
+  resolve: (payload: unknown) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+  cancelJobId: string;
+}
+
+const HTTP_JOB_TIMEOUT = 150_000;
+const pendingHttpJobs = new Map<string, PendingJob>();
+
+function nextJobId(): string {
+  return `http-${++_jobCounter}-${Date.now().toString(36)}`;
+}
+
+function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknown> } {
+  const { jobId } = cmd;
+
+  const promise = new Promise<unknown>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingHttpJobs.delete(jobId);
+      sendToLlm({ type: 'job:cancel', jobId });
+      reject(new Error('Job timeout'));
+    }, HTTP_JOB_TIMEOUT);
+    pendingHttpJobs.set(jobId, { resolve, reject, timer, cancelJobId: jobId });
+    sendToLlm(cmd);
+  });
+
+  return { jobId, promise };
+}
+
+function cancelHttpJob(jobId: string): void {
+  const pending = pendingHttpJobs.get(jobId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    pendingHttpJobs.delete(jobId);
+    sendToLlm({ type: 'job:cancel', jobId });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Child Process Management
+// ---------------------------------------------------------------------------
+
+let simWorker: ChildProcess | null = null;
+let llmWorker: ChildProcess | null = null;
+
+const SIM_WORKER_PATH = fileURLToPath(new URL('./processes/sim-worker.ts', import.meta.url));
+const LLM_WORKER_PATH = fileURLToPath(new URL('./processes/llm-worker.ts', import.meta.url));
+
+function spawnSim(): ChildProcess {
+  const child = fork(SIM_WORKER_PATH, [], {
+    execArgv: ['--import', 'tsx/esm'],
+    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+  });
+
+  child.on('message', (msg: SimWorkerEvent) => {
+    switch (msg.type) {
+      case 'sim:ready':
+        simReady = true;
+        console.log('[gateway] sim worker ready');
+        // Sync client count and push fresh state to connected clients
+        child.send({ type: 'sim:clientCount', count: clients.size } as SimCommand);
+        child.send({ type: 'sim:getState' } as SimCommand);
+        break;
+      case 'sim:state':
+        cachedState = msg.state;
+        broadcastWs({ type: 'state', ...msg.state });
+        break;
+      case 'sim:tick': {
+        cachedState.running = true;
+        if (msg.summaries.length) {
+          const last = msg.summaries[msg.summaries.length - 1];
+          cachedState.year = last.year;
+          cachedState.summary = last;
+        }
+        const data = JSON.stringify({ type: 'tick', tickId: msg.tickId, summaries: msg.summaries, events: msg.events });
+        for (const ws of clients) if (ws.readyState === WebSocket.OPEN) ws.send(data);
+        break;
+      }
+      case 'sim:paused':
+        cachedState.running = false;
+        broadcastWs({ type: 'paused', reason: msg.reason });
+        break;
+      case 'sim:resetDone':
+        cachedState = { year: 1, running: false, speed: cachedState.speed, summary: null };
+        broadcastWs({ type: 'reset-done' });
+        break;
+    }
+  });
+
+  child.on('exit', (code) => {
+    console.error(`[gateway] sim worker exited (code=${code}), restarting...`);
+    simReady = false;
+    simWorker = null;
+    setTimeout(() => { simWorker = spawnSim(); }, 1000);
+  });
+
+  simWorker = child;
+  return child;
+}
+
+function spawnLlm(): ChildProcess {
+  const child = fork(LLM_WORKER_PATH, [], {
+    execArgv: ['--import', 'tsx/esm'],
+    stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+  });
+
+  child.on('message', (msg: LlmWorkerEvent) => {
+    switch (msg.type) {
+      case 'job:ready':
+        llmReady = true;
+        console.log('[gateway] llm worker ready');
+        break;
+      case 'job:result':
+      case 'job:error': {
+        // Route to HTTP pending jobs
+        const pending = pendingHttpJobs.get(msg.jobId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          pendingHttpJobs.delete(msg.jobId);
+          if (msg.type === 'job:result') {
+            pending.resolve(msg.payload);
+          } else {
+            pending.reject(new Error(msg.error));
+          }
+        }
+        // Route to bot pending jobs
+        onLlmResult(msg);
+        break;
+      }
+    }
+  });
+
+  child.on('exit', (code) => {
+    console.error(`[gateway] llm worker exited (code=${code}), restarting...`);
+    llmReady = false;
+    llmWorker = null;
+    // Fail-fast all pending HTTP jobs
+    for (const [jobId, pending] of pendingHttpJobs) {
+      clearTimeout(pending.timer);
+      pending.reject(new Error('LLM worker crashed'));
+      pendingHttpJobs.delete(jobId);
+    }
+    // Fail-fast all pending bot jobs
+    onLlmWorkerDied();
+    setTimeout(() => { llmWorker = spawnLlm(); }, 1000);
+  });
+
+  llmWorker = child;
+  return child;
+}
+
+function sendToSim(cmd: SimCommand): boolean {
+  if (simWorker?.connected && simReady) {
+    simWorker.send(cmd);
+    return true;
+  }
+  return false;
+}
+
+function sendToLlm(cmd: LlmCommand): boolean {
+  if (llmWorker?.connected && llmReady) {
+    llmWorker.send(cmd);
+    return true;
+  }
+  return false;
+}
+
+function broadcastWs(data: unknown): void {
+  const str = JSON.stringify(data);
+  for (const ws of clients) if (ws.readyState === WebSocket.OPEN) ws.send(str);
+}
+
+function updateClientCount(): void {
+  sendToSim({ type: 'sim:clientCount', count: clients.size });
+}
+
+// ---------------------------------------------------------------------------
+// HTTP Server
+// ---------------------------------------------------------------------------
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
 
   if (req.method === 'GET' && url.pathname === '/health') {
-    json(res, 200, { status: 'ok', year: runner.getState().year });
+    json(res, 200, { status: 'ok', year: cachedState.year, simReady, llmReady });
     return;
   }
 
   if (url.pathname === '/api/report') {
     if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
-    if (isBusy()) { json(res, 409, { status: 'busy' }); return; }
-    generateReport()
-      .then(report => json(res, 200, { status: 'ok', report }))
+    if (!llmReady) { json(res, 503, { status: 'worker_not_ready' }); return; }
+    if (activeReportJobId) { json(res, 409, { status: 'busy' }); return; }
+
+    const { jobId, promise } = submitLlmJob({ type: 'job:report', jobId: nextJobId() });
+    activeReportJobId = jobId;
+    let aborted = false;
+
+    req.on('close', () => {
+      if (!res.writableEnded) {
+        aborted = true;
+        cancelHttpJob(jobId);
+      }
+    });
+
+    promise
+      .then(report => { if (!aborted) json(res, 200, { status: 'ok', report }); })
       .catch(err => {
-        console.error('[server] report generation error:', err);
-        json(res, 500, { status: 'error', error: String(err) });
-      });
+        if (!aborted) {
+          console.error('[gateway] report error:', err);
+          json(res, 500, { status: 'error', error: String(err) });
+        }
+      })
+      .finally(() => { if (activeReportJobId === jobId) activeReportJobId = null; });
     return;
   }
 
   if (url.pathname === '/api/biography') {
     if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
+    if (!llmReady) { json(res, 503, { status: 'worker_not_ready' }); return; }
+
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk; });
     req.on('end', () => {
@@ -91,12 +300,33 @@ const server = createServer((req, res) => {
         json(res, 400, { status: 'bad_request', error: 'Missing "name" field' });
         return;
       }
-      const currentYear = runner.getState().year;
-      generateBiography(parsed.name.trim(), currentYear)
-        .then(result => json(res, result.status === 'error' ? 500 : 200, result))
+
+      const { jobId, promise } = submitLlmJob({
+        type: 'job:biography',
+        jobId: nextJobId(),
+        name: parsed.name.trim(),
+        currentYear: cachedState.year,
+      });
+      let aborted = false;
+
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          aborted = true;
+          cancelHttpJob(jobId);
+        }
+      });
+
+      promise
+        .then(result => {
+          if (aborted) return;
+          const r = result as { status: string };
+          json(res, r.status === 'error' ? 500 : 200, result);
+        })
         .catch(err => {
-          console.error('[server] biography error:', err);
-          json(res, 500, { status: 'error', error: 'Internal server error' });
+          if (!aborted) {
+            console.error('[gateway] biography error:', err);
+            json(res, 500, { status: 'error', error: 'Internal server error' });
+          }
         });
     });
     return;
@@ -111,6 +341,10 @@ const server = createServer((req, res) => {
   json(res, 404, { status: 'not_found' });
 });
 
+// ---------------------------------------------------------------------------
+// WebSocket Server
+// ---------------------------------------------------------------------------
+
 const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
@@ -120,24 +354,59 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws) => {
-  ws.send(JSON.stringify({ type: 'state', ...runner.getState() }));
+  ws.send(JSON.stringify({ type: 'state', ...cachedState }));
   clients.add(ws);
+  updateClientCount();
 
   ws.on('message', (data) => {
-    const cmd = parseCommand(data.toString());
+    const cmd = parseWsCommand(data.toString());
     if (!cmd) { console.warn('[ws] invalid message'); return; }
-    runner.dispatch(cmd);
+    sendToSim(cmd);
   });
 
   ws.on('close', () => {
     clients.delete(ws);
-    runner.onClientDisconnect();
+    updateClientCount();
   });
 
   ws.on('error', (err) => console.warn('[ws] error:', err));
 });
 
+// ---------------------------------------------------------------------------
+// Startup
+// ---------------------------------------------------------------------------
+
+spawnSim();
+spawnLlm();
+
 server.listen(config.port, config.host, () => {
-  console.log(`[server] http://${config.host}:${config.port}`);
-  startBot(() => runner.getState().year);
+  console.log(`[gateway] http://${config.host}:${config.port}`);
+  startBot(
+    () => cachedState.year,
+    (cmd: LlmCommand) => sendToLlm(cmd),
+  );
 });
+
+// ---------------------------------------------------------------------------
+// Graceful Shutdown
+// ---------------------------------------------------------------------------
+
+function shutdown(): void {
+  console.log('[gateway] shutting down...');
+  stopBot();
+
+  // Cancel all pending HTTP jobs
+  for (const [jobId, pending] of pendingHttpJobs) {
+    clearTimeout(pending.timer);
+    pending.reject(new Error('Server shutting down'));
+    pendingHttpJobs.delete(jobId);
+  }
+
+  if (simWorker) { simWorker.kill('SIGTERM'); simWorker = null; }
+  if (llmWorker) { llmWorker.kill('SIGTERM'); llmWorker = null; }
+  server.close();
+  process.exit(0);
+}
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

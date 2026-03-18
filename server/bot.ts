@@ -1,8 +1,7 @@
 import WebSocket from 'ws';
 import { config } from './config.js';
-import { getLastRequestTs, setLastRequestTs } from './db.js';
-import { generateReport } from './reporter.js';
-import { generateBiography } from './biography.js';
+import type { LlmCommand, LlmWorkerEvent } from './ipc.js';
+import type { BiographyResult } from './biography.js';
 
 // ---------------------------------------------------------------------------
 // OAuth Token Manager
@@ -55,19 +54,60 @@ async function sendGroupMessage(groupOpenid: string, content: string, msgId: str
 }
 
 // ---------------------------------------------------------------------------
+// IPC Job Dispatch
+// ---------------------------------------------------------------------------
+
+type DispatchFn = (cmd: LlmCommand) => void;
+let _dispatch: DispatchFn = () => {};
+let _getYear: () => number = () => 1;
+let _jobCounter = 0;
+
+interface PendingJob {
+  resolve: (payload: unknown) => void;
+  reject: (err: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+const JOB_TIMEOUT = 150_000;
+const _pendingJobs = new Map<string, PendingJob>();
+
+function nextJobId(): string {
+  return `bot-${++_jobCounter}-${Date.now().toString(36)}`;
+}
+
+function submitJob(cmd: LlmCommand): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      _pendingJobs.delete(cmd.jobId);
+      _dispatch({ type: 'job:cancel', jobId: cmd.jobId });
+      reject(new Error('Job timeout'));
+    }, JOB_TIMEOUT);
+    _pendingJobs.set(cmd.jobId, { resolve, reject, timer });
+    _dispatch(cmd);
+  });
+}
+
+/** Called by gateway when LLM worker sends a result/error */
+export function onLlmResult(msg: LlmWorkerEvent): void {
+  if (msg.type !== 'job:result' && msg.type !== 'job:error') return;
+  const pending = _pendingJobs.get(msg.jobId);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  _pendingJobs.delete(msg.jobId);
+  if (msg.type === 'job:result') {
+    pending.resolve(msg.payload);
+  } else {
+    pending.reject(new Error(msg.error));
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Command Handlers
 // ---------------------------------------------------------------------------
 
-type GetYear = () => number;
-let _getYear: GetYear = () => 1;
-
 async function handleReport(groupOpenid: string, msgId: string): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
-  const lastTs = getLastRequestTs(groupOpenid) ?? (now - 86400);
-
   try {
-    const report = await generateReport(lastTs, now);
-    setLastRequestTs(groupOpenid, now);
+    const report = await submitJob({ type: 'job:report', jobId: nextJobId(), groupOpenid }) as string | null;
 
     if (report) {
       await sendGroupMessage(groupOpenid, report, msgId);
@@ -82,7 +122,7 @@ async function handleReport(groupOpenid: string, msgId: string): Promise<void> {
 
 async function handleBiography(groupOpenid: string, msgId: string, name: string): Promise<void> {
   try {
-    const result = await generateBiography(name, _getYear());
+    const result = await submitJob({ type: 'job:biography', jobId: nextJobId(), name, currentYear: _getYear() }) as BiographyResult;
     const text = result.biography ?? result.error ?? '传记生成失败。';
     await sendGroupMessage(groupOpenid, text, msgId);
   } catch (err) {
@@ -285,19 +325,29 @@ function scheduleReconnect(): void {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function startBot(getYear: GetYear): void {
+export function startBot(getYear: () => number, dispatch: DispatchFn): void {
   if (!config.qqBotAppId || !config.qqBotAppSecret) {
     console.warn('[bot] QQ_BOT_APP_ID or QQ_BOT_APP_SECRET not configured, bot disabled');
     return;
   }
 
   _getYear = getYear;
+  _dispatch = dispatch;
   _stopping = false;
   connectGateway();
+}
+
+export function onLlmWorkerDied(): void {
+  for (const pending of _pendingJobs.values()) {
+    clearTimeout(pending.timer);
+    pending.reject(new Error('LLM worker crashed'));
+  }
+  _pendingJobs.clear();
 }
 
 export function stopBot(): void {
   _stopping = true;
   clearHeartbeat();
   if (_ws) { _ws.close(); _ws = null; }
+  onLlmWorkerDied();
 }

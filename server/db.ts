@@ -54,6 +54,7 @@ export function getDB(): Database.Database {
     mkdirSync(dirname(config.dbPath), { recursive: true });
     _db = new Database(config.dbPath);
     _db.pragma('journal_mode = WAL');
+    _db.pragma('busy_timeout = 5000');
     _db.exec(`
       CREATE TABLE IF NOT EXISTS named_cultivators (
         id INTEGER PRIMARY KEY,

@@ -160,6 +160,7 @@ export interface BiographyResult {
 export async function generateBiography(
   name: string,
   currentYear: number,
+  signal?: AbortSignal,
 ): Promise<BiographyResult> {
   const row = queryNamedCultivatorByName(name);
 
@@ -199,7 +200,7 @@ export async function generateBiography(
   const messages = buildPrompt(row, events, memory, currentYear);
 
   try {
-    const biography = await callLLM(messages);
+    const biography = await callLLM(messages, signal);
     setCache(name, biography, memory);
     return { status: 'ok', biography, cultivator: meta };
   } catch (err) {
