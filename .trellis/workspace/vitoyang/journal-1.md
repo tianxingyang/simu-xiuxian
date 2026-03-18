@@ -853,3 +853,47 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: feat(map): 地图地域系统
+
+**Date**: 2026-03-18
+**Task**: feat(map): 地图地域系统
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+为 32×32 环形地图引入地域概念（纯叙事层，不影响游戏机制）。
+
+| 改动 | 说明 |
+|------|------|
+| `src/constants.ts` | 新增 RegionCode 类型、REGION_NAMES、32×32 地图布局、getRegionCode/getRegionName |
+| `src/types.ts` | 5 个 RichEvent 接口新增 `region?: string` |
+| `src/engine/simulation.ts` | expiry/promotion/breakthrough_fail/tribulation 事件填充 region |
+| `src/engine/combat.ts` | combat 事件填充 region |
+| `server/events.ts` | toDisplayEvent 加〔地域名〕前缀 |
+| `server/reporter.ts` | LLM 提示词包含 region 字段 |
+
+**地域**: 朔北冻原、苍茫草海、西嶂高原、天断山脉、河洛中野、东陵林海、赤岚丘陵、南淮泽国、裂潮海岸、潮生群岛、外海（共 11 种）
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d5e8c07` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
