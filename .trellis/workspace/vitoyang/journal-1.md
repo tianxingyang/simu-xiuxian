@@ -651,3 +651,47 @@ Redesigned the 修仙 name generator using data from Chinese-Names-Corpus (120W 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 修复日报生成阻塞与输出格式
+
+**Date**: 2026-03-18
+**Task**: 修复日报生成阻塞与输出格式
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 改动 | 描述 |
+|------|------|
+| 提示词优化 | 去除S/A/B等级标记，禁止Markdown输出，栏目标题改用【】包裹，适配QQ纯文本 |
+| rank字段移除 | formatEventForPrompt不再传递newsRank给LLM，避免等级标记泄露 |
+| 流式响应 | callLLM改用stream:true，AbortController双超时(30s卡顿/120s总超时) |
+| OpenRouter优化 | 添加HTTP-Referer/X-Title headers，启用provider fallback和latency排序 |
+| 事件循环修复 | runner无客户端场景setImmediate→setTimeout(50)，解决I/O饿死问题 |
+| 全链路日志 | reporter各阶段添加详细日志(聚合/请求/流式/存储)，console统一加HH:MM:SS时间戳 |
+| CLI超时 | report请求添加120s AbortSignal.timeout保护 |
+
+**根因分析**：runner在无WebSocket客户端时通过setImmediate紧密循环调度runBatch，
+tickYear+serialize+DB事务的同步开销占满事件循环，导致HTTP请求和流式读取无法推进。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `460486a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

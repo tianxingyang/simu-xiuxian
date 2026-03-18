@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-03-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~653 | Active |
+| `journal-1.md` | ~697 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 14 | 2026-03-18 | 修复日报生成阻塞与输出格式 | `460486a` |
 | 13 | 2026-03-18 | Event eviction, report/biography CLI, config auto-reload | `fe6d1ca`, `c4e2411` |
 | 12 | 2026-03-17 | Migrate QQ Bot from OneBot v11 to Official API v2 | `57cb5c1` |
 | 11 | 2026-03-17 | LLM 模型热切换 | `904440e` |
