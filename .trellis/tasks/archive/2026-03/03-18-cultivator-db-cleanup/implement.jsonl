@@ -1,0 +1,4 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "server/db.ts", "reason": "主要修改文件 - processMemoryDecayBatch"}
+{"file": "server/eviction.ts", "reason": "日志输出修改"}
