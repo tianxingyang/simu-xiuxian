@@ -31,6 +31,7 @@ import {
   MERIDIAN_COMBAT_PENALTY,
   MERIDIAN_DAMAGE_DURATION,
   effectiveCourage,
+  getRegionName,
   round1,
   threshold,
 } from '../constants';
@@ -300,6 +301,7 @@ function resolveCombat(
         loser: { id: loser.id, name: loserName, level: combatLevel, cultivation: loserSnap },
         absorbed: loot,
         outcome,
+        region: getRegionName(winner.x, winner.y),
       };
       combatEvent.newsRank = scoreNewsRank(combatEvent);
       events.push(combatEvent);

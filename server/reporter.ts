@@ -235,6 +235,10 @@ function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   const ev = item.event;
   const base: Record<string, Val> = { type: ev.type, year: ev.year };
 
+  if (ev.type !== 'milestone' && ev.region) {
+    base.region = ev.region;
+  }
+
   switch (ev.type) {
     case 'combat':
       base.winner = { name: ev.winner.name ?? `修士#${ev.winner.id}`, level: LEVEL_NAMES[ev.winner.level] };

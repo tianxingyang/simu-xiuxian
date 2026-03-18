@@ -1,0 +1,4 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "src/constants.ts", "reason": "Verify region map matches hand-drawn layout"}
+{"file": "server/events.ts", "reason": "Verify region names in event text"}

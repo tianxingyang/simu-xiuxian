@@ -79,6 +79,7 @@ export interface RichCombatEvent {
   loser: CombatActor;
   absorbed: number;
   outcome: DefeatOutcome;
+  region?: string;
 }
 
 export interface RichPromotionEvent {
@@ -89,6 +90,7 @@ export interface RichPromotionEvent {
   fromLevel: number;
   toLevel: number;
   cause: 'natural' | 'combat';
+  region?: string;
 }
 
 export interface RichExpiryEvent {
@@ -97,6 +99,7 @@ export interface RichExpiryEvent {
   newsRank: NewsRank;
   subject: { id: number; name?: string; age: number };
   level: number;
+  region?: string;
 }
 
 export interface MilestoneDetail {
@@ -121,6 +124,7 @@ export interface RichBreakthroughEvent {
   subject: { id: number; name?: string; level: number };
   penalty: 'cooldown_only' | 'cultivation_loss' | 'injury';
   cause: 'natural' | 'combat';
+  region?: string;
 }
 
 export interface RichTribulationEvent {
@@ -129,6 +133,7 @@ export interface RichTribulationEvent {
   newsRank: NewsRank;
   subject: { id: number; name?: string; level: number; age: number };
   outcome: 'ascension' | 'death';
+  region?: string;
 }
 
 export type RichEvent =

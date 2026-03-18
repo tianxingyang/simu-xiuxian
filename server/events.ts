@@ -21,6 +21,7 @@ export function resetDisplayEventId(start = 1): void {
 
 export function toDisplayEvent(e: RichEvent): SimEvent {
   const id = _displayEventId++;
+  const rp = e.type !== 'milestone' && e.region ? `〔${e.region}〕` : '';
   switch (e.type) {
     case 'combat': {
       const actorLevel = Math.max(e.winner.level, e.loser.level);
@@ -31,9 +32,9 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
       if (wn || ln) {
         const ws = wn ? `${wn}(${LEVEL_NAMES[e.winner.level]})` : LEVEL_NAMES[e.winner.level];
         const ls = ln ? `${ln}(${LEVEL_NAMES[e.loser.level]})` : LEVEL_NAMES[e.loser.level];
-        detail = `${ws}击败${ls}，吸收修为${e.absorbed}${suffix}`;
+        detail = `${rp}${ws}击败${ls}，吸收修为${e.absorbed}${suffix}`;
       } else {
-        detail = `${LEVEL_NAMES[actorLevel]}对决，吸收修为${e.absorbed}${suffix}`;
+        detail = `${rp}${LEVEL_NAMES[actorLevel]}对决，吸收修为${e.absorbed}${suffix}`;
       }
       return { id, year: e.year, type: 'combat', actorLevel, detail };
     }
@@ -42,15 +43,15 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
       const prefix = e.subject.name ? `${e.subject.name} ` : '';
       return {
         id, year: e.year, type: 'promotion', actorLevel: e.toLevel,
-        detail: `${prefix}${LEVEL_NAMES[e.fromLevel]}→${LEVEL_NAMES[e.toLevel]}（${cause}晋升）`,
+        detail: `${rp}${prefix}${LEVEL_NAMES[e.fromLevel]}→${LEVEL_NAMES[e.toLevel]}（${cause}晋升）`,
       };
     }
     case 'expiry':
       return {
         id, year: e.year, type: 'expiry', actorLevel: e.level,
         detail: e.subject.name
-          ? `${e.subject.name}(${LEVEL_NAMES[e.level]})寿元耗尽`
-          : `${LEVEL_NAMES[e.level]}寿元耗尽`,
+          ? `${rp}${e.subject.name}(${LEVEL_NAMES[e.level]})寿元耗尽`
+          : `${rp}${LEVEL_NAMES[e.level]}寿元耗尽`,
       };
     case 'milestone': {
       const ln = LEVEL_NAMES[e.detail.level];
@@ -65,7 +66,7 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
       const prefix = e.subject.name ? `${e.subject.name} ` : '';
       return {
         id, year: e.year, type: 'breakthrough_fail', actorLevel: e.subject.level,
-        detail: `${prefix}${LEVEL_NAMES[e.subject.level]}破境失败（${penaltyText}）`,
+        detail: `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}破境失败（${penaltyText}）`,
       };
     }
     case 'tribulation': {
@@ -73,8 +74,8 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
       return {
         id, year: e.year, type: 'tribulation', actorLevel: e.subject.level,
         detail: e.outcome === 'ascension'
-          ? `${prefix}${LEVEL_NAMES[e.subject.level]}渡劫成功，飞升离去！`
-          : `${prefix}${LEVEL_NAMES[e.subject.level]}渡劫失败，陨落天劫之下`,
+          ? `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}渡劫成功，飞升离去！`
+          : `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}渡劫失败，陨落天劫之下`,
       };
     }
   }

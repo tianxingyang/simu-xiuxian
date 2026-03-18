@@ -1,0 +1,8 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "src/constants.ts", "reason": "Map constants, region data goes here"}
+{"file": "src/engine/spatial.ts", "reason": "Spatial system, getRegion function"}
+{"file": "src/types.ts", "reason": "RichEvent types need region field"}
+{"file": "server/events.ts", "reason": "toDisplayEvent, insert region into detail"}
+{"file": "src/engine/simulation.ts", "reason": "Event creation sites"}
+{"file": "src/engine/combat.ts", "reason": "Combat event creation"}
