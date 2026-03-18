@@ -813,3 +813,43 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: feat: 修士数据库物理删除机制
+
+**Date**: 2026-03-18
+**Task**: feat: 修士数据库物理删除机制
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+在 `processMemoryDecayBatch` 事务末尾增加物理删除步骤，清理 `forgotten = 1` 的修士记录。
+
+| 改动 | 说明 |
+|------|------|
+| `server/db.ts` | 事务三个退出路径末尾均增加 `DELETE FROM named_cultivators WHERE forgotten = 1`，返回值增加 `purged` 字段 |
+| `server/eviction.ts` | 日志输出和条件判断中增加 `purged` 计数 |
+
+**设计决策**: 无额外宽限期，forgotten 标记前已有基于 peak_level 的完整衰减周期（100~15000 年）。飞升修士永不遗忘，不受影响。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d72f67a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
