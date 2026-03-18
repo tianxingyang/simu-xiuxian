@@ -175,3 +175,57 @@ export function runMigrations() {
 | Use transactions   | Atomic operations     |
 | Use `inArray`      | Avoid N+1 queries     |
 | Filter `isDeleted` | Exclude soft-deleted  |
+
+---
+
+## Periodic Task Anti-Patterns (better-sqlite3)
+
+Since better-sqlite3 is synchronous, periodic DB tasks can block the Node.js event loop. Follow these rules:
+
+### 1. No N+1 in Loops
+
+```typescript
+// BAD: N+1 queries in a loop (O(N×M) DB calls)
+for (const item of allItems) {
+  const related = db.prepare('SELECT * FROM related WHERE item_id = ?').all(item.id);
+  for (const r of related) {
+    const others = db.prepare('SELECT * FROM others WHERE related_id = ?').all(r.id);
+  }
+}
+
+// GOOD: Set-based SQL with JOINs (2-3 DB calls total)
+const orphaned = db.prepare(`
+  SELECT DISTINCT r.id FROM related r
+  JOIN items i ON r.item_id = i.id
+  WHERE i.status = 'done'
+  AND NOT EXISTS (
+    SELECT 1 FROM related r2
+    JOIN items i2 ON r2.item_id = i2.id
+    WHERE r2.group_id = r.group_id AND i2.status != 'done'
+  )
+`).all();
+```
+
+### 2. Monotonic State → Use Incremental Flag
+
+If a state transition is irreversible (e.g., alive → dead → forgotten), add a flag column to track completion. Only process the delta (newly transitioned items), not the full set.
+
+```typescript
+// BAD: Re-scan all dead items every cycle → O(total_dead), grows forever
+const allDead = db.prepare('SELECT * FROM items WHERE dead = 1').all();
+for (const item of allDead) { /* check if forgotten... */ }
+
+// GOOD: Only process newly forgotten → O(new_forgotten), approaches 0
+db.prepare(`
+  UPDATE items SET forgotten = 1
+  WHERE forgotten = 0 AND dead = 1 AND (? - death_year) > threshold
+`).run(currentYear);
+```
+
+### 3. Reverse Indexes for Junction Tables
+
+Junction tables with composite PK `(a_id, b_id)` only index lookups by `a_id`. Add a reverse index if you query by `b_id`.
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_junction_b ON junction_table(b_id);
+```

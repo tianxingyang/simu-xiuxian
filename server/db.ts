@@ -68,7 +68,8 @@ export function getDB(): Database.Database {
         peak_cultivation REAL NOT NULL DEFAULT 0,
         death_year INTEGER,
         death_cause TEXT,
-        killed_by TEXT
+        killed_by TEXT,
+        forgotten INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,6 +88,7 @@ export function getDB(): Database.Database {
         event_id INTEGER NOT NULL,
         PRIMARY KEY (cultivator_id, event_id)
       );
+      CREATE INDEX IF NOT EXISTS idx_ec_event_id ON event_cultivators(event_id);
       CREATE TABLE IF NOT EXISTS reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL UNIQUE,
@@ -128,6 +130,11 @@ export function getDB(): Database.Database {
     const cols = _db.pragma('table_info(sim_state)') as Array<{ name: string }>;
     if (!cols.some(c => c.name === 'snapshot')) {
       _db.exec('ALTER TABLE sim_state ADD COLUMN snapshot BLOB');
+    }
+    // Migration: add forgotten column + reverse index for memory decay optimization
+    const ncCols = _db.pragma('table_info(named_cultivators)') as Array<{ name: string }>;
+    if (!ncCols.some(c => c.name === 'forgotten')) {
+      _db.exec('ALTER TABLE named_cultivators ADD COLUMN forgotten INTEGER NOT NULL DEFAULT 0');
     }
   }
   return _db;
@@ -175,42 +182,53 @@ export function evictExpiredEvents(currentYear: number, retention: Record<string
   return total;
 }
 
-export function queryProtectedEventIdsForCultivator(cultivatorId: number): number[] {
-  const rows = getDB().prepare(
-    'SELECT event_id FROM event_cultivators WHERE cultivator_id = ?'
-  ).all(cultivatorId) as { event_id: number }[];
-  return rows.map(r => r.event_id);
-}
-
-export function queryEventCultivatorIds(eventId: number): number[] {
-  const rows = getDB().prepare(
-    'SELECT cultivator_id FROM event_cultivators WHERE event_id = ?'
-  ).all(eventId) as { cultivator_id: number }[];
-  return rows.map(r => r.cultivator_id);
-}
-
-export function unprotectEventsByIds(ids: number[]): void {
-  if (!ids.length) return;
+export function processMemoryDecayBatch(
+  currentYear: number,
+  memoryYears: Record<number, number>,
+): { marked: number; unprotected: number } {
   const db = getDB();
-  const stmt = db.prepare('UPDATE events SET protected = 0 WHERE id = ?');
-  const delStmt = db.prepare('DELETE FROM event_cultivators WHERE event_id = ?');
-  for (const id of ids) {
-    stmt.run(id);
-    delStmt.run(id);
-  }
-}
+  const caseParts = Object.entries(memoryYears)
+    .map(([level, years]) => `WHEN ${Number(level)} THEN ${Number(years)}`)
+    .join(' ');
+  const caseExpr = `CASE peak_level ${caseParts} ELSE 50 END`;
 
-export function queryDeadCultivators(): { id: number; peak_level: number; death_year: number }[] {
-  return getDB().prepare(
-    'SELECT id, peak_level, death_year FROM named_cultivators WHERE death_year IS NOT NULL AND death_cause != ?'
-  ).all('ascension') as { id: number; peak_level: number; death_year: number }[];
-}
+  const txn = db.transaction(() => {
+    const markResult = db.prepare(`
+      UPDATE named_cultivators SET forgotten = 1
+      WHERE forgotten = 0
+        AND death_year IS NOT NULL
+        AND death_cause != 'ascension'
+        AND (? - death_year) > ${caseExpr}
+    `).run(currentYear);
 
-export function queryRememberedCultivatorIds(): Set<number> {
-  const rows = getDB().prepare(
-    'SELECT id FROM named_cultivators WHERE death_year IS NULL OR death_cause = ?'
-  ).all('ascension') as { id: number }[];
-  return new Set(rows.map(r => r.id));
+    if (markResult.changes === 0) return { marked: 0, unprotected: 0 };
+
+    const orphaned = db.prepare(`
+      SELECT DISTINCT ec.event_id FROM event_cultivators ec
+      JOIN named_cultivators nc ON ec.cultivator_id = nc.id
+      WHERE nc.forgotten = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM event_cultivators ec2
+        JOIN named_cultivators nc2 ON ec2.cultivator_id = nc2.id
+        WHERE ec2.event_id = ec.event_id AND nc2.forgotten = 0
+      )
+    `).all() as { event_id: number }[];
+
+    if (!orphaned.length) return { marked: markResult.changes, unprotected: 0 };
+
+    const ids = orphaned.map(r => r.event_id);
+    const CHUNK = 500;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      const ph = chunk.map(() => '?').join(',');
+      db.prepare(`UPDATE events SET protected = 0 WHERE id IN (${ph})`).run(...chunk);
+      db.prepare(`DELETE FROM event_cultivators WHERE event_id IN (${ph})`).run(...chunk);
+    }
+
+    return { marked: markResult.changes, unprotected: ids.length };
+  });
+
+  return txn();
 }
 
 export function queryEventsByDateRange(fromTs: number, toTs: number, ranks?: string[]): EventRow[] {
