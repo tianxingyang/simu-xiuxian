@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": "server/index.ts", "reason": "Verify gateway has no DB/engine/LLM imports"}
+{"file": "server/runner.ts", "reason": "Verify runner works in child process"}
+{"file": "server/reporter.ts", "reason": "Verify AbortSignal support"}
+{"file": ".trellis/tasks/03-18-thread-model-report/prd.md", "reason": "PRD with acceptance criteria"}

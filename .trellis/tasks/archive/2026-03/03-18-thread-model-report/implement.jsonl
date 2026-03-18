@@ -1,0 +1,13 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "server/index.ts", "reason": "Entry point - will become gateway/control plane"}
+{"file": "server/runner.ts", "reason": "Runner - will move to sim-worker process"}
+{"file": "server/reporter.ts", "reason": "Reporter - will move to llm-worker process"}
+{"file": "server/biography.ts", "reason": "Biography - will move to llm-worker process"}
+{"file": "server/bot.ts", "reason": "Bot - needs IPC dispatch instead of direct calls"}
+{"file": "server/config.ts", "reason": "Config - remove per-access readFileSync"}
+{"file": "server/db.ts", "reason": "DB layer - each process needs own connection"}
+{"file": "server/identity.ts", "reason": "Identity - stays with sim process"}
+{"file": "server/eviction.ts", "reason": "Eviction - stays with sim process in Phase 1"}
+{"file": "server/events.ts", "reason": "Events - stays with sim process"}
+{"file": ".trellis/tasks/03-18-thread-model-report/prd.md", "reason": "PRD with architecture design"}
