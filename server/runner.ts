@@ -252,7 +252,7 @@ export class Runner {
         return;
       }
       if (this.io.clientCount() === 0) {
-        setImmediate(() => this.runBatch());
+        setTimeout(() => this.runBatch(), 50);
         return;
       }
       this.awaitingAck = true;

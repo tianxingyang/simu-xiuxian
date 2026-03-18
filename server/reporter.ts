@@ -191,16 +191,13 @@ function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
 // ---------------------------------------------------------------------------
 
 export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
-  // Only load S/A events as rows (small set), B stats via SQL aggregation
+  console.log(`[reporter] aggregating events ts=${fromTs}~${toTs}`);
   const rows = queryEventsByDateRange(fromTs, toTs, ['S', 'A']);
   const data = classifyRows(rows, nowUtc8DateStr());
 
-  // Merge B-rank statistics from SQL aggregation
   const bStats = queryEventStats(fromTs, toTs);
   for (const { type, cnt } of bStats) {
     if (type === 'promotion') {
-      // B-rank promotions are lv2~lv7 — counted in aggregate, no per-level breakdown from SQL
-      // We keep the existing zero values and just note the total
     } else if (type === 'combat') {
       data.statistics.combat_deaths += cnt;
     } else if (type === 'expiry') {
@@ -208,6 +205,7 @@ export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
     }
   }
 
+  console.log(`[reporter] aggregated: S=${data.headlines.length} A=${data.major_events.length} combat_deaths=${data.statistics.combat_deaths} expiry_deaths=${data.statistics.expiry_deaths}`);
   return data;
 }
 
@@ -215,13 +213,19 @@ export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
 // buildPrompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_MESSAGE = `你是一位修仙世界的史官，负责撰写每日修仙界简报。请以日报体裁撰写，包含以下栏目：
-- 头条（S级大事件，如有）
-- 要闻（A级重要事件）
-- 简讯（B级统计数据摘要）
+const SYSTEM_MESSAGE = `你是一位修仙世界的史官，负责撰写每日「修仙界日报」。请以古风日报体裁撰写，包含以下栏目：
+- 头条（轰动天下的大事件，如有）
+- 要闻（值得关注的重要事件）
+- 简讯（统计数据摘要）
 - 天下大势（总结当日修仙界动态）
 
-要求：
+格式要求：
+- 纯文本输出，禁止使用任何 Markdown 语法（不要用 #、*、**、- 等标记符号）
+- 栏目标题用【】包裹，例如【头条】【要闻】
+- 用换行分隔段落，不要使用列表符号
+- 报头格式：「修仙界日报」加道历纪年
+
+内容要求：
 - 不得编造素材中没有的事件
 - 可以润色措辞、增加修仙氛围描写
 - 总长度控制在800字以内
@@ -229,7 +233,7 @@ const SYSTEM_MESSAGE = `你是一位修仙世界的史官，负责撰写每日�
 
 function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   const ev = item.event;
-  const base: Record<string, Val> = { type: ev.type, year: ev.year, rank: ev.newsRank };
+  const base: Record<string, Val> = { type: ev.type, year: ev.year };
 
   switch (ev.type) {
     case 'combat':
@@ -305,30 +309,102 @@ export function buildPrompt(data: AggregatedData): PromptMessage[] {
 
 export async function callLLM(messages: PromptMessage[]): Promise<string> {
   const url = `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${llmConfig.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: llmConfig.model,
-      messages,
-      temperature: 0.7,
-      max_tokens: 2000,
-    }),
-  });
+  console.log(`[reporter] LLM request: model=${llmConfig.model} url=${url}`);
+  const t0 = Date.now();
+  const ac = new AbortController();
+  const totalTimer = setTimeout(() => { console.warn('[reporter] LLM total timeout (120s), aborting'); ac.abort(); }, 120_000);
+
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${llmConfig.apiKey}`,
+        'HTTP-Referer': 'https://github.com/simu-xiuxian',
+        'X-Title': 'Simu Xiuxian',
+      },
+      body: JSON.stringify({
+        model: llmConfig.model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 2000,
+        stream: true,
+        provider: {
+          allow_fallbacks: true,
+          sort: 'latency',
+        },
+      }),
+      signal: ac.signal,
+    });
+  } catch (err) {
+    clearTimeout(totalTimer);
+    console.error(`[reporter] LLM fetch failed after ${Date.now() - t0}ms:`, err);
+    throw err;
+  }
 
   if (!resp.ok) {
+    clearTimeout(totalTimer);
     const body = await resp.text().catch(() => '');
+    console.error(`[reporter] LLM API error: ${resp.status} ${body}`);
     throw new Error(`LLM API error: ${resp.status} ${body}`);
   }
 
-  const json = (await resp.json()) as {
-    choices: Array<{ message: { content: string } }>;
+  console.log(`[reporter] LLM response received in ${Date.now() - t0}ms, reading stream...`);
+
+  const reader = resp.body?.getReader();
+  if (!reader) { clearTimeout(totalTimer); throw new Error('LLM API returned no body'); }
+
+  const chunks: string[] = [];
+  const decoder = new TextDecoder();
+  let buf = '';
+  let chunkCount = 0;
+  let staleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const resetStale = () => {
+    if (staleTimer) clearTimeout(staleTimer);
+    staleTimer = setTimeout(() => { console.warn(`[reporter] LLM stream stale (30s no data after ${chunkCount} chunks), aborting`); ac.abort(); }, 30_000);
   };
 
-  return json.choices[0].message.content;
+  try {
+    resetStale();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      resetStale();
+      chunkCount++;
+      buf += decoder.decode(value, { stream: true });
+
+      const lines = buf.split('\n');
+      buf = lines.pop() ?? '';
+
+      let finished = false;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data: ')) continue;
+        const payload = trimmed.slice(6);
+        if (payload === '[DONE]') { finished = true; break; }
+        try {
+          const parsed = JSON.parse(payload) as {
+            choices: Array<{ delta: { content?: string } }>;
+          };
+          const content = parsed.choices[0]?.delta?.content;
+          if (content) chunks.push(content);
+        } catch { /* skip malformed chunks */ }
+      }
+      if (finished) break;
+    }
+  } finally {
+    clearTimeout(totalTimer);
+    if (staleTimer) clearTimeout(staleTimer);
+    reader.releaseLock();
+  }
+
+  const result = chunks.join('');
+  const elapsed = Date.now() - t0;
+  console.log(`[reporter] LLM stream done: ${chunkCount} chunks, ${result.length} chars, ${elapsed}ms`);
+  if (!result) throw new Error('LLM returned empty response');
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +428,7 @@ export async function generateReport(fromTs?: number, toTs?: number): Promise<st
   }
 
   _busy = true;
+  console.log(`[reporter] generating report: fromTs=${from} toTs=${to}`);
   try {
     const data = aggregateEvents(from, to);
     const messages = buildPrompt(data);
@@ -376,7 +453,7 @@ export async function generateReport(fromTs?: number, toTs?: number): Promise<st
       prompt: promptJson,
       report,
     });
-    console.log(`[reporter] report stored, hasReport=${report !== null}`);
+    console.log(`[reporter] report stored (${report ? report.length + ' chars' : 'no LLM output'}), year=${data.meta.year_from}~${data.meta.year_to}`);
     return report;
   } finally {
     _busy = false;

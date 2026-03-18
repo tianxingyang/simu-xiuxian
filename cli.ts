@@ -520,7 +520,7 @@ async function actionReport(): Promise<void> {
   const url = `http://localhost:${port}/api/report`;
   logMsg(`{white-fg}POST ${url} (generating...){/}`);
   try {
-    const resp = await fetch(url, { method: 'POST' });
+    const resp = await fetch(url, { method: 'POST', signal: AbortSignal.timeout(120_000) });
     const body = await resp.json() as { status: string; report?: string | null; error?: string };
     if (!resp.ok) {
       logMsg(`{red-fg}${resp.status}: ${body.error ?? body.status}{/}`);

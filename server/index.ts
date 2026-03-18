@@ -6,6 +6,17 @@ import { generateReport, isBusy } from './reporter.js';
 import { startBot } from './bot.js';
 import { Runner, type Command } from './runner.js';
 
+// Prepend HH:MM:SS timestamp to all console output
+{
+  const ts = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(11, 19);
+  const origLog = console.log.bind(console);
+  const origWarn = console.warn.bind(console);
+  const origErr = console.error.bind(console);
+  console.log = (...args: unknown[]) => origLog(ts(), ...args);
+  console.warn = (...args: unknown[]) => origWarn(ts(), ...args);
+  console.error = (...args: unknown[]) => origErr(ts(), ...args);
+}
+
 function json(res: ServerResponse, status: number, data: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(data));
