@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-03-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~762 | Active |
+| `journal-1.md` | ~815 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 16 | 2026-03-18 | perf: processMemoryDecay N+1 查询消除 | `c90ef99` |
 | 15 | 2026-03-18 | Server 多进程架构重构 | `8fa1014` |
 | 14 | 2026-03-18 | 修复日报生成阻塞与输出格式 | `460486a` |
 | 13 | 2026-03-18 | Event eviction, report/biography CLI, config auto-reload | `fe6d1ca`, `c4e2411` |

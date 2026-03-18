@@ -760,3 +760,56 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: perf: processMemoryDecay N+1 查询消除
+
+**Date**: 2026-03-18
+**Task**: perf: processMemoryDecay N+1 查询消除
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 问题
+`processMemoryDecay` 每60秒扫描全量死亡修士，对每个遗忘修士执行 N+1 DB 查询。year ~1550+ 时死亡修士累积上千，导致每次执行 ~130s，阻塞 tick。
+
+## 方案 (Approach C: 增量标记 + 集合SQL + 反向索引)
+
+| 改动 | 说明 |
+|------|------|
+| `forgotten` 列 | 标记已处理的遗忘修士，只处理增量 |
+| 集合化 SQL | JOIN + NOT EXISTS 替代 N+1 循环 |
+| 反向索引 | `event_cultivators(event_id)` |
+| Migration | 兼容已有数据库 |
+
+## 变更文件
+- `server/db.ts` — schema + migration + `processMemoryDecayBatch()`
+- `server/eviction.ts` — 85行→33行，完全消除 N+1
+- `.trellis/spec/backend/database.md` — 新增周期任务反模式文档
+
+## 性能影响
+- 每周期 DB 调用: ~10000+ → 3-5 条
+- 工作集: O(全部死亡) → O(新遗忘) → 趋近 0
+- 预计耗时: ~130s → <10ms
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c90ef99` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
