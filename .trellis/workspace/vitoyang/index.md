@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 23
+- **Total Sessions**: 24
 - **Last Active**: 2026-03-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1144 | Active |
+| `journal-1.md` | ~1193 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 24 | 2026-03-19 | feat(reporter): insight detection engine | `2e0f0fd` |
 | 23 | 2026-03-19 | Migrate QQ bot to OneBot v11 (NapCat) | `7656ae0` |
 | 22 | 2026-03-19 | 丰富日报 LLM 数据：事件嵌入 + 世界快照 IPC | `78560e0` |
 | 21 | 2026-03-19 | fix: report 接口 409 锁死 + 诊断日志 | `da6b479` |

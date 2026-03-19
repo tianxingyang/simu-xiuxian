@@ -1142,3 +1142,52 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: feat(reporter): insight detection engine
+
+**Date**: 2026-03-19
+**Task**: feat(reporter): insight detection engine
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+Replaced the valueless 简讯 (statistics dump) section in 修仙界日报 with a server-side insight detection engine. The LLM now receives structured "narrative hooks" based on surprising changes instead of raw numbers.
+
+## Changes
+
+| File | Change |
+|------|--------|
+| `server/reporter.ts` | Removed Statistics/B-level logic; added `computeInsights()` with 4 detectors (spike, trend_reversal, ranking_change, threshold); refactored `buildPrompt()` and `SYSTEM_MESSAGE` |
+| `server/db.ts` | Added `world_context` column to reports table; added `queryRecentWorldContexts(n)`; removed dead `queryEventStats()` |
+| `server/logger.ts` | New unified logger module |
+| `server/*.ts`, `cli.ts` | Migrated from `console.log` to structured logger |
+
+## Design Decisions
+- **Only surprising changes are reported**: Insight detectors only trigger when data deviates significantly from the rolling baseline (spike >30%, trend reversal after 3+ periods, ranking shifts, milestone crossings)
+- **World context snapshots stored per report**: Enables cross-period comparison without schema redesign
+- **日报 structure simplified**: 4 sections → 3 sections (头条/要闻/天下大势), no more 简讯
+- **No insight = 天下太平**: LLM writes calm summary when nothing noteworthy happened
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2e0f0fd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
