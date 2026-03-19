@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "TypeScript conventions"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality rules"}
+{"file": "src/constants.ts", "reason": "Existing region grid pattern"}
+{"file": "src/engine/spatial.ts", "reason": "Movement and encounter logic"}
+{"file": "src/engine/combat.ts", "reason": "Combat and evasion logic"}
+{"file": "src/engine/simulation.ts", "reason": "Breakthrough and tick logic"}
+{"file": "src/engine/prng.ts", "reason": "PRNG pattern"}
