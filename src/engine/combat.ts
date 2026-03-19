@@ -298,11 +298,13 @@ function resolveCombat(
         type: 'combat',
         year,
         newsRank: 'C',
-        winner: { id: winner.id, name: winnerName, level: combatLevel, cultivation: winnerSnap },
-        loser: { id: loser.id, name: loserName, level: combatLevel, cultivation: loserSnap },
+        winner: { id: winner.id, name: winnerName, level: combatLevel, cultivation: winnerSnap, age: winner.age, behaviorState: winner.behaviorState },
+        loser: { id: loser.id, name: loserName, level: combatLevel, cultivation: loserSnap, age: loser.age, behaviorState: loser.behaviorState },
         absorbed: loot,
         outcome,
         region: getRegionName(winner.x, winner.y),
+        spiritualEnergy: engine.areaTags.getSpiritualEnergy(winner.x, winner.y),
+        terrainDanger: engine.areaTags.getTerrainDanger(winner.x, winner.y),
       };
       combatEvent.newsRank = scoreNewsRank(combatEvent);
       events.push(combatEvent);

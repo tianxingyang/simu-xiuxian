@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config, llmConfig } from './config.js';
 import { startBot, stopBot, onLlmResult, onLlmWorkerDied } from './bot.js';
-import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent } from './ipc.js';
+import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext } from './ipc.js';
 import type { StateSnapshot } from './runner.js';
 
 // Prepend HH:MM:SS timestamp to all console output
@@ -59,6 +59,24 @@ let cachedState: StateSnapshot = { year: 1, running: false, speed: 1, summary: n
 
 let simReady = false;
 let llmReady = false;
+
+let pendingWorldContextCb: ((ctx: WorldContext | null) => void) | null = null;
+
+function requestWorldContext(): Promise<WorldContext | null> {
+  if (!simWorker?.connected || !simReady) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const timer = setTimeout(() => {
+      pendingWorldContextCb = null;
+      resolve(null);
+    }, 5000);
+    pendingWorldContextCb = (ctx) => {
+      clearTimeout(timer);
+      pendingWorldContextCb = null;
+      resolve(ctx);
+    };
+    simWorker!.send({ type: 'sim:getWorldContext' } as SimCommand);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Job registry for HTTP requests to LLM worker
@@ -156,6 +174,9 @@ function spawnSim(): ChildProcess {
       case 'sim:resetDone':
         cachedState = { year: 1, running: false, speed: cachedState.speed, summary: null };
         broadcastWs({ type: 'reset-done' });
+        break;
+      case 'sim:worldContext':
+        if (pendingWorldContextCb) pendingWorldContextCb(msg.context);
         break;
     }
   });
@@ -264,7 +285,7 @@ const server = createServer((req, res) => {
     if (!llmReady) { json(res, 503, { status: 'worker_not_ready' }); return; }
     if (activeReportJobId) { console.warn(`[gateway] report rejected: job ${activeReportJobId} still active`); json(res, 409, { status: 'busy' }); return; }
 
-    const { jobId, promise } = submitLlmJob({ type: 'job:report', jobId: nextJobId() });
+    const jobId = nextJobId();
     activeReportJobId = jobId;
     let aborted = false;
 
@@ -275,15 +296,19 @@ const server = createServer((req, res) => {
       }
     });
 
-    promise
-      .then(report => { if (!aborted) json(res, 200, { status: 'ok', report }); })
-      .catch(err => {
-        if (!aborted) {
-          console.error('[gateway] report error:', err);
-          json(res, 500, { status: 'error', error: String(err) });
-        }
-      })
-      .finally(() => { if (activeReportJobId === jobId) activeReportJobId = null; });
+    requestWorldContext().then(worldContext => {
+      if (aborted) return;
+      const { promise } = submitLlmJob({ type: 'job:report', jobId, worldContext: worldContext ?? undefined });
+      promise
+        .then(report => { if (!aborted) json(res, 200, { status: 'ok', report }); })
+        .catch(err => {
+          if (!aborted) {
+            console.error('[gateway] report error:', err);
+            json(res, 500, { status: 'error', error: String(err) });
+          }
+        })
+        .finally(() => { if (activeReportJobId === jobId) activeReportJobId = null; });
+    });
     return;
   }
 
@@ -387,6 +412,7 @@ server.listen(config.port, config.host, () => {
   startBot(
     () => cachedState.year,
     (cmd: LlmCommand) => sendToLlm(cmd),
+    () => requestWorldContext(),
   );
 });
 

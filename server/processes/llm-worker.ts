@@ -24,7 +24,7 @@ db.pragma('busy_timeout = 5000');
 
 const activeJobs = new Map<string, AbortController>();
 
-async function handleReport(jobId: string, fromTs?: number, toTs?: number, groupOpenid?: string): Promise<void> {
+async function handleReport(jobId: string, fromTs?: number, toTs?: number, groupOpenid?: string, worldContext?: import('../ipc.js').WorldContext): Promise<void> {
   const ac = new AbortController();
   activeJobs.set(jobId, ac);
   try {
@@ -35,7 +35,7 @@ async function handleReport(jobId: string, fromTs?: number, toTs?: number, group
       from = getLastRequestTs(groupOpenid) ?? (now - 86400);
     }
 
-    const report = await generateReport(from, toTs, ac.signal);
+    const report = await generateReport(from, toTs, ac.signal, worldContext);
 
     // Update per-group timestamp on success
     if (groupOpenid) {
@@ -82,7 +82,7 @@ async function handleBiography(jobId: string, name: string, currentYear: number)
 process.on('message', (raw: LlmCommand) => {
   switch (raw.type) {
     case 'job:report':
-      handleReport(raw.jobId, raw.fromTs, raw.toTs, raw.groupOpenid);
+      handleReport(raw.jobId, raw.fromTs, raw.toTs, raw.groupOpenid, raw.worldContext);
       break;
     case 'job:biography':
       handleBiography(raw.jobId, raw.name, raw.currentYear);

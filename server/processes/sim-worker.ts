@@ -70,6 +70,11 @@ process.on('message', (raw: SimCommand) => {
     case 'sim:getState':
       send({ type: 'sim:state', state: runner.getState() });
       break;
+    case 'sim:getWorldContext': {
+      const ctx = runner.getWorldContext();
+      if (ctx) send({ type: 'sim:worldContext', context: ctx });
+      break;
+    }
     case 'sim:clientCount':
       _clientCount = raw.count;
       if (raw.count === 0) runner.onClientDisconnect();

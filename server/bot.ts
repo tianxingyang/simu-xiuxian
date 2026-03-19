@@ -58,8 +58,10 @@ async function sendGroupMessage(groupOpenid: string, content: string, msgId: str
 // ---------------------------------------------------------------------------
 
 type DispatchFn = (cmd: LlmCommand) => void;
+type GetWorldContextFn = () => Promise<import('./ipc.js').WorldContext | null>;
 let _dispatch: DispatchFn = () => {};
 let _getYear: () => number = () => 1;
+let _getWorldContext: GetWorldContextFn = () => Promise.resolve(null);
 let _jobCounter = 0;
 
 interface PendingJob {
@@ -107,7 +109,8 @@ export function onLlmResult(msg: LlmWorkerEvent): void {
 
 async function handleReport(groupOpenid: string, msgId: string): Promise<void> {
   try {
-    const report = await submitJob({ type: 'job:report', jobId: nextJobId(), groupOpenid }) as string | null;
+    const worldContext = await _getWorldContext() ?? undefined;
+    const report = await submitJob({ type: 'job:report', jobId: nextJobId(), groupOpenid, worldContext }) as string | null;
 
     if (report) {
       await sendGroupMessage(groupOpenid, report, msgId);
@@ -325,7 +328,7 @@ function scheduleReconnect(): void {
 // Public API
 // ---------------------------------------------------------------------------
 
-export function startBot(getYear: () => number, dispatch: DispatchFn): void {
+export function startBot(getYear: () => number, dispatch: DispatchFn, getWorldContext?: GetWorldContextFn): void {
   if (!config.qqBotAppId || !config.qqBotAppSecret) {
     console.warn('[bot] QQ_BOT_APP_ID or QQ_BOT_APP_SECRET not configured, bot disabled');
     return;
@@ -333,6 +336,7 @@ export function startBot(getYear: () => number, dispatch: DispatchFn): void {
 
   _getYear = getYear;
   _dispatch = dispatch;
+  if (getWorldContext) _getWorldContext = getWorldContext;
   _stopping = false;
   connectGateway();
 }

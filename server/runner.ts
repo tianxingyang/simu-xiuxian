@@ -70,6 +70,11 @@ export class Runner {
     };
   }
 
+  getWorldContext(): import('./ipc.js').WorldContext | null {
+    if (!this.engine) return null;
+    return this.engine.getWorldContext();
+  }
+
   restore(): boolean {
     const saved = getSimState();
     if (!saved) return false;

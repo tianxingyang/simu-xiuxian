@@ -1,6 +1,7 @@
 import { LEVEL_NAMES } from '../src/constants.js';
 import { toYaml } from './yaml.js';
-import type { RichEvent, NewsRank } from '../src/types.js';
+import type { BehaviorState, RichEvent, NewsRank } from '../src/types.js';
+import type { WorldContext } from './ipc.js';
 import { llmConfig } from './config.js';
 import {
   type EventRow,
@@ -54,6 +55,14 @@ export interface PromptMessage {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+const BEHAVIOR_STATE_LABEL: Record<BehaviorState, string> = {
+  escaping: '逃窜中',
+  recuperating: '疗伤中',
+  seeking_breakthrough: '寻求突破中',
+  settling: '定居修炼中',
+  wandering: '云游中',
+};
 
 const UTC8_OFFSET_MS = 8 * 60 * 60 * 1000;
 
@@ -213,7 +222,7 @@ export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
 // buildPrompt
 // ---------------------------------------------------------------------------
 
-const SYSTEM_MESSAGE = `你是一位修仙世界的史官，负责撰写每日「修仙界日报」。请以古风日报体裁撰写，包含以下栏目：
+const SYSTEM_MESSAGE = `你是天机阁今日轮值真人，执掌「修仙界日报」的编撰。天机阁立于九天之上，以天机镜洞察四海八荒，凡修仙界风云变幻皆逃不过阁中法眼。请以古风日报体裁撰写，包含以下栏目：
 - 头条（轰动天下的大事件，如有）
 - 要闻（值得关注的重要事件）
 - 简讯（统计数据摘要）
@@ -229,7 +238,10 @@ const SYSTEM_MESSAGE = `你是一位修仙世界的史官，负责撰写每日�
 - 不得编造素材中没有的事件
 - 可以润色措辞、增加修仙氛围描写
 - 总长度控制在800字以内
-- 如果当日无任何事件，请撰写一份简短的"天下太平"报道`;
+- 如果当日无任何事件，请撰写一份简短的"天下太平"报道
+- 事件中的 spiritual_energy（灵气浓度1-5）和 terrain_danger（地势险要1-5）可用于描绘场景氛围
+- 修士的 state（行为状态）可用于刻画人物当时的处境
+- 如提供了 world_context，可在【天下大势】中引用各区域人口、灵气、修士境界分布等信息`;
 
 function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   const ev = item.event;
@@ -239,23 +251,39 @@ function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
     base.region = ev.region;
   }
 
+  if (ev.type !== 'milestone') {
+    if (ev.spiritualEnergy) base.spiritual_energy = ev.spiritualEnergy;
+    if (ev.terrainDanger) base.terrain_danger = ev.terrainDanger;
+  }
+
   switch (ev.type) {
-    case 'combat':
-      base.winner = { name: ev.winner.name ?? `修士#${ev.winner.id}`, level: LEVEL_NAMES[ev.winner.level] };
-      base.loser = { name: ev.loser.name ?? `修士#${ev.loser.id}`, level: LEVEL_NAMES[ev.loser.level] };
+    case 'combat': {
+      const w: Record<string, Val> = { name: ev.winner.name ?? `修士#${ev.winner.id}`, level: LEVEL_NAMES[ev.winner.level] };
+      if (ev.winner.age) w.age = ev.winner.age;
+      if (ev.winner.behaviorState) w.state = BEHAVIOR_STATE_LABEL[ev.winner.behaviorState];
+      const l: Record<string, Val> = { name: ev.loser.name ?? `修士#${ev.loser.id}`, level: LEVEL_NAMES[ev.loser.level] };
+      if (ev.loser.age) l.age = ev.loser.age;
+      if (ev.loser.behaviorState) l.state = BEHAVIOR_STATE_LABEL[ev.loser.behaviorState];
+      base.winner = w;
+      base.loser = l;
       base.outcome = ev.outcome;
       base.absorbed = ev.absorbed;
       break;
-    case 'promotion':
+    }
+    case 'promotion': {
       base.subject = ev.subject.name ?? `修士#${ev.subject.id}`;
       base.from_level = LEVEL_NAMES[ev.fromLevel];
       base.to_level = LEVEL_NAMES[ev.toLevel];
       base.cause = ev.cause;
+      if (ev.subject.age) base.age = ev.subject.age;
+      if (ev.subject.behaviorState) base.state = BEHAVIOR_STATE_LABEL[ev.subject.behaviorState];
       break;
+    }
     case 'expiry':
       base.subject = ev.subject.name ?? `修士#${ev.subject.id}`;
       base.level = LEVEL_NAMES[ev.level];
       base.age = ev.subject.age;
+      if (ev.subject.behaviorState) base.state = BEHAVIOR_STATE_LABEL[ev.subject.behaviorState];
       break;
     case 'milestone':
       base.kind = ev.kind;
@@ -266,11 +294,14 @@ function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
       base.subject = ev.subject.name ?? `修士#${ev.subject.id}`;
       base.level = LEVEL_NAMES[ev.subject.level];
       base.penalty = ev.penalty;
+      if (ev.subject.age) base.age = ev.subject.age;
+      if (ev.subject.behaviorState) base.state = BEHAVIOR_STATE_LABEL[ev.subject.behaviorState];
       break;
     case 'tribulation':
       base.subject = ev.subject.name ?? `修士#${ev.subject.id}`;
       base.level = LEVEL_NAMES[ev.subject.level];
       base.outcome = ev.outcome;
+      if (ev.subject.behaviorState) base.state = BEHAVIOR_STATE_LABEL[ev.subject.behaviorState];
       break;
   }
 
@@ -289,8 +320,8 @@ function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   return base;
 }
 
-export function buildPrompt(data: AggregatedData): PromptMessage[] {
-  const userContent = {
+export function buildPrompt(data: AggregatedData, worldContext?: WorldContext): PromptMessage[] {
+  const userContent: Record<string, Val> = {
     real_date: data.meta.real_date,
     sim_year_range: data.meta.year_from > 0
       ? `${data.meta.year_from}-${data.meta.year_to}`
@@ -300,6 +331,31 @@ export function buildPrompt(data: AggregatedData): PromptMessage[] {
     major_events: data.major_events.map(formatEventForPrompt),
     statistics: data.statistics as unknown as Record<string, Val>,
   };
+
+  if (worldContext) {
+    userContent.current_year = worldContext.currentYear;
+    const levelDist: Record<string, Val> = {};
+    for (let i = 0; i < worldContext.levelCounts.length; i++) {
+      if (worldContext.levelCounts[i] > 0 && LEVEL_NAMES[i]) {
+        levelDist[LEVEL_NAMES[i]] = worldContext.levelCounts[i];
+      }
+    }
+    const behaviorDist: Record<string, Val> = {};
+    for (const [state, count] of Object.entries(worldContext.behaviorDistribution)) {
+      if (count > 0) behaviorDist[BEHAVIOR_STATE_LABEL[state as BehaviorState]] = count;
+    }
+    userContent.world_context = {
+      population: worldContext.population,
+      level_distribution: levelDist,
+      behavior_distribution: behaviorDist,
+      region_profiles: worldContext.regionProfiles.map(r => ({
+        name: r.name,
+        population: r.population,
+        spiritual_energy: r.avgSpiritualEnergy,
+        terrain_danger: r.avgTerrainDanger,
+      })),
+    };
+  }
 
   return [
     { role: 'system', content: SYSTEM_MESSAGE },
@@ -423,16 +479,16 @@ export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): 
 // generateReport (unified pipeline, timestamp-based)
 // ---------------------------------------------------------------------------
 
-export async function generateReport(fromTs?: number, toTs?: number, signal?: AbortSignal): Promise<string | null> {
+export async function generateReport(fromTs?: number, toTs?: number, signal?: AbortSignal, worldContext?: WorldContext): Promise<string | null> {
   const now = Math.floor(Date.now() / 1000);
   const from = fromTs ?? queryLastReportTs() ?? (now - 86400);
   const to = toTs ?? now;
 
   if (signal?.aborted) throw new Error('Aborted before start');
 
-  console.log(`[reporter] generating report: fromTs=${from} toTs=${to}`);
+  console.log(`[reporter] generating report: fromTs=${from} toTs=${to} worldContext=${!!worldContext}`);
   const data = aggregateEvents(from, to);
-  const messages = buildPrompt(data);
+  const messages = buildPrompt(data, worldContext);
   const promptJson = JSON.stringify(messages);
 
   let report: string | null = null;

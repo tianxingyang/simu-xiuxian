@@ -1,5 +1,5 @@
 import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
-import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionName, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
+import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
 import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
 import { type PRNG, createPRNG, truncatedGaussian } from './prng';
@@ -215,8 +215,10 @@ export class SimulationEngine {
           const name = this.hooks?.getName(c.id);
           const ee: RichExpiryEvent = {
             type: 'expiry', year: this.year, newsRank: 'C',
-            subject: { id: c.id, name, age: c.age }, level: deathLevel,
+            subject: { id: c.id, name, age: c.age, behaviorState: c.behaviorState }, level: deathLevel,
             region: getRegionName(c.x, c.y),
+            spiritualEnergy: this.areaTags.getSpiritualEnergy(c.x, c.y),
+            terrainDanger: this.areaTags.getTerrainDanger(c.x, c.y),
           };
           ee.newsRank = scoreNewsRank(ee);
           events.push(ee);
@@ -316,6 +318,46 @@ export class SimulationEngine {
       breakthroughFailures: this.breakthroughFailures,
       levelStats,
     };
+  }
+
+  getWorldContext(): {
+    population: number;
+    levelCounts: number[];
+    regionProfiles: { name: string; population: number; avgSpiritualEnergy: number; avgTerrainDanger: number }[];
+    behaviorDistribution: Record<BehaviorState, number>;
+  } {
+    const levelCounts = new Array(LEVEL_COUNT).fill(0) as number[];
+    const behaviorDist: Record<BehaviorState, number> = {
+      escaping: 0, recuperating: 0, seeking_breakthrough: 0, settling: 0, wandering: 0,
+    };
+    const regionPop = new Map<RegionCode, number>();
+    const regionSE = new Map<RegionCode, number>();
+    const regionTD = new Map<RegionCode, number>();
+
+    for (let i = 0; i < this.nextId; i++) {
+      const c = this.cultivators[i];
+      if (!c.alive) continue;
+      levelCounts[c.level]++;
+      behaviorDist[c.behaviorState]++;
+      const rc = getRegionCode(c.x, c.y);
+      regionPop.set(rc, (regionPop.get(rc) ?? 0) + 1);
+      regionSE.set(rc, (regionSE.get(rc) ?? 0) + this.areaTags.getSpiritualEnergy(c.x, c.y));
+      regionTD.set(rc, (regionTD.get(rc) ?? 0) + this.areaTags.getTerrainDanger(c.x, c.y));
+    }
+
+    const regionProfiles: { name: string; population: number; avgSpiritualEnergy: number; avgTerrainDanger: number }[] = [];
+    for (const [rc, pop] of regionPop) {
+      if (rc === '~') continue;
+      regionProfiles.push({
+        name: REGION_NAMES[rc],
+        population: pop,
+        avgSpiritualEnergy: round1((regionSE.get(rc) ?? 0) / pop),
+        avgTerrainDanger: round1((regionTD.get(rc) ?? 0) / pop),
+      });
+    }
+    regionProfiles.sort((a, b) => b.population - a.population);
+
+    return { currentYear: this.year, population: this.aliveCount, levelCounts, regionProfiles, behaviorDistribution: behaviorDist };
   }
 
   evaluateBehaviorStates(): void {
@@ -751,9 +793,11 @@ export function tryBreakthrough(
       const name = engine.hooks?.getName(c.id);
       const pe: RichPromotionEvent = {
         type: 'promotion', year, newsRank: 'C',
-        subject: { id: c.id, name },
+        subject: { id: c.id, name, age: c.age, behaviorState: c.behaviorState },
         fromLevel: prevLevel, toLevel: c.level, cause,
         region: getRegionName(c.x, c.y),
+        spiritualEnergy: engine.areaTags.getSpiritualEnergy(c.x, c.y),
+        terrainDanger: engine.areaTags.getTerrainDanger(c.x, c.y),
       };
       pe.newsRank = scoreNewsRank(pe);
       events.push(pe);
@@ -785,9 +829,11 @@ export function tryBreakthrough(
     const be: RichBreakthroughEvent = {
       type: 'breakthrough_fail', year,
       newsRank: c.level >= 4 ? 'B' : 'C',
-      subject: { id: c.id, name, level: c.level },
+      subject: { id: c.id, name, level: c.level, age: c.age, behaviorState: c.behaviorState },
       penalty, cause,
       region: getRegionName(c.x, c.y),
+      spiritualEnergy: engine.areaTags.getSpiritualEnergy(c.x, c.y),
+      terrainDanger: engine.areaTags.getTerrainDanger(c.x, c.y),
     };
     events.push(be);
   }
@@ -830,9 +876,11 @@ export function tryTribulation(
     const name = engine.hooks?.getName(c.id);
     const te: RichTribulationEvent = {
       type: 'tribulation', year: engine.year, newsRank: 'S',
-      subject: { id: c.id, name, level: deathLevel, age: c.age },
+      subject: { id: c.id, name, level: deathLevel, age: c.age, behaviorState: c.behaviorState },
       outcome,
       region: getRegionName(c.x, c.y),
+      spiritualEnergy: engine.areaTags.getSpiritualEnergy(c.x, c.y),
+      terrainDanger: engine.areaTags.getTerrainDanger(c.x, c.y),
     };
     events.push(te);
 

@@ -74,6 +74,8 @@ export interface CombatActor {
   name?: string;
   level: number;
   cultivation: number;
+  age?: number;
+  behaviorState?: BehaviorState;
 }
 
 export type DefeatOutcome =
@@ -89,26 +91,32 @@ export interface RichCombatEvent {
   absorbed: number;
   outcome: DefeatOutcome;
   region?: string;
+  spiritualEnergy?: number;
+  terrainDanger?: number;
 }
 
 export interface RichPromotionEvent {
   type: 'promotion';
   year: number;
   newsRank: NewsRank;
-  subject: { id: number; name?: string };
+  subject: { id: number; name?: string; age?: number; behaviorState?: BehaviorState };
   fromLevel: number;
   toLevel: number;
   cause: 'natural' | 'combat';
   region?: string;
+  spiritualEnergy?: number;
+  terrainDanger?: number;
 }
 
 export interface RichExpiryEvent {
   type: 'expiry';
   year: number;
   newsRank: NewsRank;
-  subject: { id: number; name?: string; age: number };
+  subject: { id: number; name?: string; age: number; behaviorState?: BehaviorState };
   level: number;
   region?: string;
+  spiritualEnergy?: number;
+  terrainDanger?: number;
 }
 
 export interface MilestoneDetail {
@@ -130,19 +138,23 @@ export interface RichBreakthroughEvent {
   type: 'breakthrough_fail';
   year: number;
   newsRank: NewsRank;
-  subject: { id: number; name?: string; level: number };
+  subject: { id: number; name?: string; level: number; age?: number; behaviorState?: BehaviorState };
   penalty: 'cooldown_only' | 'cultivation_loss' | 'injury';
   cause: 'natural' | 'combat';
   region?: string;
+  spiritualEnergy?: number;
+  terrainDanger?: number;
 }
 
 export interface RichTribulationEvent {
   type: 'tribulation';
   year: number;
   newsRank: NewsRank;
-  subject: { id: number; name?: string; level: number; age: number };
+  subject: { id: number; name?: string; level: number; age: number; behaviorState?: BehaviorState };
   outcome: 'ascension' | 'death';
   region?: string;
+  spiritualEnergy?: number;
+  terrainDanger?: number;
 }
 
 export type RichEvent =
