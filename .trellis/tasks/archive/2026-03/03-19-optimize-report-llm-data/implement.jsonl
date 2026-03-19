@@ -1,0 +1,13 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "src/types.ts", "reason": "RichEvent types to extend"}
+{"file": "server/ipc.ts", "reason": "IPC types to extend"}
+{"file": "server/reporter.ts", "reason": "Report generation pipeline"}
+{"file": "server/runner.ts", "reason": "Runner with engine access"}
+{"file": "server/index.ts", "reason": "Gateway orchestration"}
+{"file": "server/processes/sim-worker.ts", "reason": "Sim worker IPC handler"}
+{"file": "server/processes/llm-worker.ts", "reason": "LLM worker IPC handler"}
+{"file": "src/engine/simulation.ts", "reason": "Engine event creation"}
+{"file": "src/engine/area-tag.ts", "reason": "AreaTagSystem for area data"}
+{"file": "src/constants.ts", "reason": "Constants: regions, behavior states"}
