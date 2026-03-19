@@ -3,7 +3,7 @@ import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config, llmConfig } from './config.js';
-import { startBot, stopBot, onLlmResult, onLlmWorkerDied } from './bot.js';
+import { startBot, stopBot, sendGroupMessage, type BotGroupMessage } from './bot.js';
 import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext } from './ipc.js';
 import type { StateSnapshot } from './runner.js';
 import { initLogger, getLogger } from './logger.js';
@@ -72,7 +72,7 @@ function requestWorldContext(): Promise<WorldContext | null> {
 }
 
 // ---------------------------------------------------------------------------
-// Job registry for HTTP requests to LLM worker
+// Job registry for LLM worker (HTTP + bot)
 // ---------------------------------------------------------------------------
 
 let _jobCounter = 0;
@@ -85,11 +85,11 @@ interface PendingJob {
   cancelJobId: string;
 }
 
-const HTTP_JOB_TIMEOUT = 150_000;
-const pendingHttpJobs = new Map<string, PendingJob>();
+const JOB_TIMEOUT = 150_000;
+const pendingJobs = new Map<string, PendingJob>();
 
 function nextJobId(): string {
-  return `http-${++_jobCounter}-${Date.now().toString(36)}`;
+  return `job-${++_jobCounter}-${Date.now().toString(36)}`;
 }
 
 function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknown> } {
@@ -97,24 +97,24 @@ function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknow
 
   const promise = new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
-      log.warn(`job ${jobId} timed out after ${HTTP_JOB_TIMEOUT / 1000}s`);
-      pendingHttpJobs.delete(jobId);
+      log.warn(`job ${jobId} timed out after ${JOB_TIMEOUT / 1000}s`);
+      pendingJobs.delete(jobId);
       sendToLlm({ type: 'job:cancel', jobId });
       reject(new Error('Job timeout'));
-    }, HTTP_JOB_TIMEOUT);
-    pendingHttpJobs.set(jobId, { resolve, reject, timer, cancelJobId: jobId });
+    }, JOB_TIMEOUT);
+    pendingJobs.set(jobId, { resolve, reject, timer, cancelJobId: jobId });
     sendToLlm(cmd);
   });
 
   return { jobId, promise };
 }
 
-function cancelHttpJob(jobId: string): void {
-  const pending = pendingHttpJobs.get(jobId);
+function cancelJob(jobId: string): void {
+  const pending = pendingJobs.get(jobId);
   if (pending) {
     log.warn(`job ${jobId} cancelled (client disconnected)`);
     clearTimeout(pending.timer);
-    pendingHttpJobs.delete(jobId);
+    pendingJobs.delete(jobId);
     pending.reject(new Error('Cancelled'));
     sendToLlm({ type: 'job:cancel', jobId });
   }
@@ -200,18 +200,17 @@ function spawnLlm(): ChildProcess {
       case 'job:result':
       case 'job:error': {
         // Route to HTTP pending jobs
-        const pending = pendingHttpJobs.get(msg.jobId);
+        const pending = pendingJobs.get(msg.jobId);
         if (pending) {
           clearTimeout(pending.timer);
-          pendingHttpJobs.delete(msg.jobId);
+          pendingJobs.delete(msg.jobId);
           if (msg.type === 'job:result') {
             pending.resolve(msg.payload);
           } else {
             pending.reject(new Error(msg.error));
           }
         }
-        // Route to bot pending jobs
-        onLlmResult(msg);
+        // Bot jobs also live in pendingJobs — no separate routing needed
         break;
       }
     }
@@ -221,14 +220,13 @@ function spawnLlm(): ChildProcess {
     log.error(`llm worker exited (code=${code}), restarting...`);
     llmReady = false;
     llmWorker = null;
-    // Fail-fast all pending HTTP jobs
-    for (const [jobId, pending] of pendingHttpJobs) {
+    // Fail-fast all pending jobs
+    for (const [jobId, pending] of pendingJobs) {
       clearTimeout(pending.timer);
       pending.reject(new Error('LLM worker crashed'));
-      pendingHttpJobs.delete(jobId);
+      pendingJobs.delete(jobId);
     }
-    // Fail-fast all pending bot jobs
-    onLlmWorkerDied();
+    // Bot jobs are in the same pendingJobs map — already handled above
     setTimeout(() => { llmWorker = spawnLlm(); }, 1000);
   });
 
@@ -285,7 +283,7 @@ const server = createServer((req, res) => {
     req.on('close', () => {
       if (!res.writableEnded) {
         aborted = true;
-        cancelHttpJob(jobId);
+        cancelJob(jobId);
       }
     });
 
@@ -333,7 +331,7 @@ const server = createServer((req, res) => {
       req.on('close', () => {
         if (!res.writableEnded) {
           aborted = true;
-          cancelHttpJob(jobId);
+          cancelJob(jobId);
         }
       });
 
@@ -394,6 +392,85 @@ wss.on('connection', (ws) => {
 });
 
 // ---------------------------------------------------------------------------
+// Bot Command Routing
+// ---------------------------------------------------------------------------
+
+function parseCommand(raw: string, selfId?: number): { cmd: string; arg: string } | null {
+  let text = raw;
+  if (selfId) {
+    text = text.replace(new RegExp(`\\[CQ:at,qq=${selfId}\\]`, 'g'), '');
+  }
+  text = text.replace(/^\s*\//, '').trim();
+  if (!text) return null;
+  if (text === '日报') return { cmd: 'report', arg: '' };
+  const bioMatch = text.match(/^传记\s+(.+)$/);
+  if (bioMatch) return { cmd: 'biography', arg: bioMatch[1].trim() };
+  return null;
+}
+
+const _busyGroups = new Set<number>();
+
+async function handleBotReport(groupId: number): Promise<void> {
+  const worldContext = await requestWorldContext() ?? undefined;
+  const gid = String(groupId);
+  const jobId = nextJobId();
+  log.info(`dispatching bot report job ${jobId} for group ${groupId}`);
+  const { promise } = submitLlmJob({ type: 'job:report', jobId, groupId: gid, worldContext });
+  const report = await promise as string | null;
+  if (report) {
+    log.info(`report ready (${report.length} chars), sending to group ${groupId}`);
+    sendGroupMessage(groupId, report);
+  } else {
+    sendGroupMessage(groupId, '暂无可用日报（LLM 未配置或无事件）。');
+  }
+}
+
+async function handleBotBiography(groupId: number, name: string): Promise<void> {
+  const jobId = nextJobId();
+  log.info(`dispatching bot biography job ${jobId} for "${name}"`);
+  const { promise } = submitLlmJob({ type: 'job:biography', jobId, name, currentYear: cachedState.year });
+  const result = await promise as { status: string; biography?: string; error?: string };
+  const text = result.biography ?? result.error ?? '传记生成失败。';
+  sendGroupMessage(groupId, text);
+}
+
+function handleBotMessage(msg: BotGroupMessage): void {
+  const parsed = parseCommand(msg.content, msg.selfId);
+  if (!parsed) return;
+
+  const { groupId } = msg;
+  log.info(`bot command: ${parsed.cmd}${parsed.arg ? ` arg="${parsed.arg}"` : ''} from group ${groupId}`);
+
+  if (_busyGroups.has(groupId)) {
+    sendGroupMessage(groupId, '正在生成中，请稍后再试。');
+    return;
+  }
+
+  _busyGroups.add(groupId);
+  sendGroupMessage(groupId, '生成中...');
+
+  let task: Promise<void>;
+  switch (parsed.cmd) {
+    case 'report':
+      task = handleBotReport(groupId);
+      break;
+    case 'biography':
+      task = handleBotBiography(groupId, parsed.arg);
+      break;
+    default:
+      _busyGroups.delete(groupId);
+      return;
+  }
+
+  task
+    .catch(err => {
+      log.error(`bot ${parsed.cmd} failed:`, err);
+      sendGroupMessage(groupId, `${parsed.cmd === 'report' ? '日报' : '传记'}生成失败，请稍后再试。`);
+    })
+    .finally(() => _busyGroups.delete(groupId));
+}
+
+// ---------------------------------------------------------------------------
 // Startup
 // ---------------------------------------------------------------------------
 
@@ -402,11 +479,7 @@ spawnLlm();
 
 server.listen(config.port, config.host, () => {
   log.info(`http://${config.host}:${config.port}`);
-  startBot(
-    () => cachedState.year,
-    (cmd: LlmCommand) => sendToLlm(cmd),
-    () => requestWorldContext(),
-  );
+  startBot(handleBotMessage);
 });
 
 // ---------------------------------------------------------------------------
@@ -417,11 +490,11 @@ function shutdown(): void {
   log.info('shutting down...');
   stopBot();
 
-  // Cancel all pending HTTP jobs
-  for (const [jobId, pending] of pendingHttpJobs) {
+  // Cancel all pending jobs (HTTP + bot)
+  for (const [jobId, pending] of pendingJobs) {
     clearTimeout(pending.timer);
     pending.reject(new Error('Server shutting down'));
-    pendingHttpJobs.delete(jobId);
+    pendingJobs.delete(jobId);
   }
 
   if (simWorker) { simWorker.kill('SIGTERM'); simWorker = null; }
