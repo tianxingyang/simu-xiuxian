@@ -2,6 +2,9 @@ import WebSocket from 'ws';
 import { config } from './config.js';
 import type { LlmCommand, LlmWorkerEvent } from './ipc.js';
 import type { BiographyResult } from './biography.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('bot');
 
 // ---------------------------------------------------------------------------
 // OneBot v11 WebSocket Connection
@@ -79,32 +82,44 @@ async function handleReport(groupId: number): Promise<void> {
   try {
     const worldContext = await _getWorldContext() ?? undefined;
     const gid = String(groupId);
-    const report = await submitJob({ type: 'job:report', jobId: nextJobId(), groupId: gid, worldContext }) as string | null;
+    const jobId = nextJobId();
+    log.info(`dispatching report job ${jobId} for group ${groupId}`);
+    const report = await submitJob({ type: 'job:report', jobId, groupId: gid, worldContext }) as string | null;
 
     if (report) {
+      log.info(`report ready (${report.length} chars), sending to group ${groupId}`);
       sendGroupMessage(groupId, report);
     } else {
+      log.warn(`report empty for group ${groupId}`);
       sendGroupMessage(groupId, '暂无可用日报（LLM 未配置或无事件）。');
     }
   } catch (err) {
-    console.error('[bot] report generation failed:', err);
+    log.error('report generation failed:', err);
     sendGroupMessage(groupId, '日报生成失败，请稍后再试。');
   }
 }
 
 async function handleBiography(groupId: number, name: string): Promise<void> {
   try {
-    const result = await submitJob({ type: 'job:biography', jobId: nextJobId(), name, currentYear: _getYear() }) as BiographyResult;
+    const jobId = nextJobId();
+    log.info(`dispatching biography job ${jobId} for "${name}"`);
+    const result = await submitJob({ type: 'job:biography', jobId, name, currentYear: _getYear() }) as BiographyResult;
+    log.info(`biography done (status=${result.status}), sending to group ${groupId}`);
     const text = result.biography ?? result.error ?? '传记生成失败。';
     sendGroupMessage(groupId, text);
   } catch (err) {
-    console.error('[bot] biography generation failed:', err);
+    log.error('biography generation failed:', err);
     sendGroupMessage(groupId, '传记生成失败，请稍后再试。');
   }
 }
 
-function parseCommand(raw: string): { cmd: string; arg: string } | null {
-  const text = raw.replace(/^\//, '').trim();
+function parseCommand(raw: string, selfId?: number): { cmd: string; arg: string } | null {
+  // Strip CQ:at codes targeting the bot, then clean up
+  let text = raw;
+  if (selfId) {
+    text = text.replace(new RegExp(`\\[CQ:at,qq=${selfId}\\]`, 'g'), '');
+  }
+  text = text.replace(/^\s*\//, '').trim();
   if (!text) return null;
   if (text === '日报') return { cmd: 'report', arg: '' };
   const bioMatch = text.match(/^传记\s+(.+)$/);
@@ -112,17 +127,33 @@ function parseCommand(raw: string): { cmd: string; arg: string } | null {
   return null;
 }
 
-async function handleMessage(groupId: number, content: string): Promise<void> {
-  const parsed = parseCommand(content);
+const _busyGroups = new Set<number>();
+
+async function handleMessage(groupId: number, content: string, selfId?: number): Promise<void> {
+  const parsed = parseCommand(content, selfId);
   if (!parsed) return;
 
-  switch (parsed.cmd) {
-    case 'report':
-      await handleReport(groupId);
-      break;
-    case 'biography':
-      await handleBiography(groupId, parsed.arg);
-      break;
+  log.info(`received command: ${parsed.cmd}${parsed.arg ? ` arg="${parsed.arg}"` : ''} from group ${groupId}`);
+
+  if (_busyGroups.has(groupId)) {
+    sendGroupMessage(groupId, '正在生成中，请稍后再试。');
+    return;
+  }
+
+  _busyGroups.add(groupId);
+  sendGroupMessage(groupId, '生成中...');
+
+  try {
+    switch (parsed.cmd) {
+      case 'report':
+        await handleReport(groupId);
+        break;
+      case 'biography':
+        await handleBiography(groupId, parsed.arg);
+        break;
+    }
+  } finally {
+    _busyGroups.delete(groupId);
   }
 }
 
@@ -147,8 +178,8 @@ function handleEvent(event: OneBotEvent): void {
   const content = (event.raw_message ?? '').trim();
   if (!content) return;
 
-  handleMessage(event.group_id!, content).catch(err =>
-    console.error('[bot] handleMessage error:', err)
+  handleMessage(event.group_id!, content, event.self_id).catch(err =>
+    log.error('handleMessage error:', err)
   );
 }
 
@@ -160,7 +191,7 @@ function connect(): void {
   if (_stopping) return;
 
   const url = config.onebotWsUrl;
-  console.log(`[bot] connecting to OneBot: ${url}`);
+  log.info(`connecting to OneBot: ${url}`);
 
   const headers: Record<string, string> = {};
   if (config.onebotToken) headers['Authorization'] = `Bearer ${config.onebotToken}`;
@@ -169,7 +200,7 @@ function connect(): void {
   _ws = ws;
 
   ws.on('open', () => {
-    console.log('[bot] OneBot connected');
+    log.info('OneBot connected');
     _reconnectDelay = 1000;
   });
 
@@ -182,19 +213,19 @@ function connect(): void {
   });
 
   ws.on('close', () => {
-    console.warn('[bot] OneBot disconnected');
+    log.warn('OneBot disconnected');
     _ws = null;
     scheduleReconnect();
   });
 
   ws.on('error', (err) => {
-    console.error('[bot] OneBot error:', err);
+    log.error('OneBot error:', err);
   });
 }
 
 function scheduleReconnect(): void {
   if (_stopping) return;
-  console.log(`[bot] reconnecting in ${_reconnectDelay}ms`);
+  log.info(`reconnecting in ${_reconnectDelay}ms`);
   setTimeout(() => connect(), _reconnectDelay);
   _reconnectDelay = Math.min(_reconnectDelay * 2, 30000);
 }
@@ -205,7 +236,7 @@ function scheduleReconnect(): void {
 
 export function startBot(getYear: () => number, dispatch: DispatchFn, getWorldContext?: GetWorldContextFn): void {
   if (!config.onebotWsUrl) {
-    console.warn('[bot] ONEBOT_WS_URL not configured, bot disabled');
+    log.warn('ONEBOT_WS_URL not configured, bot disabled');
     return;
   }
 
