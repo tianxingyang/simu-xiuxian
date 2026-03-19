@@ -897,3 +897,54 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: AreaTag 地块标记系统
+
+**Date**: 2026-03-19
+**Task**: AreaTag 地块标记系统
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 实现内容
+
+为 32x32 地图每个格子添加属性标记系统，影响核心游戏机制。
+
+| 标记 | 机制影响 |
+|------|---------|
+| 灵气浓度 (1-5) | 突破概率加成 (0.7x~1.5x) + 修士移动偏向高灵气区域 |
+| 地势险要 (1-5) | 战斗遭遇率加成 (0.6x~1.6x) + 逃跑概率调整 (+0.05~-0.1) |
+
+**技术方案**:
+- `Int8Array(1024)` 存储，程序化噪声生成（value noise + bilinear interpolation）
+- 缓变动态：支持事件驱动的标记值变更
+- 快照序列化兼容 v1/v2
+
+**新增/修改文件**:
+- `src/engine/area-tag.ts` (new) — AreaTagSystem 核心模块
+- `src/engine/simulation.ts` — 集成 areaTags，突破概率加成
+- `src/engine/spatial.ts` — 灵气加权移动，地势险要遭遇率
+- `src/engine/combat.ts` — 地势险要降低逃跑成功率
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `afba249` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
