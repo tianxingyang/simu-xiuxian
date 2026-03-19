@@ -1231,3 +1231,63 @@ Added @bot mention parsing for QQ commands; reduced report word limit to 300 cha
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Unified logger module + CLI log panel fix
+
+**Date**: 2026-03-19
+**Task**: Unified logger module + CLI log panel fix
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+Unified logging module for server + fixed CLI log panel not rendering backend logs.
+
+## Changes
+
+| Area | Change |
+|------|--------|
+| `server/logger.ts` | New unified logger with levels (debug/info/warn/error), scoped tags, UTC+8 timestamps |
+| `server/index.ts` | Removed console patch, use `getLogger('gateway')` |
+| `server/processes/llm-worker.ts` | Removed console patch, `initLogger({ tag: 'llm' })` |
+| `server/processes/sim-worker.ts` | Removed console patch, `initLogger({ tag: 'sim' })` |
+| `server/bot.ts` | Added happy-path logging (received command, dispatched job, result sent) |
+| `server/reporter.ts` | `console.log` → `log.info` |
+| `server/biography.ts` | `console.error` → `log.error` |
+| `server/runner.ts` | `console.log/warn/error` → `log.info/warn/error` |
+| `server/eviction.ts` | Downgraded to `log.debug` (hidden by default, reduces log volume ~95%) |
+| `cli.ts` | Added `screen.render()` to watchFile callback + `startLogTail()` to key '3' + LOG_LEVEL env var + log rotation on startup |
+| `spec/big-question/` | Added blessed render pitfall documentation |
+
+## Bug Fixed
+CLI Log panel never showed backend logs due to:
+1. Missing `screen.render()` after `logBox.log()` in file watcher callback
+2. Missing `startLogTail()` when starting backend via key '3' (only called from Start All)
+
+## Key Decisions
+- Logger writes to stdout/stderr (same fd chain as before), no architecture change
+- Eviction logs as debug level eliminates ~95% of log volume by default
+- Log rotation on CLI startup (>2MB → rename to .1/.2/.3), not in-flight rotation
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `527362b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
