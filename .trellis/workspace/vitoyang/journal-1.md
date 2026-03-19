@@ -1336,3 +1336,46 @@ CLI Log panel never showed backend logs due to:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: refactor(bot): centralize command routing in gateway
+
+**Date**: 2026-03-19
+**Task**: refactor(bot): centralize command routing in gateway
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| Change | Description |
+|--------|-------------|
+| `server/bot.ts` | Stripped to thin OneBot WS transport layer (connect/reconnect/send). Removed command parsing, job tracking, business handlers |
+| `server/index.ts` | Added `Bot Command Routing` section with `parseCommand`, `handleBotReport`, `handleBotBiography`, `handleBotMessage`. Unified `pendingJobs` map for both HTTP and bot jobs |
+
+**Motivation**: bot.ts previously managed its own job tracking and could only dispatch to llm-worker via callbacks. Moving routing to the gateway enables future bot commands to dispatch to sim-worker or llm-worker.
+
+**Key decisions**:
+- bot.ts remains in main process (not a child process), just acts as connection adapter
+- Single `pendingJobs` map replaces separate `pendingHttpJobs` + bot `_pendingJobs`
+- `startBot(onMessage)` simplified to single callback interface
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d7c8b82` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
