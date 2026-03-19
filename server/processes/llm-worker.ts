@@ -24,22 +24,22 @@ db.pragma('busy_timeout = 5000');
 
 const activeJobs = new Map<string, AbortController>();
 
-async function handleReport(jobId: string, fromTs?: number, toTs?: number, groupOpenid?: string, worldContext?: import('../ipc.js').WorldContext): Promise<void> {
+async function handleReport(jobId: string, fromTs?: number, toTs?: number, groupId?: string, worldContext?: import('../ipc.js').WorldContext): Promise<void> {
   const ac = new AbortController();
   activeJobs.set(jobId, ac);
   try {
-    // If bot request with groupOpenid, use per-group time window
+    // If bot request with groupId, use per-group time window
     let from = fromTs;
-    if (groupOpenid && from === undefined) {
+    if (groupId && from === undefined) {
       const now = Math.floor(Date.now() / 1000);
-      from = getLastRequestTs(groupOpenid) ?? (now - 86400);
+      from = getLastRequestTs(groupId) ?? (now - 86400);
     }
 
     const report = await generateReport(from, toTs, ac.signal, worldContext);
 
     // Update per-group timestamp on success
-    if (groupOpenid) {
-      setLastRequestTs(groupOpenid, Math.floor(Date.now() / 1000));
+    if (groupId) {
+      setLastRequestTs(groupId, Math.floor(Date.now() / 1000));
     }
 
     if (!ac.signal.aborted) {
@@ -82,7 +82,7 @@ async function handleBiography(jobId: string, name: string, currentYear: number)
 process.on('message', (raw: LlmCommand) => {
   switch (raw.type) {
     case 'job:report':
-      handleReport(raw.jobId, raw.fromTs, raw.toTs, raw.groupOpenid, raw.worldContext);
+      handleReport(raw.jobId, raw.fromTs, raw.toTs, raw.groupId, raw.worldContext);
       break;
     case 'job:biography':
       handleBiography(raw.jobId, raw.name, raw.currentYear);

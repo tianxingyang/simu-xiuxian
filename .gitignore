@@ -6,3 +6,5 @@ data/
 .env
 .pid/
 .logs/
+napcat/config/
+napcat/qq_data/

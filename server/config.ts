@@ -26,8 +26,9 @@ export const config = {
   port: Number(envVal('PORT', '3001')),
   host: envVal('HOST', '0.0.0.0'),
   dbPath: envVal('DB_PATH', './data/simu-xiuxian.db'),
-  qqBotAppId: envVal('QQ_BOT_APP_ID', ''),
-  qqBotAppSecret: envVal('QQ_BOT_APP_SECRET', ''),
+  onebotWsUrl: envVal('ONEBOT_WS_URL', ''),
+  onebotToken: envVal('ONEBOT_TOKEN', ''),
+  qqGroupId: Number(envVal('QQ_GROUP_ID', '0')),
 } as const;
 
 export const llmConfig = {

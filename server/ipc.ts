@@ -48,7 +48,7 @@ export type SimWorkerEvent =
 // ---------------------------------------------------------------------------
 
 export type LlmCommand =
-  | { type: 'job:report'; jobId: string; fromTs?: number; toTs?: number; groupOpenid?: string; worldContext?: WorldContext }
+  | { type: 'job:report'; jobId: string; fromTs?: number; toTs?: number; groupId?: string; worldContext?: WorldContext }
   | { type: 'job:biography'; jobId: string; name: string; currentYear: number }
   | { type: 'job:cancel'; jobId: string };
 

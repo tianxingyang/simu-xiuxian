@@ -4,53 +4,21 @@ import type { LlmCommand, LlmWorkerEvent } from './ipc.js';
 import type { BiographyResult } from './biography.js';
 
 // ---------------------------------------------------------------------------
-// OAuth Token Manager
+// OneBot v11 WebSocket Connection
 // ---------------------------------------------------------------------------
 
-let _accessToken = '';
-let _tokenExpiresAt = 0;
+let _ws: WebSocket | null = null;
+let _reconnectDelay = 1000;
+let _stopping = false;
 
-async function ensureAccessToken(): Promise<string> {
-  if (_accessToken && Date.now() < _tokenExpiresAt) return _accessToken;
-
-  const resp = await fetch('https://bots.qq.com/app/getAppAccessToken', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ appId: config.qqBotAppId, clientSecret: config.qqBotAppSecret }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    throw new Error(`getAppAccessToken failed: ${resp.status} ${body}`);
+function sendAction(action: string, params: Record<string, unknown>): void {
+  if (_ws?.readyState === WebSocket.OPEN) {
+    _ws.send(JSON.stringify({ action, params }));
   }
-
-  const data = (await resp.json()) as { access_token: string; expires_in: string };
-  _accessToken = data.access_token;
-  _tokenExpiresAt = Date.now() + (Number(data.expires_in) - 60) * 1000;
-  console.log('[bot] access token refreshed');
-  return _accessToken;
 }
 
-// ---------------------------------------------------------------------------
-// Message Sending (Passive Reply)
-// ---------------------------------------------------------------------------
-
-async function sendGroupMessage(groupOpenid: string, content: string, msgId: string): Promise<void> {
-  const token = await ensureAccessToken();
-  const url = `https://api.sgroup.qq.com/v2/groups/${groupOpenid}/messages`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Authorization': `QQBot ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ content, msg_type: 0, msg_id: msgId }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '');
-    console.error(`[bot] sendGroupMessage failed: ${resp.status} ${body}`);
-  }
+function sendGroupMessage(groupId: number, content: string): void {
+  sendAction('send_group_msg', { group_id: groupId, message: content });
 }
 
 // ---------------------------------------------------------------------------
@@ -107,30 +75,31 @@ export function onLlmResult(msg: LlmWorkerEvent): void {
 // Command Handlers
 // ---------------------------------------------------------------------------
 
-async function handleReport(groupOpenid: string, msgId: string): Promise<void> {
+async function handleReport(groupId: number): Promise<void> {
   try {
     const worldContext = await _getWorldContext() ?? undefined;
-    const report = await submitJob({ type: 'job:report', jobId: nextJobId(), groupOpenid, worldContext }) as string | null;
+    const gid = String(groupId);
+    const report = await submitJob({ type: 'job:report', jobId: nextJobId(), groupId: gid, worldContext }) as string | null;
 
     if (report) {
-      await sendGroupMessage(groupOpenid, report, msgId);
+      sendGroupMessage(groupId, report);
     } else {
-      await sendGroupMessage(groupOpenid, '暂无可用日报（LLM 未配置或无事件）。', msgId);
+      sendGroupMessage(groupId, '暂无可用日报（LLM 未配置或无事件）。');
     }
   } catch (err) {
     console.error('[bot] report generation failed:', err);
-    await sendGroupMessage(groupOpenid, '日报生成失败，请稍后再试。', msgId);
+    sendGroupMessage(groupId, '日报生成失败，请稍后再试。');
   }
 }
 
-async function handleBiography(groupOpenid: string, msgId: string, name: string): Promise<void> {
+async function handleBiography(groupId: number, name: string): Promise<void> {
   try {
     const result = await submitJob({ type: 'job:biography', jobId: nextJobId(), name, currentYear: _getYear() }) as BiographyResult;
     const text = result.biography ?? result.error ?? '传记生成失败。';
-    await sendGroupMessage(groupOpenid, text, msgId);
+    sendGroupMessage(groupId, text);
   } catch (err) {
     console.error('[bot] biography generation failed:', err);
-    await sendGroupMessage(groupOpenid, '传记生成失败，请稍后再试。', msgId);
+    sendGroupMessage(groupId, '传记生成失败，请稍后再试。');
   }
 }
 
@@ -143,184 +112,90 @@ function parseCommand(raw: string): { cmd: string; arg: string } | null {
   return null;
 }
 
-async function handleMessage(groupOpenid: string, msgId: string, content: string): Promise<void> {
+async function handleMessage(groupId: number, content: string): Promise<void> {
   const parsed = parseCommand(content);
-  if (!parsed) {
-    await sendGroupMessage(groupOpenid, '可用命令：\n- 日报\n- 传记 <修士名>', msgId);
-    return;
-  }
+  if (!parsed) return;
 
   switch (parsed.cmd) {
     case 'report':
-      await handleReport(groupOpenid, msgId);
+      await handleReport(groupId);
       break;
     case 'biography':
-      await handleBiography(groupOpenid, msgId, parsed.arg);
+      await handleBiography(groupId, parsed.arg);
       break;
   }
 }
 
 // ---------------------------------------------------------------------------
-// Gateway WebSocket
+// OneBot v11 Event Handling
 // ---------------------------------------------------------------------------
 
-interface GatewayPayload {
-  op: number;
-  d?: unknown;
-  s?: number;
-  t?: string;
+interface OneBotEvent {
+  post_type: string;
+  message_type?: string;
+  group_id?: number;
+  user_id?: number;
+  self_id?: number;
+  raw_message?: string;
 }
 
-interface HelloData {
-  heartbeat_interval: number;
+function handleEvent(event: OneBotEvent): void {
+  if (event.post_type !== 'message' || event.message_type !== 'group') return;
+  if (config.qqGroupId && event.group_id !== config.qqGroupId) return;
+  if (event.user_id === event.self_id) return;
+
+  const content = (event.raw_message ?? '').trim();
+  if (!content) return;
+
+  handleMessage(event.group_id!, content).catch(err =>
+    console.error('[bot] handleMessage error:', err)
+  );
 }
 
-interface ReadyData {
-  session_id: string;
-}
+// ---------------------------------------------------------------------------
+// WebSocket Connection
+// ---------------------------------------------------------------------------
 
-interface GroupAtMessageData {
-  group_openid: string;
-  content: string;
-  id: string;
-}
-
-let _ws: WebSocket | null = null;
-let _heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-let _seq: number | null = null;
-let _sessionId: string | null = null;
-let _reconnectDelay = 1000;
-let _stopping = false;
-
-function clearHeartbeat(): void {
-  if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
-}
-
-function sendPayload(ws: WebSocket, payload: GatewayPayload): void {
-  if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(payload));
-}
-
-function startHeartbeat(ws: WebSocket, interval: number): void {
-  clearHeartbeat();
-  _heartbeatTimer = setInterval(() => {
-    sendPayload(ws, { op: 1, d: _seq });
-  }, interval);
-}
-
-async function identify(ws: WebSocket): Promise<void> {
-  const token = await ensureAccessToken();
-  sendPayload(ws, {
-    op: 2,
-    d: {
-      token: `QQBot ${token}`,
-      intents: 1 << 25,
-      shard: [0, 1],
-    },
-  });
-}
-
-function resume(ws: WebSocket): void {
-  sendPayload(ws, {
-    op: 6,
-    d: {
-      token: `QQBot ${_accessToken}`,
-      session_id: _sessionId,
-      seq: _seq,
-    },
-  });
-}
-
-async function connectGateway(): Promise<void> {
+function connect(): void {
   if (_stopping) return;
 
-  let gatewayUrl: string;
-  try {
-    const token = await ensureAccessToken();
-    const resp = await fetch('https://api.sgroup.qq.com/gateway', {
-      headers: { 'Authorization': `QQBot ${token}` },
-    });
-    if (!resp.ok) throw new Error(`gateway fetch failed: ${resp.status}`);
-    const data = (await resp.json()) as { url: string };
-    gatewayUrl = data.url;
-  } catch (err) {
-    console.error('[bot] failed to get gateway URL:', err);
-    scheduleReconnect();
-    return;
-  }
+  const url = config.onebotWsUrl;
+  console.log(`[bot] connecting to OneBot: ${url}`);
 
-  console.log(`[bot] connecting to gateway: ${gatewayUrl}`);
-  const ws = new WebSocket(gatewayUrl);
+  const headers: Record<string, string> = {};
+  if (config.onebotToken) headers['Authorization'] = `Bearer ${config.onebotToken}`;
+
+  const ws = new WebSocket(url, { headers });
   _ws = ws;
 
   ws.on('open', () => {
-    console.log('[bot] gateway connected');
+    console.log('[bot] OneBot connected');
     _reconnectDelay = 1000;
   });
 
   ws.on('message', (raw) => {
-    let payload: GatewayPayload;
-    try { payload = JSON.parse(raw.toString()); } catch { return; }
+    let data: Record<string, unknown>;
+    try { data = JSON.parse(raw.toString()); } catch { return; }
 
-    if (payload.s !== undefined && payload.s !== null) _seq = payload.s;
-
-    switch (payload.op) {
-      case 10: {
-        const hello = payload.d as HelloData;
-        startHeartbeat(ws, hello.heartbeat_interval);
-        if (_sessionId && _seq !== null) {
-          resume(ws);
-        } else {
-          identify(ws).catch(err => console.error('[bot] identify failed:', err));
-        }
-        break;
-      }
-      case 0: {
-        if (payload.t === 'READY') {
-          const ready = payload.d as ReadyData;
-          _sessionId = ready.session_id;
-          console.log(`[bot] session ready: ${_sessionId}`);
-        } else if (payload.t === 'RESUMED') {
-          console.log('[bot] session resumed');
-        } else if (payload.t === 'GROUP_AT_MESSAGE_CREATE') {
-          const msg = payload.d as GroupAtMessageData;
-          handleMessage(msg.group_openid, msg.id, msg.content).catch(err =>
-            console.error('[bot] handleMessage error:', err)
-          );
-        }
-        break;
-      }
-      case 11: break;
-      case 7: {
-        console.warn('[bot] received reconnect request');
-        ws.close();
-        break;
-      }
-      case 9: {
-        console.warn('[bot] invalid session, re-identifying');
-        _sessionId = null;
-        _seq = null;
-        identify(ws).catch(err => console.error('[bot] re-identify failed:', err));
-        break;
-      }
-    }
+    if ('echo' in data) return;
+    if (data.post_type) handleEvent(data as unknown as OneBotEvent);
   });
 
   ws.on('close', () => {
-    console.warn('[bot] gateway disconnected');
-    clearHeartbeat();
+    console.warn('[bot] OneBot disconnected');
     _ws = null;
     scheduleReconnect();
   });
 
   ws.on('error', (err) => {
-    console.error('[bot] gateway error:', err);
+    console.error('[bot] OneBot error:', err);
   });
 }
 
 function scheduleReconnect(): void {
   if (_stopping) return;
   console.log(`[bot] reconnecting in ${_reconnectDelay}ms`);
-  setTimeout(() => connectGateway(), _reconnectDelay);
+  setTimeout(() => connect(), _reconnectDelay);
   _reconnectDelay = Math.min(_reconnectDelay * 2, 30000);
 }
 
@@ -329,8 +204,8 @@ function scheduleReconnect(): void {
 // ---------------------------------------------------------------------------
 
 export function startBot(getYear: () => number, dispatch: DispatchFn, getWorldContext?: GetWorldContextFn): void {
-  if (!config.qqBotAppId || !config.qqBotAppSecret) {
-    console.warn('[bot] QQ_BOT_APP_ID or QQ_BOT_APP_SECRET not configured, bot disabled');
+  if (!config.onebotWsUrl) {
+    console.warn('[bot] ONEBOT_WS_URL not configured, bot disabled');
     return;
   }
 
@@ -338,7 +213,7 @@ export function startBot(getYear: () => number, dispatch: DispatchFn, getWorldCo
   _dispatch = dispatch;
   if (getWorldContext) _getWorldContext = getWorldContext;
   _stopping = false;
-  connectGateway();
+  connect();
 }
 
 export function onLlmWorkerDied(): void {
@@ -351,7 +226,6 @@ export function onLlmWorkerDied(): void {
 
 export function stopBot(): void {
   _stopping = true;
-  clearHeartbeat();
   if (_ws) { _ws.close(); _ws = null; }
   onLlmWorkerDied();
 }
