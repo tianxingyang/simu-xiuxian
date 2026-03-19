@@ -1191,3 +1191,43 @@ Replaced the valueless 简讯 (statistics dump) section in 修仙界日报 with 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: QQ Bot: @mention support & report length tuning
+
+**Date**: 2026-03-19
+**Task**: QQ Bot: @mention support & report length tuning
+
+### Summary
+
+Added @bot mention parsing for QQ commands; reduced report word limit to 300 chars with per-section caps
+
+### Main Changes
+
+| Change | File | Description |
+|--------|------|-------------|
+| @mention parsing | `server/bot.ts` | `parseCommand` now strips `[CQ:at,qq=selfId]` so `@天机阁 日报` triggers commands |
+| Report word limit | `server/reporter.ts` | Total 300 chars, per-section caps (头条80/要闻120/天下大势80), max_tokens 800 |
+
+**Modified Files**:
+- `server/bot.ts` — parseCommand, handleMessage, handleEvent updated for selfId propagation
+- `server/reporter.ts` — SYSTEM_MESSAGE word limits, max_tokens reduced
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `uncommitted` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
