@@ -1,17 +1,10 @@
 import type { SimCommand, SimWorkerEvent } from '../ipc.js';
 import type { BroadcastMsg, Command, RunnerIO } from '../runner.js';
 import { Runner } from '../runner.js';
+import { initLogger, getLogger } from '../logger.js';
 
-// Timestamp all console output (same as gateway)
-{
-  const ts = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(11, 19);
-  const origLog = console.log.bind(console);
-  const origWarn = console.warn.bind(console);
-  const origErr = console.error.bind(console);
-  console.log = (...args: unknown[]) => origLog(ts(), '[sim]', ...args);
-  console.warn = (...args: unknown[]) => origWarn(ts(), '[sim]', ...args);
-  console.error = (...args: unknown[]) => origErr(ts(), '[sim]', ...args);
-}
+initLogger({ tag: 'sim' });
+const log = getLogger('worker');
 
 function send(msg: SimWorkerEvent): void {
   if (process.send) process.send(msg);
@@ -39,7 +32,7 @@ const io: RunnerIO = {
 const runner = new Runner(io);
 
 if (runner.restore()) {
-  console.log('sim_state restored');
+  log.info('sim_state restored');
 }
 
 send({ type: 'sim:state', state: runner.getState() });
@@ -83,6 +76,6 @@ process.on('message', (raw: SimCommand) => {
 });
 
 process.on('SIGTERM', () => {
-  console.log('shutting down');
+  log.info('shutting down');
   process.exit(0);
 });

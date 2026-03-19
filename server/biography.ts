@@ -4,6 +4,9 @@ import type { EventRow, NamedCultivatorRow } from './db.js';
 import { queryNamedCultivatorByName, queryEventsForCultivator } from './db.js';
 import { type PromptMessage, callLLM } from './reporter.js';
 import { llmConfig } from './config.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('biography');
 
 // ---------------------------------------------------------------------------
 // Memory Decay — Ebbinghaus forgetting curve: R(t) = e^(-t/S)
@@ -205,7 +208,7 @@ export async function generateBiography(
     return { status: 'ok', biography, cultivator: meta };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error('[biography] LLM call failed:', msg);
+    log.error('LLM call failed:', msg);
     return { status: 'error', error: msg };
   }
 }

@@ -1,6 +1,6 @@
 import blessed from 'blessed';
 import { spawn, type ChildProcess, execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, openSync, watchFile, unwatchFile, type StatWatcher } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, openSync, statSync, renameSync, copyFileSync, watchFile, unwatchFile, type StatWatcher } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket } from 'ws';
@@ -24,6 +24,7 @@ const ENV_SCHEMA: EnvEntry[] = [
   { key: 'LLM_BASE_URL', default: 'https://openrouter.ai/api/v1', desc: 'LLM API URL' },
   { key: 'LLM_API_KEY', default: '', desc: 'LLM API key', sensitive: true },
   { key: 'LLM_MODEL', default: 'deepseek/deepseek-chat', desc: 'LLM model' },
+  { key: 'LOG_LEVEL', default: 'info', desc: 'Log level (debug/info/warn/error)' },
   { key: 'QQ_BOT_APP_ID', default: '', desc: 'QQ Bot AppID' },
   { key: 'QQ_BOT_APP_SECRET', default: '', desc: 'QQ Bot AppSecret', sensitive: true },
   { key: 'VITE_WS_URL', default: '', desc: 'WS URL override' },
@@ -81,6 +82,22 @@ function portInUse(port: number): string | false {
   } catch { return false; }
 }
 
+const MAX_LOG_SIZE = 2 * 1024 * 1024; // 2MB
+const MAX_LOG_FILES = 3;
+
+function rotateLog(path: string): void {
+  if (!existsSync(path)) return;
+  try {
+    const size = statSync(path).size;
+    if (size < MAX_LOG_SIZE) return;
+    for (let i = MAX_LOG_FILES; i >= 2; i--) {
+      const old = `${path}.${i - 1}`;
+      if (existsSync(old)) renameSync(old, `${path}.${i}`);
+    }
+    copyFileSync(path, `${path}.1`);
+  } catch { /* best effort */ }
+}
+
 function startService(name: ServiceName): string {
   const st = isRunning(name);
   if (st.running) return `{yellow-fg}${name} already running (PID ${st.pid}){/}`;
@@ -95,6 +112,7 @@ function startService(name: ServiceName): string {
 
   const env = { ...process.env, ...loadEnv() };
   const log = logFile(name);
+  rotateLog(log);
   const cmd = name === 'backend'
     ? { bin: 'npx', args: ['tsx', 'server/index.ts'] }
     : { bin: 'npx', args: ['vite'] };

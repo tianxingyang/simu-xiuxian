@@ -6,17 +6,10 @@ import { config, llmConfig } from './config.js';
 import { startBot, stopBot, onLlmResult, onLlmWorkerDied } from './bot.js';
 import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext } from './ipc.js';
 import type { StateSnapshot } from './runner.js';
+import { initLogger, getLogger } from './logger.js';
 
-// Prepend HH:MM:SS timestamp to all console output
-{
-  const ts = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(11, 19);
-  const origLog = console.log.bind(console);
-  const origWarn = console.warn.bind(console);
-  const origErr = console.error.bind(console);
-  console.log = (...args: unknown[]) => origLog(ts(), ...args);
-  console.warn = (...args: unknown[]) => origWarn(ts(), ...args);
-  console.error = (...args: unknown[]) => origErr(ts(), ...args);
-}
+initLogger();
+const log = getLogger('gateway');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -104,7 +97,7 @@ function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknow
 
   const promise = new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
-      console.warn(`[gateway] job ${jobId} timed out after ${HTTP_JOB_TIMEOUT / 1000}s`);
+      log.warn(`job ${jobId} timed out after ${HTTP_JOB_TIMEOUT / 1000}s`);
       pendingHttpJobs.delete(jobId);
       sendToLlm({ type: 'job:cancel', jobId });
       reject(new Error('Job timeout'));
@@ -119,7 +112,7 @@ function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknow
 function cancelHttpJob(jobId: string): void {
   const pending = pendingHttpJobs.get(jobId);
   if (pending) {
-    console.warn(`[gateway] job ${jobId} cancelled (client disconnected)`);
+    log.warn(`job ${jobId} cancelled (client disconnected)`);
     clearTimeout(pending.timer);
     pendingHttpJobs.delete(jobId);
     pending.reject(new Error('Cancelled'));
@@ -147,7 +140,7 @@ function spawnSim(): ChildProcess {
     switch (msg.type) {
       case 'sim:ready':
         simReady = true;
-        console.log('[gateway] sim worker ready');
+        log.info('sim worker ready');
         // Sync client count and push fresh state to connected clients
         child.send({ type: 'sim:clientCount', count: clients.size } as SimCommand);
         child.send({ type: 'sim:getState' } as SimCommand);
@@ -182,7 +175,7 @@ function spawnSim(): ChildProcess {
   });
 
   child.on('exit', (code) => {
-    console.error(`[gateway] sim worker exited (code=${code}), restarting...`);
+    log.error(`sim worker exited (code=${code}), restarting...`);
     simReady = false;
     simWorker = null;
     setTimeout(() => { simWorker = spawnSim(); }, 1000);
@@ -202,7 +195,7 @@ function spawnLlm(): ChildProcess {
     switch (msg.type) {
       case 'job:ready':
         llmReady = true;
-        console.log('[gateway] llm worker ready');
+        log.info('llm worker ready');
         break;
       case 'job:result':
       case 'job:error': {
@@ -225,7 +218,7 @@ function spawnLlm(): ChildProcess {
   });
 
   child.on('exit', (code) => {
-    console.error(`[gateway] llm worker exited (code=${code}), restarting...`);
+    log.error(`llm worker exited (code=${code}), restarting...`);
     llmReady = false;
     llmWorker = null;
     // Fail-fast all pending HTTP jobs
@@ -283,7 +276,7 @@ const server = createServer((req, res) => {
   if (url.pathname === '/api/report') {
     if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
     if (!llmReady) { json(res, 503, { status: 'worker_not_ready' }); return; }
-    if (activeReportJobId) { console.warn(`[gateway] report rejected: job ${activeReportJobId} still active`); json(res, 409, { status: 'busy' }); return; }
+    if (activeReportJobId) { log.warn(`report rejected: job ${activeReportJobId} still active`); json(res, 409, { status: 'busy' }); return; }
 
     const jobId = nextJobId();
     activeReportJobId = jobId;
@@ -303,7 +296,7 @@ const server = createServer((req, res) => {
         .then(report => { if (!aborted) json(res, 200, { status: 'ok', report }); })
         .catch(err => {
           if (!aborted) {
-            console.error('[gateway] report error:', err);
+            log.error('report error:', err);
             json(res, 500, { status: 'error', error: String(err) });
           }
         })
@@ -352,7 +345,7 @@ const server = createServer((req, res) => {
         })
         .catch(err => {
           if (!aborted) {
-            console.error('[gateway] biography error:', err);
+            log.error('biography error:', err);
             json(res, 500, { status: 'error', error: 'Internal server error' });
           }
         });
@@ -388,7 +381,7 @@ wss.on('connection', (ws) => {
 
   ws.on('message', (data) => {
     const cmd = parseWsCommand(data.toString());
-    if (!cmd) { console.warn('[ws] invalid message'); return; }
+    if (!cmd) { log.warn('invalid ws message'); return; }
     sendToSim(cmd);
   });
 
@@ -397,7 +390,7 @@ wss.on('connection', (ws) => {
     updateClientCount();
   });
 
-  ws.on('error', (err) => console.warn('[ws] error:', err));
+  ws.on('error', (err) => log.warn('ws error:', err));
 });
 
 // ---------------------------------------------------------------------------
@@ -408,7 +401,7 @@ spawnSim();
 spawnLlm();
 
 server.listen(config.port, config.host, () => {
-  console.log(`[gateway] http://${config.host}:${config.port}`);
+  log.info(`http://${config.host}:${config.port}`);
   startBot(
     () => cachedState.year,
     (cmd: LlmCommand) => sendToLlm(cmd),
@@ -421,7 +414,7 @@ server.listen(config.port, config.host, () => {
 // ---------------------------------------------------------------------------
 
 function shutdown(): void {
-  console.log('[gateway] shutting down...');
+  log.info('shutting down...');
   stopBot();
 
   // Cancel all pending HTTP jobs

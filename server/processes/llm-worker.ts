@@ -2,17 +2,10 @@ import type { LlmCommand, LlmWorkerEvent } from '../ipc.js';
 import { getDB, getLastRequestTs, setLastRequestTs } from '../db.js';
 import { generateReport } from '../reporter.js';
 import { generateBiography } from '../biography.js';
+import { initLogger, getLogger } from '../logger.js';
 
-// Timestamp all console output (same as gateway)
-{
-  const ts = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(11, 19);
-  const origLog = console.log.bind(console);
-  const origWarn = console.warn.bind(console);
-  const origErr = console.error.bind(console);
-  console.log = (...args: unknown[]) => origLog(ts(), '[llm]', ...args);
-  console.warn = (...args: unknown[]) => origWarn(ts(), '[llm]', ...args);
-  console.error = (...args: unknown[]) => origErr(ts(), '[llm]', ...args);
-}
+initLogger({ tag: 'llm' });
+const log = getLogger('worker');
 
 function send(msg: LlmWorkerEvent): void {
   if (process.send) process.send(msg);
@@ -45,13 +38,13 @@ async function handleReport(jobId: string, fromTs?: number, toTs?: number, group
     if (!ac.signal.aborted) {
       send({ type: 'job:result', jobId, kind: 'report', payload: report });
     } else {
-      console.warn(`[llm] report job ${jobId} aborted, discarding result`);
+      log.warn(`report job ${jobId} aborted, discarding result`);
     }
   } catch (err) {
     if (!ac.signal.aborted) {
       send({ type: 'job:error', jobId, error: err instanceof Error ? err.message : String(err) });
     } else {
-      console.warn(`[llm] report job ${jobId} aborted during execution: ${err instanceof Error ? err.message : err}`);
+      log.warn(`report job ${jobId} aborted during execution: ${err instanceof Error ? err.message : err}`);
     }
   } finally {
     activeJobs.delete(jobId);
@@ -66,13 +59,13 @@ async function handleBiography(jobId: string, name: string, currentYear: number)
     if (!ac.signal.aborted) {
       send({ type: 'job:result', jobId, kind: 'biography', payload: result });
     } else {
-      console.warn(`[llm] biography job ${jobId} aborted, discarding result`);
+      log.warn(`biography job ${jobId} aborted, discarding result`);
     }
   } catch (err) {
     if (!ac.signal.aborted) {
       send({ type: 'job:error', jobId, error: err instanceof Error ? err.message : String(err) });
     } else {
-      console.warn(`[llm] biography job ${jobId} aborted during execution: ${err instanceof Error ? err.message : err}`);
+      log.warn(`biography job ${jobId} aborted during execution: ${err instanceof Error ? err.message : err}`);
     }
   } finally {
     activeJobs.delete(jobId);
@@ -90,7 +83,7 @@ process.on('message', (raw: LlmCommand) => {
     case 'job:cancel': {
       const ac = activeJobs.get(raw.jobId);
       if (ac) {
-        console.log(`cancelling job ${raw.jobId}`);
+        log.info(`cancelling job ${raw.jobId}`);
         ac.abort();
         activeJobs.delete(raw.jobId);
       }
@@ -100,10 +93,10 @@ process.on('message', (raw: LlmCommand) => {
 });
 
 send({ type: 'job:ready' });
-console.log('worker ready');
+log.info('ready');
 
 process.on('SIGTERM', () => {
-  console.log('shutting down');
+  log.info('shutting down');
   for (const ac of activeJobs.values()) ac.abort();
   activeJobs.clear();
   process.exit(0);

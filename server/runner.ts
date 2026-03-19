@@ -4,6 +4,9 @@ import { clearSimData, getDB, getSimState, insertEvents, setSimState } from './d
 import { resetDisplayEventId, toDisplayEvent } from './events.js';
 import { runEviction } from './eviction.js';
 import { IdentityManager } from './identity.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('runner');
 
 const BATCH_SIZES: Record<number, number> = { 1: 1, 2: 3, 3: 5 };
 const TARGET_INTERVAL = 1000;
@@ -84,17 +87,17 @@ export class Runner {
 
       if (saved.snapshot) {
         this.engine = SimulationEngine.deserialize(saved.snapshot);
-        console.log(`[runner] snapshot restored: year=${this.engine.year}, pop=${this.engine.aliveCount}`);
+        log.info(`snapshot restored: year=${this.engine.year}, pop=${this.engine.aliveCount}`);
       } else {
         const engine = new SimulationEngine(this.seed, 1000);
         const target = Math.max(1, saved.current_year);
-        if (target > 1) console.log(`[runner] replaying to year ${target}...`);
+        if (target > 1) log.info(`replaying to year ${target}...`);
         while (engine.year < target) {
           if (engine.tickYear(false).isExtinct) break;
         }
         this.engine = engine;
         this.restoreMilestones(saved.highest_levels_ever);
-        console.log(`[runner] replay restored: year=${engine.year}, pop=${engine.aliveCount}`);
+        log.info(`replay restored: year=${engine.year}, pop=${engine.aliveCount}`);
       }
 
       this.identity = new IdentityManager(this.seed);
@@ -109,7 +112,7 @@ export class Runner {
       if (!saved.snapshot) this.saveState();
       return true;
     } catch (err) {
-      console.error('[runner] restore failed:', err);
+      log.error('restore failed:', err);
       this.engine = null;
       this.identity = null;
       return false;
@@ -264,7 +267,7 @@ export class Runner {
       this.currentTickId = tickId;
       this.ackTimer = setTimeout(() => {
         if (!this.awaitingAck || !this.running) return;
-        console.warn(`[runner] ack timeout (tickId=${tickId}), continuing`);
+        log.warn(`ack timeout (tickId=${tickId}), continuing`);
         this.awaitingAck = false;
         this.currentTickId = 0;
         this.runBatch();
@@ -317,7 +320,7 @@ export class Runner {
       })();
       runEviction(engine.year);
     } catch (err) {
-      console.error('[runner] persist failed:', err);
+      log.error('persist failed:', err);
     }
   }
 
@@ -353,7 +356,7 @@ export class Runner {
         snapshot: this.engine.serialize(),
       });
     } catch (err) {
-      console.error('[runner] save state failed:', err);
+      log.error('save state failed:', err);
     }
   }
 

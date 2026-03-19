@@ -35,6 +35,7 @@ export interface ReportRow {
   year_to: number;
   prompt: string;
   report: string | null;
+  world_context: string | null;
   created_at: number;
 }
 
@@ -135,6 +136,11 @@ export function getDB(): Database.Database {
     const ncCols = _db.pragma('table_info(named_cultivators)') as Array<{ name: string }>;
     if (!ncCols.some(c => c.name === 'forgotten')) {
       _db.exec('ALTER TABLE named_cultivators ADD COLUMN forgotten INTEGER NOT NULL DEFAULT 0');
+    }
+    // Migration: add world_context column to reports
+    const reportCols = _db.pragma('table_info(reports)') as Array<{ name: string }>;
+    if (!reportCols.some(c => c.name === 'world_context')) {
+      _db.exec('ALTER TABLE reports ADD COLUMN world_context TEXT');
     }
   }
   return _db;
@@ -250,12 +256,6 @@ export function queryEventsByDateRange(fromTs: number, toTs: number, ranks?: str
     .all(fromTs, toTs) as EventRow[];
 }
 
-export function queryEventStats(fromTs: number, toTs: number): { type: string; rank: string; cnt: number }[] {
-  return getDB()
-    .prepare(`SELECT type, rank, COUNT(*) as cnt FROM events WHERE real_ts >= ? AND real_ts < ? AND rank = 'B' GROUP BY type, rank`)
-    .all(fromTs, toTs) as { type: string; rank: string; cnt: number }[];
-}
-
 // --- Named Cultivators ---
 
 export function insertNamedCultivator(data: {
@@ -344,19 +344,28 @@ export function upsertReport(data: {
   yearTo: number;
   prompt: string;
   report: string | null;
+  worldContext?: string | null;
 }): number {
   const db = getDB();
   const now = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO reports (date, year_from, year_to, prompt, report, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO reports (date, year_from, year_to, prompt, report, world_context, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(date) DO UPDATE SET
        year_from = excluded.year_from, year_to = excluded.year_to,
        prompt = excluded.prompt, report = excluded.report,
+       world_context = excluded.world_context,
        created_at = excluded.created_at`
-  ).run(data.date, data.yearFrom, data.yearTo, data.prompt, data.report, now);
+  ).run(data.date, data.yearFrom, data.yearTo, data.prompt, data.report, data.worldContext ?? null, now);
   const row = db.prepare('SELECT id FROM reports WHERE date = ?').get(data.date) as { id: number };
   return row.id;
+}
+
+export function queryRecentWorldContexts(n: number): string[] {
+  const rows = getDB()
+    .prepare('SELECT world_context FROM reports WHERE world_context IS NOT NULL ORDER BY created_at DESC LIMIT ?')
+    .all(n) as { world_context: string }[];
+  return rows.map(r => r.world_context);
 }
 
 export function clearSimData(): void {

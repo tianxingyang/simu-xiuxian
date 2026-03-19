@@ -1,4 +1,7 @@
 import { evictExpiredEvents, processMemoryDecayBatch } from './db.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('eviction');
 
 const EVENT_RETENTION: Record<string, number> = { B: 200, A: 2000, S: 15000 };
 
@@ -18,7 +21,7 @@ export function runEviction(currentYear: number): void {
     _lastEvictRealTs = now;
     const deleted = evictExpiredEvents(currentYear, EVENT_RETENTION);
     if (deleted > 0) {
-      console.log(`[eviction] deleted ${deleted} expired events at year ${currentYear}`);
+      log.debug(`deleted ${deleted} expired events at year ${currentYear}`);
     }
   }
 
@@ -26,7 +29,7 @@ export function runEviction(currentYear: number): void {
     _lastDecayRealTs = now;
     const { marked, unprotected, purged } = processMemoryDecayBatch(currentYear, CULTIVATOR_MEMORY_YEARS);
     if (marked > 0 || unprotected > 0 || purged > 0) {
-      console.log(`[eviction] decay: ${marked} forgotten, ${unprotected} events unprotected, ${purged} cultivators purged at year ${currentYear}`);
+      log.debug(`decay: ${marked} forgotten, ${unprotected} events unprotected, ${purged} cultivators purged at year ${currentYear}`);
     }
   }
 }

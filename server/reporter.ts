@@ -7,22 +7,25 @@ import {
   type EventRow,
   type NamedCultivatorRow,
   queryEventsByDateRange,
-  queryEventStats,
   queryNamedCultivator,
   queryLastReportTs,
+  queryRecentWorldContexts,
   upsertReport,
 } from './db.js';
 import type { Val } from './yaml.js';
+import { getLogger } from './logger.js';
+
+const log = getLogger('reporter');
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-interface Statistics {
-  promotions: Record<string, number>;
-  combat_deaths: number;
-  expiry_deaths: number;
-  notable_deaths: number;
+interface Insight {
+  type: 'spike' | 'trend_reversal' | 'ranking_change' | 'threshold';
+  dimension: string;
+  description: string;
+  data: Record<string, number | string>;
 }
 
 interface Meta {
@@ -43,7 +46,6 @@ interface EnrichedEvent {
 interface AggregatedData {
   headlines: EnrichedEvent[];
   major_events: EnrichedEvent[];
-  statistics: Statistics;
   meta: Meta;
 }
 
@@ -116,19 +118,13 @@ function enrichEvent(row: EventRow): EnrichedEvent {
 function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
   const headlines: EnrichedEvent[] = [];
   const aEvents: EnrichedEvent[] = [];
-  const stats: Statistics = {
-    promotions: { lv2: 0, lv3: 0, lv4: 0, lv5: 0, lv6: 0, lv7: 0 },
-    combat_deaths: 0,
-    expiry_deaths: 0,
-    notable_deaths: 0,
-  };
 
   let yearFrom = Number.MAX_SAFE_INTEGER;
   let yearTo = 0;
 
   for (const row of rows) {
     const rank = row.rank as NewsRank;
-    if (rank !== 'S' && rank !== 'A' && rank !== 'B') continue;
+    if (rank !== 'S' && rank !== 'A') continue;
 
     const enriched = enrichEvent(row);
     const ev = enriched.event;
@@ -138,19 +134,8 @@ function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
 
     if (rank === 'S') {
       headlines.push(enriched);
-    } else if (rank === 'A') {
-      aEvents.push(enriched);
     } else {
-      if (ev.type === 'promotion') {
-        const key = `lv${ev.toLevel}`;
-        if (key in stats.promotions) stats.promotions[key]++;
-      } else if (ev.type === 'combat' && ev.outcome === 'death') {
-        stats.combat_deaths++;
-        if (ev.loser.name) stats.notable_deaths++;
-      } else if (ev.type === 'expiry') {
-        stats.expiry_deaths++;
-        if (ev.subject.name) stats.notable_deaths++;
-      }
+      aEvents.push(enriched);
     }
   }
 
@@ -173,7 +158,7 @@ function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
       if (bio) {
         item.bios.push(bio);
       } else {
-        console.warn(`[reporter] named cultivator id=${id} not found in DB, skipping bio enrichment`);
+        log.warn(`named cultivator id=${id} not found in DB, skipping bio enrichment`);
       }
     }
   }
@@ -192,30 +177,189 @@ function classifyRows(rows: EventRow[], dateStr: string): AggregatedData {
     population_end: 0,
   };
 
-  return { headlines, major_events, statistics: stats, meta };
+  return { headlines, major_events, meta };
 }
 
 // ---------------------------------------------------------------------------
-// aggregateEvents (timestamp-based, optimized: S/A rows + B aggregated)
+// aggregateEvents (timestamp-based, S/A only)
 // ---------------------------------------------------------------------------
 
 export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
-  console.log(`[reporter] aggregating events ts=${fromTs}~${toTs}`);
+  log.info(`aggregating events ts=${fromTs}~${toTs}`);
   const rows = queryEventsByDateRange(fromTs, toTs, ['S', 'A']);
   const data = classifyRows(rows, nowUtc8DateStr());
+  log.info(`aggregated: S=${data.headlines.length} A=${data.major_events.length}`);
+  return data;
+}
 
-  const bStats = queryEventStats(fromTs, toTs);
-  for (const { type, cnt } of bStats) {
-    if (type === 'promotion') {
-    } else if (type === 'combat') {
-      data.statistics.combat_deaths += cnt;
-    } else if (type === 'expiry') {
-      data.statistics.expiry_deaths += cnt;
+// ---------------------------------------------------------------------------
+// Insight detection engine
+// ---------------------------------------------------------------------------
+
+const HISTORY_WINDOW = 5;
+const SPIKE_THRESHOLD = 0.3;
+const SPIKE_MIN_ABS = 5;
+const TREND_MIN_STREAK = 3;
+
+function detectSpikes(current: WorldContext, history: WorldContext[]): Insight[] {
+  if (history.length < 2) return [];
+  const insights: Insight[] = [];
+
+  const metrics: { getValue: (ctx: WorldContext) => number; name: string }[] = [
+    { getValue: ctx => ctx.population, name: '总人口' },
+    ...current.regionProfiles.map(r => ({
+      getValue: (ctx: WorldContext) => ctx.regionProfiles.find(rp => rp.name === r.name)?.population ?? 0,
+      name: `${r.name}人口`,
+    })),
+  ];
+
+  for (const m of metrics) {
+    const cur = m.getValue(current);
+    const avg = history.reduce((s, h) => s + m.getValue(h), 0) / history.length;
+    if (avg === 0) continue;
+    const deviation = Math.abs(cur - avg) / avg;
+    if (deviation > SPIKE_THRESHOLD && Math.abs(cur - avg) >= SPIKE_MIN_ABS) {
+      insights.push({
+        type: 'spike',
+        dimension: m.name,
+        description: cur > avg ? '远超近期均值' : '远低于近期均值',
+        data: { current: cur, recent_avg: Math.round(avg) },
+      });
     }
   }
 
-  console.log(`[reporter] aggregated: S=${data.headlines.length} A=${data.major_events.length} combat_deaths=${data.statistics.combat_deaths} expiry_deaths=${data.statistics.expiry_deaths}`);
-  return data;
+  return insights;
+}
+
+function detectTrendReversals(current: WorldContext, history: WorldContext[]): Insight[] {
+  if (history.length < TREND_MIN_STREAK + 1) return [];
+  const insights: Insight[] = [];
+
+  const metrics: { getValue: (ctx: WorldContext) => number; name: string }[] = [
+    { getValue: ctx => ctx.population, name: '总人口' },
+  ];
+
+  for (const m of metrics) {
+    const values = [...history.map(h => m.getValue(h)), m.getValue(current)];
+    const deltas = values.slice(1).map((v, i) => v - values[i]);
+
+    const currentDelta = deltas[deltas.length - 1];
+    const prevDeltas = deltas.slice(0, -1);
+    const lastN = prevDeltas.slice(-TREND_MIN_STREAK);
+
+    const allPositive = lastN.every(d => d > 0);
+    const allNegative = lastN.every(d => d < 0);
+
+    if (allPositive && currentDelta < 0) {
+      insights.push({
+        type: 'trend_reversal',
+        dimension: m.name,
+        description: '由升转降',
+        data: { direction: '由升转降', streak_broken: lastN.length },
+      });
+    } else if (allNegative && currentDelta > 0) {
+      insights.push({
+        type: 'trend_reversal',
+        dimension: m.name,
+        description: '由降转升',
+        data: { direction: '由降转升', streak_broken: lastN.length },
+      });
+    }
+  }
+
+  return insights;
+}
+
+function detectRankingChanges(current: WorldContext, history: WorldContext[]): Insight[] {
+  if (history.length < 1) return [];
+  const prev = history[history.length - 1];
+
+  const curTop = current.regionProfiles
+    .slice()
+    .sort((a, b) => b.population - a.population)
+    .slice(0, 3)
+    .map(r => r.name);
+
+  const prevTop = prev.regionProfiles
+    .slice()
+    .sort((a, b) => b.population - a.population)
+    .slice(0, 3)
+    .map(r => r.name);
+
+  if (curTop.length < 3 || prevTop.length < 3) return [];
+
+  const changed = curTop.some((name, i) => name !== prevTop[i]);
+  if (!changed) return [];
+
+  return [{
+    type: 'ranking_change',
+    dimension: '区域人口排名',
+    description: `前三变动: ${prevTop.join('>')} → ${curTop.join('>')}`,
+    data: { previous: prevTop.join('>'), current: curTop.join('>') },
+  }];
+}
+
+function detectThresholds(current: WorldContext, history: WorldContext[]): Insight[] {
+  if (history.length < 1) return [];
+  const prev = history[history.length - 1];
+  const insights: Insight[] = [];
+
+  const popStep = 10000;
+  const curBucket = Math.floor(current.population / popStep);
+  const prevBucket = Math.floor(prev.population / popStep);
+  if (curBucket > prevBucket) {
+    insights.push({
+      type: 'threshold',
+      dimension: '总人口',
+      description: `突破${curBucket * popStep}`,
+      data: { milestone: curBucket * popStep, current: current.population },
+    });
+  }
+
+  const highLevelIndices = [4, 5];
+  for (const lvIdx of highLevelIndices) {
+    const curCount = current.levelCounts[lvIdx] ?? 0;
+    const prevCount = prev.levelCounts[lvIdx] ?? 0;
+    const step = 10;
+    const curBkt = Math.floor(curCount / step);
+    const prevBkt = Math.floor(prevCount / step);
+    if (curBkt > prevBkt && curCount >= step) {
+      const name = LEVEL_NAMES[lvIdx];
+      insights.push({
+        type: 'threshold',
+        dimension: `${name}修士数量`,
+        description: `突破${curBkt * step}人`,
+        data: { milestone: curBkt * step, current: curCount },
+      });
+    }
+  }
+
+  const regionStep = 1000;
+  for (const r of current.regionProfiles) {
+    const prevR = prev.regionProfiles.find(rp => rp.name === r.name);
+    if (!prevR) continue;
+    const curRBkt = Math.floor(r.population / regionStep);
+    const prevRBkt = Math.floor(prevR.population / regionStep);
+    if (curRBkt > prevRBkt) {
+      insights.push({
+        type: 'threshold',
+        dimension: `${r.name}人口`,
+        description: `突破${curRBkt * regionStep}`,
+        data: { milestone: curRBkt * regionStep, current: r.population },
+      });
+    }
+  }
+
+  return insights;
+}
+
+export function computeInsights(current: WorldContext, history: WorldContext[]): Insight[] {
+  return [
+    ...detectSpikes(current, history),
+    ...detectTrendReversals(current, history),
+    ...detectRankingChanges(current, history),
+    ...detectThresholds(current, history),
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -225,8 +369,7 @@ export function aggregateEvents(fromTs: number, toTs: number): AggregatedData {
 const SYSTEM_MESSAGE = `你是天机阁今日轮值真人，执掌「修仙界日报」的编撰。天机阁立于九天之上，以天机镜洞察四海八荒，凡修仙界风云变幻皆逃不过阁中法眼。请以古风日报体裁撰写，包含以下栏目：
 - 头条（轰动天下的大事件，如有）
 - 要闻（值得关注的重要事件）
-- 简讯（统计数据摘要）
-- 天下大势（总结当日修仙界动态）
+- 天下大势（基于 insights 中的数据变化撰写天下大势分析）
 
 格式要求：
 - 纯文本输出，禁止使用任何 Markdown 语法（不要用 #、*、**、- 等标记符号）
@@ -241,7 +384,12 @@ const SYSTEM_MESSAGE = `你是天机阁今日轮值真人，执掌「修仙界�
 - 如果当日无任何事件，请撰写一份简短的"天下太平"报道
 - 事件中的 spiritual_energy（灵气浓度1-5）和 terrain_danger（地势险要1-5）可用于描绘场景氛围
 - 修士的 state（行为状态）可用于刻画人物当时的处境
-- 如提供了 world_context，可在【天下大势】中引用各区域人口、灵气、修士境界分布等信息`;
+
+天下大势要求：
+- 仅基于 insights 中提供的变化趋势进行撰写
+- 如果没有 insights，则撰写"天下太平"风格的简短收尾
+- 禁止罗列统计数字，用叙事方式概括
+- 可引用 world_context 中的区域、灵气等信息丰富场景描写`;
 
 function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   const ev = item.event;
@@ -320,7 +468,7 @@ function formatEventForPrompt(item: EnrichedEvent): Record<string, Val> {
   return base;
 }
 
-export function buildPrompt(data: AggregatedData, worldContext?: WorldContext): PromptMessage[] {
+export function buildPrompt(data: AggregatedData, worldContext?: WorldContext, insights?: Insight[]): PromptMessage[] {
   const userContent: Record<string, Val> = {
     real_date: data.meta.real_date,
     sim_year_range: data.meta.year_from > 0
@@ -329,8 +477,16 @@ export function buildPrompt(data: AggregatedData, worldContext?: WorldContext): 
     years_simulated: data.meta.years_simulated,
     headlines: data.headlines.map(formatEventForPrompt),
     major_events: data.major_events.map(formatEventForPrompt),
-    statistics: data.statistics as unknown as Record<string, Val>,
   };
+
+  if (insights && insights.length > 0) {
+    userContent.insights = insights.map(i => ({
+      type: i.type,
+      dimension: i.dimension,
+      description: i.description,
+      ...i.data,
+    } as Record<string, Val>));
+  }
 
   if (worldContext) {
     userContent.current_year = worldContext.currentYear;
@@ -369,12 +525,12 @@ export function buildPrompt(data: AggregatedData, worldContext?: WorldContext): 
 
 export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): Promise<string> {
   const url = `${llmConfig.baseUrl.replace(/\/+$/, '')}/chat/completions`;
-  console.log(`[reporter] LLM request: model=${llmConfig.model} url=${url}`);
+  log.info(`LLM request: model=${llmConfig.model} url=${url}`);
   const t0 = Date.now();
   if (signal?.aborted) throw new Error('Aborted');
 
   const ac = new AbortController();
-  const totalTimer = setTimeout(() => { console.warn('[reporter] LLM total timeout (120s), aborting'); ac.abort(); }, 120_000);
+  const totalTimer = setTimeout(() => { log.warn('LLM total timeout (120s), aborting'); ac.abort(); }, 120_000);
 
   const onExternalAbort = () => { ac.abort(); };
   signal?.addEventListener('abort', onExternalAbort, { once: true });
@@ -405,7 +561,7 @@ export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): 
   } catch (err) {
     clearTimeout(totalTimer);
     signal?.removeEventListener('abort', onExternalAbort);
-    console.error(`[reporter] LLM fetch failed after ${Date.now() - t0}ms:`, err);
+    log.error(`LLM fetch failed after ${Date.now() - t0}ms:`, err);
     throw err;
   }
 
@@ -413,11 +569,11 @@ export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): 
     clearTimeout(totalTimer);
     signal?.removeEventListener('abort', onExternalAbort);
     const body = await resp.text().catch(() => '');
-    console.error(`[reporter] LLM API error: ${resp.status} ${body}`);
+    log.error(`LLM API error: ${resp.status} ${body}`);
     throw new Error(`LLM API error: ${resp.status} ${body}`);
   }
 
-  console.log(`[reporter] LLM response received in ${Date.now() - t0}ms, reading stream...`);
+  log.info(`LLM response received in ${Date.now() - t0}ms, reading stream...`);
 
   const reader = resp.body?.getReader();
   if (!reader) { clearTimeout(totalTimer); signal?.removeEventListener('abort', onExternalAbort); throw new Error('LLM API returned no body'); }
@@ -430,7 +586,7 @@ export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): 
 
   const resetStale = () => {
     if (staleTimer) clearTimeout(staleTimer);
-    staleTimer = setTimeout(() => { console.warn(`[reporter] LLM stream stale (30s no data after ${chunkCount} chunks), aborting`); ac.abort(); }, 30_000);
+    staleTimer = setTimeout(() => { log.warn(`LLM stream stale (30s no data after ${chunkCount} chunks), aborting`); ac.abort(); }, 30_000);
   };
 
   try {
@@ -470,7 +626,7 @@ export async function callLLM(messages: PromptMessage[], signal?: AbortSignal): 
 
   const result = chunks.join('');
   const elapsed = Date.now() - t0;
-  console.log(`[reporter] LLM stream done: ${chunkCount} chunks, ${result.length} chars, ${elapsed}ms`);
+  log.info(`LLM stream done: ${chunkCount} chunks, ${result.length} chars, ${elapsed}ms`);
   if (!result) throw new Error('LLM returned empty response');
   return result;
 }
@@ -486,15 +642,27 @@ export async function generateReport(fromTs?: number, toTs?: number, signal?: Ab
 
   if (signal?.aborted) throw new Error('Aborted before start');
 
-  console.log(`[reporter] generating report: fromTs=${from} toTs=${to} worldContext=${!!worldContext}`);
+  log.info(`generating report: fromTs=${from} toTs=${to} worldContext=${!!worldContext}`);
   const data = aggregateEvents(from, to);
-  const messages = buildPrompt(data, worldContext);
+
+  let insights: Insight[] = [];
+  if (worldContext) {
+    const rawHistory = queryRecentWorldContexts(HISTORY_WINDOW);
+    const history: WorldContext[] = [];
+    for (const raw of rawHistory) {
+      try { history.push(JSON.parse(raw) as WorldContext); } catch { /* skip malformed */ }
+    }
+    insights = computeInsights(worldContext, history);
+    log.info(`insights: ${insights.length} detected`);
+  }
+
+  const messages = buildPrompt(data, worldContext, insights);
   const promptJson = JSON.stringify(messages);
 
   let report: string | null = null;
 
   if (!llmConfig.apiKey) {
-    console.warn('[reporter] LLM_API_KEY not set, skipping LLM call');
+    log.warn('LLM_API_KEY not set, skipping LLM call');
   } else {
     report = await callLLM(messages, signal);
   }
@@ -505,7 +673,8 @@ export async function generateReport(fromTs?: number, toTs?: number, signal?: Ab
     yearTo: data.meta.year_to,
     prompt: promptJson,
     report,
+    worldContext: worldContext ? JSON.stringify(worldContext) : null,
   });
-  console.log(`[reporter] report stored (${report ? report.length + ' chars' : 'no LLM output'}), year=${data.meta.year_from}~${data.meta.year_to}`);
+  log.info(`report stored (${report ? report.length + ' chars' : 'no LLM output'}), year=${data.meta.year_from}~${data.meta.year_to}`);
   return report;
 }
