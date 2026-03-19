@@ -998,3 +998,40 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: fix: report 接口 409 锁死 + 诊断日志
+
+**Date**: 2026-03-19
+**Task**: fix: report 接口 409 锁死 + 诊断日志
+
+### Summary
+
+修复 cancelHttpJob 未 reject promise 导致 activeReportJobId 永久锁死，补充 gateway/worker 关键路径日志
+
+### Main Changes
+
+| File | Change |
+|------|--------|
+| `server/index.ts` | `cancelHttpJob` 加 `pending.reject()`；gateway timeout / client disconnect / 409 reject 三处加日志 |
+| `server/processes/llm-worker.ts` | report/biography job abort 时输出日志 |
+| `.trellis/spec/backend/error-handling.md` | 新增 Pattern 5: Promise Cancellation Must Settle |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da6b479` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
