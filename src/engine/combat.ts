@@ -39,6 +39,7 @@ import { prngShuffle, truncatedGaussian } from './prng';
 import { tryBreakthrough, type SimulationEngine } from './simulation';
 import { profiler } from './profiler';
 import { buildEncounterProbCache, findSpatialOpponent, fleeCultivator, localEncounterProbability } from './spatial';
+import { TERRAIN_DANGER_EVASION_ADJUST } from './area-tag';
 
 type EventBuffer = RichEvent[] | null;
 
@@ -196,7 +197,8 @@ function resolveCombat(
     const evader = aWantsFight ? b : a;
     const gap = (evader.cultivation - attacker.cultivation)
       / (evader.cultivation + attacker.cultivation);
-    const P = Math.max(0, Math.min(1, 0.5 + EVASION_SENSITIVITY * gap));
+    const terrainAdj = TERRAIN_DANGER_EVASION_ADJUST[engine.areaTags.getTerrainDanger(evader.x, evader.y)];
+    const P = Math.max(0, Math.min(1, 0.5 + EVASION_SENSITIVITY * gap + terrainAdj));
 
     const evasionSucceeded = P === 0 ? false : P === 1 ? true : engine.prng() < P;
     if (evasionSucceeded) return;

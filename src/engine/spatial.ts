@@ -11,6 +11,7 @@ import {
 } from '../constants';
 import type { SimulationEngine } from './simulation';
 import { profiler } from './profiler';
+import { TERRAIN_DANGER_ENCOUNTER_FACTOR } from './area-tag';
 
 type CellSet = Set<number>;
 
@@ -114,10 +115,13 @@ export class SpatialIndex {
   }
 }
 
+const _moveWeights = new Float64Array(8);
+
 export function moveCultivators(engine: SimulationEngine): void {
   profiler.start('moveCultivators');
   const prng = engine.prng;
   const spatial = engine.spatialIndex;
+  const tags = engine.areaTags;
 
   for (let i = 0; i < engine.nextId; i++) {
     const c = engine.cultivators[i];
@@ -127,7 +131,23 @@ export function moveCultivators(engine: SimulationEngine): void {
     const prob = WANDER_BASE_PROB + c.level * WANDER_LEVEL_BONUS;
     if (prng() >= prob) continue;
 
-    const dir = Math.floor(prng() * 8);
+    let totalWeight = 0;
+    for (let d = 0; d < 8; d++) {
+      const nx = wrapCoord(c.x + DX[d]);
+      const ny = wrapCoord(c.y + DY[d]);
+      const w = tags.getSpiritualEnergy(nx, ny);
+      _moveWeights[d] = w;
+      totalWeight += w;
+    }
+
+    const r = prng() * totalWeight;
+    let cumulative = 0;
+    let dir = 7;
+    for (let d = 0; d < 8; d++) {
+      cumulative += _moveWeights[d];
+      if (r < cumulative) { dir = d; break; }
+    }
+
     const nx = wrapCoord(c.x + DX[dir]);
     const ny = wrapCoord(c.y + DY[dir]);
 
@@ -212,6 +232,7 @@ export function buildEncounterProbCache(engine: SimulationEngine): void {
   _encounterProbCache.fill(0);
 
   const si = engine.spatialIndex;
+  const tags = engine.areaTags;
   for (let level = 1; level < LEVEL_COUNT; level++) {
     const radius = ENCOUNTER_RADIUS[level];
     const base = level * CELLS;
@@ -224,7 +245,8 @@ export function buildEncounterProbCache(engine: SimulationEngine): void {
       if (sameLevelCount <= 1) continue;
       const totalCount = si.queryAllInRadius(cx, cy, radius);
       if (totalCount === 0) continue;
-      _encounterProbCache[base + cellIdx] = sameLevelCount / totalCount;
+      const dangerFactor = TERRAIN_DANGER_ENCOUNTER_FACTOR[tags.getTerrainDanger(cx, cy)];
+      _encounterProbCache[base + cellIdx] = (sameLevelCount / totalCount) * dangerFactor;
     }
   }
 }

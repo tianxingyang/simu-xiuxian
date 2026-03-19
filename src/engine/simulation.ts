@@ -5,6 +5,7 @@ import { processEncounters, scoreNewsRank } from './combat';
 import { type PRNG, createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
 import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial';
+import { AreaTagSystem, SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR } from './area-tag';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -70,6 +71,7 @@ export class SimulationEngine {
   hooks?: EngineHooks;
   milestones = new MilestoneTracker();
   spatialIndex = new SpatialIndex();
+  areaTags = new AreaTagSystem();
 
   combatDeaths = 0;
   combatDemotions = 0;
@@ -108,6 +110,7 @@ export class SimulationEngine {
     this.levelArrayCache = initLevelArrayCache();
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
+    this.areaTags.generate(seed);
     this.spawnCultivators(initialPopCount);
     this._defeatedBuf = new Uint8Array(this.nextId);
     this._levelArrayIndex = new Int32Array(this.nextId);
@@ -347,6 +350,8 @@ export class SimulationEngine {
     this._courageBuffers = initBuffers();
     this.milestones.reset();
     this.spatialIndex.reset();
+    this.areaTags.reset();
+    this.areaTags.generate(seed);
     this.year = 1;
     this._summaryYear = 1;
     this.prng = createPRNG(seed);
@@ -358,7 +363,7 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 1;
+    const SNAPSHOT_VERSION = 2;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
@@ -370,7 +375,8 @@ export class SimulationEngine {
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
     // Milestones: highestLevelEverReached(i32) + levelEverPopulated(u8 * LEVEL_COUNT)
     const milestonesSize = 4 + LEVEL_COUNT;
-    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + milestonesSize;
+    const areaTagsSize = this.areaTags.serializeSize();
+    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + milestonesSize + areaTagsSize;
 
     const buf = Buffer.alloc(totalSize);
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -415,6 +421,9 @@ export class SimulationEngine {
       dv.setUint8(off, this.milestones.levelEverPopulated[i] ? 1 : 0); off += 1;
     }
 
+    // AreaTags
+    off = this.areaTags.serializeTo(dv, off);
+
     return buf;
   }
 
@@ -424,7 +433,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version !== 1) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version !== 1 && version !== 2) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -482,6 +491,17 @@ export class SimulationEngine {
       milestones.levelEverPopulated[i] = dv.getUint8(off) === 1; off += 1;
     }
 
+    // AreaTags
+    let areaTags: AreaTagSystem;
+    if (version >= 2) {
+      const result = AreaTagSystem.deserializeFrom(dv, off);
+      areaTags = result.system;
+      off = result.offset;
+    } else {
+      areaTags = new AreaTagSystem();
+      areaTags.generate(prngState);
+    }
+
     // Construct engine bypassing constructor
     const engine = Object.create(SimulationEngine.prototype) as SimulationEngine;
     engine.prng = createPRNG(prngState);
@@ -496,6 +516,7 @@ export class SimulationEngine {
     engine.aliveLevelIds = levelGroups;
     engine.spatialIndex = spatialIndex;
     engine.milestones = milestones;
+    engine.areaTags = areaTags;
     engine.levelArrayCache = initLevelArrayCache();
     engine.aliveIds = [];
     engine['_levelCountsBuf'] = new Array<number>(LEVEL_COUNT).fill(0);
@@ -602,7 +623,8 @@ export function tryBreakthrough(
 
   engine.breakthroughAttempts++;
 
-  if (engine.prng() < breakthroughChance(c.level)) {
+  const seFactor = SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR[engine.areaTags.getSpiritualEnergy(c.x, c.y)];
+  if (engine.prng() < breakthroughChance(c.level) * seFactor) {
     const prevLevel = c.level;
     c.level++;
     c.maxAge = Math.min(SUSTAINABLE_MAX_AGE[MAX_LEVEL], c.maxAge + lifespanBonus(c.level));
