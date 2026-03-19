@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-03-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1037 | Active |
+| `journal-1.md` | ~1091 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 22 | 2026-03-19 | 丰富日报 LLM 数据：事件嵌入 + 世界快照 IPC | `78560e0` |
 | 21 | 2026-03-19 | fix: report 接口 409 锁死 + 诊断日志 | `da6b479` |
 | 20 | 2026-03-19 | feat: Cultivator Behavior State Machine | `ac74590` |
 | 19 | 2026-03-19 | AreaTag 地块标记系统 | `afba249` |

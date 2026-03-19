@@ -1035,3 +1035,57 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 丰富日报 LLM 数据：事件嵌入 + 世界快照 IPC
+
+**Date**: 2026-03-19
+**Task**: 丰富日报 LLM 数据：事件嵌入 + 世界快照 IPC
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 改动概览
+
+两条路径丰富日报 LLM prompt 上下文：
+
+### A. 事件级嵌入
+- RichEvent 各子类型新增 `behaviorState`、`spiritualEnergy`、`terrainDanger` 可选字段
+- combat/promotion 事件补充 `age` 字段
+- 引擎创建事件时从 AreaTagSystem 和 Cultivator 读取并嵌入
+
+### B. 世界快照 IPC (sim→gateway→llm)
+- 新增 `WorldContext` 类型：currentYear、population、levelCounts、regionProfiles、behaviorDistribution
+- sim-worker 响应 `sim:getWorldContext`，从 `SimulationEngine.getWorldContext()` 聚合数据
+- gateway 在 report 请求时先向 sim 拿 context，再附加到 `job:report` 发给 llm-worker
+- bot 请求同样走此路径
+
+### C. Reporter Prompt 增强
+- `formatEventForPrompt` 输出 spiritual_energy/terrain_danger/age/state（中文映射）
+- `buildPrompt` 注入 world_context 区域（人口、境界分布、行为分布、区域画像）
+- System prompt 增加「天机阁轮值真人」身份设定
+- `current_year` 取自引擎真实年份
+
+**涉及文件**: src/types.ts, src/engine/simulation.ts, src/engine/combat.ts, server/ipc.ts, server/runner.ts, server/processes/sim-worker.ts, server/processes/llm-worker.ts, server/index.ts, server/bot.ts, server/reporter.ts
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `78560e0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
