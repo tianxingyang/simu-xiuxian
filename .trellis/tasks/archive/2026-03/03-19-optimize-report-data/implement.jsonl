@@ -1,0 +1,6 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "server/reporter.ts", "reason": "Core file: insight detection, buildPrompt, SYSTEM_MESSAGE"}
+{"file": "server/db.ts", "reason": "Schema migration, world_context storage, queryRecentWorldContexts"}
+{"file": "server/ipc.ts", "reason": "WorldContext type definition"}
+{"file": ".trellis/tasks/03-19-optimize-report-data/prd.md", "reason": "Task requirements"}
