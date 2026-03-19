@@ -1,0 +1,7 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "Verify string literal union, no enum"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Verify naming, no any, no non-null assertions"}
+{"file": "src/types.ts", "reason": "Verify BehaviorState type added correctly"}
+{"file": "src/engine/spatial.ts", "reason": "Verify movement restructured per state"}
+{"file": "src/engine/combat.ts", "reason": "Verify fleeCultivator removed"}

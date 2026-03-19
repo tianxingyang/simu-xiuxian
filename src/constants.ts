@@ -5,7 +5,7 @@ import {
   getBalanceRevision,
   sigmoidContribution,
 } from './balance';
-import type { Cultivator } from './types';
+import type { BehaviorState, Cultivator } from './types';
 
 export const LEVEL_NAMES = [
   '炼气', '筑基', '结丹', '元婴', '化神', '炼虚', '合体', '大乘',
@@ -187,12 +187,32 @@ export function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+// ---------------------------------------------------------------------------
+// Behavior state constants
+// ---------------------------------------------------------------------------
+
+export const BEHAVIOR_COURAGE_FACTOR: Readonly<Record<BehaviorState, number>> = {
+  escaping: 0.3,
+  recuperating: 0.6,
+  seeking_breakthrough: 1.0,
+  settling: 1.0,
+  wandering: 1.0,
+};
+
+export const ESCAPING_MOVE_PROB = 1.0;
+export const RECUPERATING_MOVE_PROB = 0.05;
+export const SEEKING_BREAKTHROUGH_MOVE_PROB = 0.6;
+export const SETTLING_FRACTION = 0.05;
+export const BEHAVIOR_EVAL_BASE_INTERVAL = 5;
+
 export function effectiveCourage(c: Cultivator): number {
   const t = c.age / c.maxAge;
   const boost = t < COURAGE_TROUGH
     ? COURAGE_YOUNG_AMP * (1 - t / COURAGE_TROUGH) ** 2
     : COURAGE_OLD_AMP * ((t - COURAGE_TROUGH) / (1 - COURAGE_TROUGH)) ** 2;
-  return round2(Math.min(1, c.courage + boost));
+  const base = round2(Math.min(1, c.courage + boost));
+  const factor = BEHAVIOR_COURAGE_FACTOR[c.behaviorState];
+  return round2(base * factor);
 }
 
 export const MAP_SIZE = 32;
@@ -200,7 +220,6 @@ export const MAP_MASK = MAP_SIZE - 1;
 export const ENCOUNTER_RADIUS: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 16] as const;
 export const WANDER_BASE_PROB = 0.15;
 export const WANDER_LEVEL_BONUS = 0.03;
-export const FLEE_DISTANCE: readonly [number, number] = [2, 3];
 export const BREAKTHROUGH_MOVE: readonly [number, number] = [2, 4];
 
 export const LEVEL_COLORS = [

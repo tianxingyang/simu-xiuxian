@@ -1,5 +1,5 @@
-import type { Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
-import { BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionName, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
+import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
+import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionName, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
 import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
 import { type PRNG, createPRNG, truncatedGaussian } from './prng';
@@ -9,6 +9,21 @@ import { AreaTagSystem, SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR } from './area-tag'
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
+
+const BEHAVIOR_STATE_ENCODE: Readonly<Record<BehaviorState, number>> = {
+  wandering: 0, escaping: 1, recuperating: 2, seeking_breakthrough: 3, settling: 4,
+};
+const BEHAVIOR_STATE_DECODE: readonly BehaviorState[] = [
+  'wandering', 'escaping', 'recuperating', 'seeking_breakthrough', 'settling',
+];
+
+function encodeBehaviorState(state: BehaviorState): number {
+  return BEHAVIOR_STATE_ENCODE[state];
+}
+
+function decodeBehaviorState(code: number): BehaviorState {
+  return BEHAVIOR_STATE_DECODE[code] ?? 'wandering';
+}
 
 export class MilestoneTracker {
   highestLevelEverReached = 0;
@@ -141,9 +156,11 @@ export class SimulationEngine {
         c.reachedMaxLevelAt = 0;
         c.x = x;
         c.y = y;
+        c.behaviorState = 'wandering';
+        c.settlingUntil = 0;
       } else {
         id = this.nextId++;
-        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0, reachedMaxLevelAt: 0, x, y };
+        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0, reachedMaxLevelAt: 0, x, y, behaviorState: 'wandering' as BehaviorState, settlingUntil: 0 };
         nc.cachedCourage = effectiveCourage(nc);
       }
       this.aliveCount++;
@@ -301,12 +318,88 @@ export class SimulationEngine {
     };
   }
 
+  evaluateBehaviorStates(): void {
+    profiler.start('evaluateBehaviorStates');
+    const year = this.year;
+
+    for (let i = 0; i < this.nextId; i++) {
+      const c = this.cultivators[i];
+      if (!c.alive) continue;
+      if (c.reachedMaxLevelAt > 0) continue;
+
+      // Priority 1: heavy injury -> escaping
+      if (c.injuredUntil > year) {
+        c.behaviorState = 'escaping';
+        continue;
+      }
+
+      // Priority 2: light injury -> recuperating
+      if (c.lightInjuryUntil > year) {
+        c.behaviorState = 'recuperating';
+        continue;
+      }
+
+      // Non-condition-driven states: re-evaluate at interval scaled by lifespan
+      const evalInterval = Math.max(1, Math.floor(c.maxAge / MORTAL_MAX_AGE) * BEHAVIOR_EVAL_BASE_INTERVAL);
+      if (year % evalInterval !== 0 && c.behaviorState !== 'escaping' && c.behaviorState !== 'recuperating') {
+        // Keep current state if not at evaluation tick (but settling expiry still checked)
+        if (c.behaviorState === 'settling' && c.settlingUntil <= year) {
+          c.behaviorState = 'wandering';
+        }
+        continue;
+      }
+
+      // Priority 3: check if breakthrough is urgent
+      if (c.level < MAX_LEVEL) {
+        const remainingYears = c.maxAge - c.age;
+        const cultNeeded = threshold(c.level + 1) - c.cultivation;
+        if (cultNeeded > 0 && remainingYears > 0) {
+          const yearsToThreshold = cultNeeded; // growth rate = 1.0 per year
+          const seFactor = SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR[this.areaTags.getSpiritualEnergy(c.x, c.y)];
+          const btChance = breakthroughChance(c.level) * seFactor;
+          const expectedAttempts = btChance > 0 ? 1 / btChance : Infinity;
+          const totalExpectedYears = yearsToThreshold + expectedAttempts * BREAKTHROUGH_COOLDOWN;
+
+          if (totalExpectedYears > remainingYears) {
+            c.behaviorState = 'seeking_breakthrough';
+            continue;
+          }
+
+          // Was seeking and current cell now sufficient -> settle here
+          if (c.behaviorState === 'seeking_breakthrough') {
+            c.behaviorState = 'settling';
+            c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * SETTLING_FRACTION));
+            continue;
+          }
+        }
+      }
+
+      // Priority 4: settling check
+      if (c.behaviorState === 'settling' && c.settlingUntil > year) {
+        continue; // keep settling
+      }
+
+      // Random chance to enter settling (frequency inversely proportional to maxAge)
+      const settlingChance = MORTAL_MAX_AGE / c.maxAge;
+      if (this.prng() < settlingChance) {
+        c.behaviorState = 'settling';
+        c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * SETTLING_FRACTION));
+        continue;
+      }
+
+      // Default: wandering
+      c.behaviorState = 'wandering';
+    }
+    profiler.end('evaluateBehaviorStates');
+  }
+
   tickYear(collectEvents = true): { isExtinct: boolean; events: RichEvent[] } {
     profiler.start('tickYear');
     this.resetYearCounters();
     this.spawnCultivators(this.yearlySpawn);
     const events: EventBuffer = collectEvents ? [] : null;
     this.tickCultivators(events);
+    this.evaluateBehaviorStates();
     moveCultivators(this);
     processEncounters(this, events);
     this.purgeDead();
@@ -363,15 +456,16 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 2;
+    const SNAPSHOT_VERSION = 3;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
     // Per cultivator: alive(u8) + age(i32) + cultivation(f64) + level(u8) + courage(f64)
     //   + maxAge(i32) + injuredUntil(i32) + lightInjuryUntil(i32) + meridianDamagedUntil(i32)
     //   + breakthroughCooldownUntil(i32) + cachedCourage(f64) + reachedMaxLevelAt(i32) + x(i32) + y(i32)
-    // = 2*u8(2) + 3*f64(24) + 9*i32(36) = 62 bytes
-    const CULTIVATOR_SIZE = 62;
+    //   + behaviorState(u8) + settlingUntil(i32)
+    // = 3*u8(3) + 3*f64(24) + 10*i32(40) = 67 bytes
+    const CULTIVATOR_SIZE = 67;
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
     // Milestones: highestLevelEverReached(i32) + levelEverPopulated(u8 * LEVEL_COUNT)
     const milestonesSize = 4 + LEVEL_COUNT;
@@ -413,6 +507,8 @@ export class SimulationEngine {
       dv.setInt32(off, c.reachedMaxLevelAt, true); off += 4;
       dv.setInt32(off, c.x, true); off += 4;
       dv.setInt32(off, c.y, true); off += 4;
+      dv.setUint8(off, encodeBehaviorState(c.behaviorState)); off += 1;
+      dv.setInt32(off, c.settlingUntil, true); off += 4;
     }
 
     // Milestones
@@ -433,11 +529,11 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version !== 1 && version !== 2) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 3) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
-    /* aliveCount from header — skip, recount from cultivators */
+    /* aliveCount from header -- skip, recount from cultivators */
     off += 4;
     const yearlySpawn = dv.getInt32(off, true); off += 4;
     const freeSlotsLen = dv.getInt32(off, true); off += 4;
@@ -470,10 +566,18 @@ export class SimulationEngine {
       const x = dv.getInt32(off, true); off += 4;
       const y = dv.getInt32(off, true); off += 4;
 
+      let behaviorState: BehaviorState = 'wandering';
+      let settlingUntil = 0;
+      if (version >= 3) {
+        behaviorState = decodeBehaviorState(dv.getUint8(off)); off += 1;
+        settlingUntil = dv.getInt32(off, true); off += 4;
+      }
+
       const c: Cultivator = {
         id: i, age, cultivation, level, courage, maxAge,
         injuredUntil, lightInjuryUntil, meridianDamagedUntil,
         breakthroughCooldownUntil, alive, cachedCourage, reachedMaxLevelAt, x, y,
+        behaviorState, settlingUntil,
       };
       cultivators[i] = c;
 

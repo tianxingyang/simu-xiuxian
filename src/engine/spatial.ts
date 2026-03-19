@@ -2,10 +2,12 @@ import type { Cultivator } from '../types';
 import {
   BREAKTHROUGH_MOVE,
   ENCOUNTER_RADIUS,
-  FLEE_DISTANCE,
+  ESCAPING_MOVE_PROB,
   LEVEL_COUNT,
   MAP_MASK,
   MAP_SIZE,
+  RECUPERATING_MOVE_PROB,
+  SEEKING_BREAKTHROUGH_MOVE_PROB,
   WANDER_BASE_PROB,
   WANDER_LEVEL_BONUS,
 } from '../constants';
@@ -117,10 +119,45 @@ export class SpatialIndex {
 
 const _moveWeights = new Float64Array(8);
 
+function moveToRandomDir(engine: SimulationEngine, c: Cultivator): void {
+  const dir = Math.floor(engine.prng() * 8);
+  const nx = wrapCoord(c.x + DX[dir]);
+  const ny = wrapCoord(c.y + DY[dir]);
+  engine.spatialIndex.remove(c.id, c.level, c.x, c.y);
+  c.x = nx;
+  c.y = ny;
+  engine.spatialIndex.add(c.id, c.level, c.x, c.y);
+}
+
+function moveWeightedBy(
+  engine: SimulationEngine, c: Cultivator,
+  weightFn: (nx: number, ny: number) => number,
+): void {
+  let totalWeight = 0;
+  for (let d = 0; d < 8; d++) {
+    const w = weightFn(wrapCoord(c.x + DX[d]), wrapCoord(c.y + DY[d]));
+    _moveWeights[d] = w;
+    totalWeight += w;
+  }
+  if (totalWeight <= 0) { moveToRandomDir(engine, c); return; }
+  const r = engine.prng() * totalWeight;
+  let cumulative = 0;
+  let dir = 7;
+  for (let d = 0; d < 8; d++) {
+    cumulative += _moveWeights[d];
+    if (r < cumulative) { dir = d; break; }
+  }
+  const nx = wrapCoord(c.x + DX[dir]);
+  const ny = wrapCoord(c.y + DY[dir]);
+  engine.spatialIndex.remove(c.id, c.level, c.x, c.y);
+  c.x = nx;
+  c.y = ny;
+  engine.spatialIndex.add(c.id, c.level, c.x, c.y);
+}
+
 export function moveCultivators(engine: SimulationEngine): void {
   profiler.start('moveCultivators');
   const prng = engine.prng;
-  const spatial = engine.spatialIndex;
   const tags = engine.areaTags;
 
   for (let i = 0; i < engine.nextId; i++) {
@@ -128,66 +165,37 @@ export function moveCultivators(engine: SimulationEngine): void {
     if (!c.alive) continue;
     if (c.reachedMaxLevelAt > 0) continue;
 
+    const state = c.behaviorState;
+
+    if (state === 'settling') continue;
+
+    if (state === 'escaping') {
+      if (prng() >= ESCAPING_MOVE_PROB) continue;
+      moveWeightedBy(engine, c, (nx, ny) => {
+        const danger = tags.getTerrainDanger(nx, ny);
+        return 6 - danger; // invert: low danger = high weight
+      });
+      continue;
+    }
+
+    if (state === 'recuperating') {
+      if (prng() >= RECUPERATING_MOVE_PROB) continue;
+      moveToRandomDir(engine, c);
+      continue;
+    }
+
+    if (state === 'seeking_breakthrough') {
+      if (prng() >= SEEKING_BREAKTHROUGH_MOVE_PROB) continue;
+      moveWeightedBy(engine, c, (nx, ny) => tags.getSpiritualEnergy(nx, ny));
+      continue;
+    }
+
+    // wandering: original probability formula, pure random direction
     const prob = WANDER_BASE_PROB + c.level * WANDER_LEVEL_BONUS;
     if (prng() >= prob) continue;
-
-    let totalWeight = 0;
-    for (let d = 0; d < 8; d++) {
-      const nx = wrapCoord(c.x + DX[d]);
-      const ny = wrapCoord(c.y + DY[d]);
-      const w = tags.getSpiritualEnergy(nx, ny);
-      _moveWeights[d] = w;
-      totalWeight += w;
-    }
-
-    const r = prng() * totalWeight;
-    let cumulative = 0;
-    let dir = 7;
-    for (let d = 0; d < 8; d++) {
-      cumulative += _moveWeights[d];
-      if (r < cumulative) { dir = d; break; }
-    }
-
-    const nx = wrapCoord(c.x + DX[dir]);
-    const ny = wrapCoord(c.y + DY[dir]);
-
-    spatial.remove(c.id, c.level, c.x, c.y);
-    c.x = nx;
-    c.y = ny;
-    spatial.add(c.id, c.level, c.x, c.y);
+    moveToRandomDir(engine, c);
   }
   profiler.end('moveCultivators');
-}
-
-function toroidalDelta(a: number, b: number): number {
-  const half = MAP_SIZE >> 1;
-  const raw = a - b;
-  return ((raw % MAP_SIZE) + MAP_SIZE + half) % MAP_SIZE - half;
-}
-
-export function fleeCultivator(
-  engine: SimulationEngine, c: Cultivator, fromX: number, fromY: number,
-): void {
-  const prng = engine.prng;
-  const dist = FLEE_DISTANCE[0] + Math.floor(prng() * (FLEE_DISTANCE[1] - FLEE_DISTANCE[0] + 1));
-
-  let dx = toroidalDelta(c.x, fromX);
-  let dy = toroidalDelta(c.y, fromY);
-
-  if (dx === 0 && dy === 0) {
-    const dir = Math.floor(prng() * 8);
-    dx = DX[dir];
-    dy = DY[dir];
-  }
-
-  const len = Math.sqrt(dx * dx + dy * dy);
-  const nx = wrapCoord(c.x + Math.round((dx / len) * dist));
-  const ny = wrapCoord(c.y + Math.round((dy / len) * dist));
-
-  engine.spatialIndex.remove(c.id, c.level, c.x, c.y);
-  c.x = nx;
-  c.y = ny;
-  engine.spatialIndex.add(c.id, c.level, c.x, c.y);
 }
 
 export function breakthroughMove(engine: SimulationEngine, c: Cultivator): void {

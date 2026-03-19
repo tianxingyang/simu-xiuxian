@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "String literal union pattern for BehaviorState"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Naming conventions, hot-path performance rules"}
+{"file": "src/types.ts", "reason": "Cultivator interface to add behaviorState field"}
+{"file": "src/constants.ts", "reason": "effectiveCourage, thresholds, growth rates"}
+{"file": "src/engine/spatial.ts", "reason": "Movement system to restructure"}
+{"file": "src/engine/combat.ts", "reason": "fleeCultivator caller to remove"}
+{"file": "src/engine/simulation.ts", "reason": "Tick loop, spawn, serialize/deserialize"}
+{"file": "src/engine/area-tag.ts", "reason": "AreaTag API for spiritual energy and terrain danger"}

@@ -1,3 +1,10 @@
+export type BehaviorState =
+  | 'escaping'
+  | 'recuperating'
+  | 'seeking_breakthrough'
+  | 'settling'
+  | 'wandering';
+
 export interface Cultivator {
   id: number;
   age: number;
@@ -14,6 +21,8 @@ export interface Cultivator {
   reachedMaxLevelAt: number;
   x: number;
   y: number;
+  behaviorState: BehaviorState;
+  settlingUntil: number;
 }
 
 export interface LevelStat {

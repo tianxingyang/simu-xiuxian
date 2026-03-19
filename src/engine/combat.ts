@@ -38,7 +38,7 @@ import {
 import { prngShuffle, truncatedGaussian } from './prng';
 import { tryBreakthrough, type SimulationEngine } from './simulation';
 import { profiler } from './profiler';
-import { buildEncounterProbCache, findSpatialOpponent, fleeCultivator, localEncounterProbability } from './spatial';
+import { buildEncounterProbCache, findSpatialOpponent, localEncounterProbability } from './spatial';
 import { TERRAIN_DANGER_EVASION_ADJUST } from './area-tag';
 
 type EventBuffer = RichEvent[] | null;
@@ -286,7 +286,6 @@ function resolveCombat(
       loser.lightInjuryUntil = year + LIGHT_INJURY_DURATION;
     }
 
-    fleeCultivator(engine, loser, winner.x, winner.y);
   }
 
   engine.hooks?.onCombatResult(winner, loser, loserDied, year);
