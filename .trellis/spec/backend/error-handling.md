@@ -127,6 +127,39 @@ Inside transaction?
 
 ---
 
+## Pattern 5: Promise Cancellation Must Settle
+
+When using `.finally()` to clean up state (e.g. a "busy" gate), **all code paths must settle the promise** (resolve or reject). If a cancellation path removes the promise from a registry without settling it, `.finally()` never runs and the state leaks.
+
+```typescript
+// WRONG: cancel removes from map but doesn't settle → .finally() never runs
+function cancel(jobId: string): void {
+  const pending = jobs.get(jobId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    jobs.delete(jobId);
+    // Promise hangs forever, .finally() never executes
+  }
+}
+
+// CORRECT: always reject so .finally() can clean up
+function cancel(jobId: string): void {
+  const pending = jobs.get(jobId);
+  if (pending) {
+    clearTimeout(pending.timer);
+    jobs.delete(jobId);
+    pending.reject(new Error('Cancelled'));
+  }
+}
+```
+
+**Checklist for cancel/abort paths**:
+- [ ] Promise is rejected (so `.catch()` / `.finally()` run)
+- [ ] Downstream worker is notified (e.g. `AbortController.abort()`)
+- [ ] Caller-side guard (`aborted` flag) prevents writing to closed response
+
+---
+
 ## Common Mistakes
 
 ### Swallowing Errors
@@ -169,3 +202,4 @@ return { error: 'Failed to save data' };
 | Non-critical failure | `logger.warn()` + continue     |
 | Critical failure     | `return { success: false }`    |
 | Transaction helper   | `throw Error()` on any failure |
+| Promise cancellation | `reject()` so `.finally()` runs |

@@ -86,6 +86,7 @@ function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknow
 
   const promise = new Promise<unknown>((resolve, reject) => {
     const timer = setTimeout(() => {
+      console.warn(`[gateway] job ${jobId} timed out after ${HTTP_JOB_TIMEOUT / 1000}s`);
       pendingHttpJobs.delete(jobId);
       sendToLlm({ type: 'job:cancel', jobId });
       reject(new Error('Job timeout'));
@@ -100,8 +101,10 @@ function submitLlmJob(cmd: LlmCommand): { jobId: string; promise: Promise<unknow
 function cancelHttpJob(jobId: string): void {
   const pending = pendingHttpJobs.get(jobId);
   if (pending) {
+    console.warn(`[gateway] job ${jobId} cancelled (client disconnected)`);
     clearTimeout(pending.timer);
     pendingHttpJobs.delete(jobId);
+    pending.reject(new Error('Cancelled'));
     sendToLlm({ type: 'job:cancel', jobId });
   }
 }
@@ -259,7 +262,7 @@ const server = createServer((req, res) => {
   if (url.pathname === '/api/report') {
     if (req.method !== 'POST') { json(res, 405, { status: 'method_not_allowed' }); return; }
     if (!llmReady) { json(res, 503, { status: 'worker_not_ready' }); return; }
-    if (activeReportJobId) { json(res, 409, { status: 'busy' }); return; }
+    if (activeReportJobId) { console.warn(`[gateway] report rejected: job ${activeReportJobId} still active`); json(res, 409, { status: 'busy' }); return; }
 
     const { jobId, promise } = submitLlmJob({ type: 'job:report', jobId: nextJobId() });
     activeReportJobId = jobId;

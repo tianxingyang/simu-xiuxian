@@ -44,10 +44,14 @@ async function handleReport(jobId: string, fromTs?: number, toTs?: number, group
 
     if (!ac.signal.aborted) {
       send({ type: 'job:result', jobId, kind: 'report', payload: report });
+    } else {
+      console.warn(`[llm] report job ${jobId} aborted, discarding result`);
     }
   } catch (err) {
     if (!ac.signal.aborted) {
       send({ type: 'job:error', jobId, error: err instanceof Error ? err.message : String(err) });
+    } else {
+      console.warn(`[llm] report job ${jobId} aborted during execution: ${err instanceof Error ? err.message : err}`);
     }
   } finally {
     activeJobs.delete(jobId);
@@ -61,10 +65,14 @@ async function handleBiography(jobId: string, name: string, currentYear: number)
     const result = await generateBiography(name, currentYear, ac.signal);
     if (!ac.signal.aborted) {
       send({ type: 'job:result', jobId, kind: 'biography', payload: result });
+    } else {
+      console.warn(`[llm] biography job ${jobId} aborted, discarding result`);
     }
   } catch (err) {
     if (!ac.signal.aborted) {
       send({ type: 'job:error', jobId, error: err instanceof Error ? err.message : String(err) });
+    } else {
+      console.warn(`[llm] biography job ${jobId} aborted during execution: ${err instanceof Error ? err.message : err}`);
     }
   } finally {
     activeJobs.delete(jobId);
