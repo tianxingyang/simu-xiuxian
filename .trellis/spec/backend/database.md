@@ -178,6 +178,26 @@ export function runMigrations() {
 
 ---
 
+## Schema Ownership (Multi-Process)
+
+When multiple processes (e.g., sim-worker, llm-worker) share the same SQLite database file:
+
+| Concern | Owner | Others |
+|---------|-------|--------|
+| CREATE TABLE / migrations | **Single owner process** (sim-worker) | Never |
+| Connection (`getDB()`) | Any process | Any process |
+| Read / Write data | Any process | Any process |
+
+**Rules:**
+
+1. **Separate connection from initialization** — `getDB()` only opens a connection and sets pragmas. A dedicated `initSchema()` handles CREATE TABLE and ALTER TABLE migrations.
+2. **Only one process calls `initSchema()`** — The "owner" process (sim-worker) calls `initSchema()` at startup before any other DB access.
+3. **Other processes assume schema exists** — llm-worker and others connect lazily via `getDB()` without running migrations.
+
+**Why:** `ALTER TABLE ADD COLUMN` with a check-then-act pattern (`pragma table_info` → `ALTER TABLE`) is not atomic. If two processes run this concurrently, both see the column as missing and both try to add it, causing `SQLITE_ERROR: duplicate column name`.
+
+---
+
 ## Periodic Task Anti-Patterns (better-sqlite3)
 
 Since better-sqlite3 is synchronous, periodic DB tasks can block the Node.js event loop. Follow these rules:

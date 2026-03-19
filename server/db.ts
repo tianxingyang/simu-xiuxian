@@ -56,94 +56,101 @@ export function getDB(): Database.Database {
     _db = new Database(config.dbPath);
     _db.pragma('journal_mode = WAL');
     _db.pragma('busy_timeout = 5000');
-    _db.exec(`
-      CREATE TABLE IF NOT EXISTS named_cultivators (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        named_at_year INTEGER NOT NULL,
-        kill_count INTEGER NOT NULL DEFAULT 0,
-        combat_wins INTEGER NOT NULL DEFAULT 0,
-        combat_losses INTEGER NOT NULL DEFAULT 0,
-        promotion_years TEXT NOT NULL DEFAULT '[]',
-        peak_level INTEGER NOT NULL DEFAULT 0,
-        peak_cultivation REAL NOT NULL DEFAULT 0,
-        death_year INTEGER,
-        death_cause TEXT,
-        killed_by TEXT,
-        forgotten INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE IF NOT EXISTS events (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        year INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        rank TEXT NOT NULL,
-        real_ts INTEGER NOT NULL,
-        payload TEXT NOT NULL,
-        protected INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE INDEX IF NOT EXISTS idx_events_real_ts ON events(real_ts);
-      CREATE INDEX IF NOT EXISTS idx_events_rank ON events(rank);
-      CREATE INDEX IF NOT EXISTS idx_events_evict ON events(protected, rank, year);
-      CREATE TABLE IF NOT EXISTS event_cultivators (
-        cultivator_id INTEGER NOT NULL,
-        event_id INTEGER NOT NULL,
-        PRIMARY KEY (cultivator_id, event_id)
-      );
-      CREATE INDEX IF NOT EXISTS idx_ec_event_id ON event_cultivators(event_id);
-      CREATE TABLE IF NOT EXISTS reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        date TEXT NOT NULL UNIQUE,
-        year_from INTEGER NOT NULL,
-        year_to INTEGER NOT NULL,
-        prompt TEXT NOT NULL,
-        report TEXT,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS sim_state (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        current_year INTEGER NOT NULL,
-        seed INTEGER NOT NULL,
-        speed INTEGER NOT NULL,
-        running INTEGER NOT NULL DEFAULT 0,
-        highest_levels_ever TEXT NOT NULL DEFAULT '[]'
-      );
-      CREATE TABLE IF NOT EXISTS bot_request_log (
-        group_openid TEXT PRIMARY KEY,
-        last_request_ts INTEGER NOT NULL
-      );
-    `);
-    // Migration: move daily_reports → reports
-    const oldTable = _db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_reports'").get();
-    if (oldTable) {
-      _db.exec(`
-        INSERT OR IGNORE INTO reports (id, date, year_from, year_to, prompt, report, created_at)
-          SELECT id, date, year_from, year_to, prompt, report, created_at FROM daily_reports;
-        DROP TABLE daily_reports;
-      `);
-    }
-    // Migration: add protected column to events if missing
-    const eventCols = _db.pragma('table_info(events)') as Array<{ name: string }>;
-    if (!eventCols.some(c => c.name === 'protected')) {
-      _db.exec('ALTER TABLE events ADD COLUMN protected INTEGER NOT NULL DEFAULT 0');
-      _db.exec('CREATE INDEX IF NOT EXISTS idx_events_evict ON events(protected, rank, year)');
-    }
-    // Migration: add snapshot column if missing
-    const cols = _db.pragma('table_info(sim_state)') as Array<{ name: string }>;
-    if (!cols.some(c => c.name === 'snapshot')) {
-      _db.exec('ALTER TABLE sim_state ADD COLUMN snapshot BLOB');
-    }
-    // Migration: add forgotten column + reverse index for memory decay optimization
-    const ncCols = _db.pragma('table_info(named_cultivators)') as Array<{ name: string }>;
-    if (!ncCols.some(c => c.name === 'forgotten')) {
-      _db.exec('ALTER TABLE named_cultivators ADD COLUMN forgotten INTEGER NOT NULL DEFAULT 0');
-    }
-    // Migration: add world_context column to reports
-    const reportCols = _db.pragma('table_info(reports)') as Array<{ name: string }>;
-    if (!reportCols.some(c => c.name === 'world_context')) {
-      _db.exec('ALTER TABLE reports ADD COLUMN world_context TEXT');
-    }
   }
   return _db;
+}
+
+/** Create tables and run migrations. Only sim-worker should call this. */
+export function initSchema(): void {
+  const db = getDB();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS named_cultivators (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      named_at_year INTEGER NOT NULL,
+      kill_count INTEGER NOT NULL DEFAULT 0,
+      combat_wins INTEGER NOT NULL DEFAULT 0,
+      combat_losses INTEGER NOT NULL DEFAULT 0,
+      promotion_years TEXT NOT NULL DEFAULT '[]',
+      peak_level INTEGER NOT NULL DEFAULT 0,
+      peak_cultivation REAL NOT NULL DEFAULT 0,
+      death_year INTEGER,
+      death_cause TEXT,
+      killed_by TEXT,
+      forgotten INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      year INTEGER NOT NULL,
+      type TEXT NOT NULL,
+      rank TEXT NOT NULL,
+      real_ts INTEGER NOT NULL,
+      payload TEXT NOT NULL,
+      protected INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_events_real_ts ON events(real_ts);
+    CREATE INDEX IF NOT EXISTS idx_events_rank ON events(rank);
+    CREATE INDEX IF NOT EXISTS idx_events_evict ON events(protected, rank, year);
+    CREATE TABLE IF NOT EXISTS event_cultivators (
+      cultivator_id INTEGER NOT NULL,
+      event_id INTEGER NOT NULL,
+      PRIMARY KEY (cultivator_id, event_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ec_event_id ON event_cultivators(event_id);
+    CREATE TABLE IF NOT EXISTS reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      date TEXT NOT NULL UNIQUE,
+      year_from INTEGER NOT NULL,
+      year_to INTEGER NOT NULL,
+      prompt TEXT NOT NULL,
+      report TEXT,
+      created_at INTEGER NOT NULL,
+      world_context TEXT
+    );
+    CREATE TABLE IF NOT EXISTS sim_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      current_year INTEGER NOT NULL,
+      seed INTEGER NOT NULL,
+      speed INTEGER NOT NULL,
+      running INTEGER NOT NULL DEFAULT 0,
+      highest_levels_ever TEXT NOT NULL DEFAULT '[]',
+      snapshot BLOB
+    );
+    CREATE TABLE IF NOT EXISTS bot_request_log (
+      group_openid TEXT PRIMARY KEY,
+      last_request_ts INTEGER NOT NULL
+    );
+  `);
+  // Migration: move daily_reports → reports
+  const oldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_reports'").get();
+  if (oldTable) {
+    db.exec(`
+      INSERT OR IGNORE INTO reports (id, date, year_from, year_to, prompt, report, created_at)
+        SELECT id, date, year_from, year_to, prompt, report, created_at FROM daily_reports;
+      DROP TABLE daily_reports;
+    `);
+  }
+  // Migration: add protected column to events if missing
+  const eventCols = db.pragma('table_info(events)') as Array<{ name: string }>;
+  if (!eventCols.some(c => c.name === 'protected')) {
+    db.exec('ALTER TABLE events ADD COLUMN protected INTEGER NOT NULL DEFAULT 0');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_events_evict ON events(protected, rank, year)');
+  }
+  // Migration: add snapshot column if missing
+  const cols = db.pragma('table_info(sim_state)') as Array<{ name: string }>;
+  if (!cols.some(c => c.name === 'snapshot')) {
+    db.exec('ALTER TABLE sim_state ADD COLUMN snapshot BLOB');
+  }
+  // Migration: add forgotten column
+  const ncCols = db.pragma('table_info(named_cultivators)') as Array<{ name: string }>;
+  if (!ncCols.some(c => c.name === 'forgotten')) {
+    db.exec('ALTER TABLE named_cultivators ADD COLUMN forgotten INTEGER NOT NULL DEFAULT 0');
+  }
+  // Migration: add world_context column to reports
+  const reportCols = db.pragma('table_info(reports)') as Array<{ name: string }>;
+  if (!reportCols.some(c => c.name === 'world_context')) {
+    db.exec('ALTER TABLE reports ADD COLUMN world_context TEXT');
+  }
 }
 
 export function closeDB(): void {

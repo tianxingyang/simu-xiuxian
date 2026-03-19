@@ -1,9 +1,11 @@
 import type { SimCommand, SimWorkerEvent } from '../ipc.js';
 import type { BroadcastMsg, Command, RunnerIO } from '../runner.js';
 import { Runner } from '../runner.js';
+import { initSchema } from '../db.js';
 import { initLogger, getLogger } from '../logger.js';
 
 initLogger({ tag: 'sim' });
+initSchema();
 const log = getLogger('worker');
 
 function send(msg: SimWorkerEvent): void {

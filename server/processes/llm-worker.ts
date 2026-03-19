@@ -1,5 +1,5 @@
 import type { LlmCommand, LlmWorkerEvent } from '../ipc.js';
-import { getDB, getLastRequestTs, setLastRequestTs } from '../db.js';
+import { getLastRequestTs, setLastRequestTs } from '../db.js';
 import { generateReport } from '../reporter.js';
 import { generateBiography } from '../biography.js';
 import { initLogger, getLogger } from '../logger.js';
@@ -10,10 +10,6 @@ const log = getLogger('worker');
 function send(msg: LlmWorkerEvent): void {
   if (process.send) process.send(msg);
 }
-
-// Initialize own DB connection (WAL mode, with busy_timeout for concurrent access)
-const db = getDB();
-db.pragma('busy_timeout = 5000');
 
 const activeJobs = new Map<string, AbortController>();
 
