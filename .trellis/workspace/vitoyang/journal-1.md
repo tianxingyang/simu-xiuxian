@@ -1291,3 +1291,48 @@ CLI Log panel never showed backend logs due to:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: fix: multi-process DB schema race condition
+
+**Date**: 2026-03-19
+**Task**: fix: multi-process DB schema race condition
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 问题
+清空数据库后重启，sim-worker 崩溃报 `SqliteError: duplicate column name: snapshot`。
+
+## 根因
+`getDB()` 混合了连接和 schema 初始化职责。sim-worker 和 llm-worker 作为独立进程同时调用 `getDB()`，都触发 `ALTER TABLE ADD COLUMN`，形成 TOCTOU 竞态。
+
+## 修复
+| 文件 | 改动 |
+|------|------|
+| `server/db.ts` | 拆分 `getDB()`（纯连接）和 `initSchema()`（建表+迁移） |
+| `server/processes/sim-worker.ts` | 启动时调用 `initSchema()`，独占 schema 管理 |
+| `server/processes/llm-worker.ts` | 移除 `getDB()` 调用，按需懒连接 |
+| `.trellis/spec/backend/database.md` | 新增 Schema Ownership 规则文档 |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `05d5686` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

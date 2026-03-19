@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-03-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1293 | Active |
+| `journal-1.md` | ~1338 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 27 | 2026-03-19 | fix: multi-process DB schema race condition | `05d5686` |
 | 26 | 2026-03-19 | Unified logger module + CLI log panel fix | `527362b` |
 | 25 | 2026-03-19 | QQ Bot: @mention support & report length tuning | uncommitted |
 | 24 | 2026-03-19 | feat(reporter): insight detection engine | `2e0f0fd` |
