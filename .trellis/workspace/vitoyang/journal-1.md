@@ -948,3 +948,53 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: feat: Cultivator Behavior State Machine
+
+**Date**: 2026-03-19
+**Task**: feat: Cultivator Behavior State Machine
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Changes
+
+| File | Description |
+|------|-------------|
+| `src/types.ts` | Added `BehaviorState` union type + `behaviorState`, `settlingUntil` fields to Cultivator |
+| `src/constants.ts` | Behavior constants (courage modifiers, move probs), `effectiveCourage` state-aware |
+| `src/engine/spatial.ts` | Removed `fleeCultivator`, restructured `moveCultivators` to dispatch by state |
+| `src/engine/combat.ts` | Removed `fleeCultivator` import and call |
+| `src/engine/simulation.ts` | Added `evaluateBehaviorStates()` state machine, serialize v3 with backward compat |
+
+## Design Decisions
+
+- **Hybrid persistence model**: Condition-driven states (escaping/recuperating) persist until condition clears; re-evaluated states (wandering/settling/seeking_breakthrough) evaluated at lifespan-scaled intervals
+- **seeking_breakthrough trigger**: Remaining lifespan insufficient for natural breakthrough at current spiritual energy → move to higher SE area → auto-transition to settling
+- **escaping replaces fleeCultivator**: Sustained movement toward low terrainDanger instead of instant teleport
+- **wandering is pure random**: No spiritual energy weighting (reserved for seeking_breakthrough)
+- **Courage modifiers**: escaping 0.3x, recuperating 0.6x, others 1.0x
+- **State priority**: escaping > recuperating > seeking_breakthrough > settling > wandering
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac74590` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
