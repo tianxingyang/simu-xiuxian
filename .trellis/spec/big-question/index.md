@@ -47,6 +47,12 @@
 | ---------------------------------------------------------- | -------- | ------------------------------------------- |
 | [react-usestate-function.md](./react-usestate-function.md) | P2       | Storing functions in useState executes them |
 
+### TUI (Blessed)
+
+| Document                                                               | Severity | Summary                                            |
+| ---------------------------------------------------------------------- | -------- | -------------------------------------------------- |
+| [blessed-render-after-update.md](./blessed-render-after-update.md)     | P1       | Widget update without screen.render() shows nothing |
+
 ### CSS/Layout
 
 | Document                                         | Severity | Summary                                          |
@@ -86,6 +92,12 @@
 
 1. Check timestamp precision -> See [timestamp-precision.md](./timestamp-precision.md)
 2. Check transaction error handling -> See [transaction-silent-failure.md](./transaction-silent-failure.md)
+
+### CLI/TUI Not Showing Expected Content (P1)
+
+1. Is `screen.render()` called after widget update? -> See [blessed-render-after-update.md](./blessed-render-after-update.md)
+2. Is the setup function called from ALL action paths? (e.g., Start All vs Start BE)
+3. Is the file watcher active? Check if `startLogTail()` was invoked
 
 ### Hardware Triggers Not Working (P2)
 

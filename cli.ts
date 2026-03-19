@@ -264,6 +264,7 @@ function startLogTail(): void {
           logBox.log(`${tag} ${line}`);
         }
         logOffsets[path] = buf.length;
+        screen.render();
       }
     });
     logWatchers.push(watcher);
@@ -639,7 +640,7 @@ function execByKey(key: string): void {
   switch (key) {
     case '1': withLock(actionStartAll); break;
     case '2': withLock(actionStopAll); break;
-    case '3': logMsg(startService('backend')); connectSim(); refreshUI(); break;
+    case '3': logMsg(startService('backend')); connectSim(); startLogTail(); refreshUI(); break;
     case '4': logMsg(startService('frontend')); startLogTail(); refreshUI(); break;
     case '5': disconnectSim(); logMsg(stopService('backend')); refreshUI(); break;
     case '6': logMsg(stopService('frontend')); refreshUI(); break;
