@@ -1089,3 +1089,56 @@ Round 2: 3 issues (report concurrency, per-group ts, IPC send guard)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Migrate QQ bot to OneBot v11 (NapCat)
+
+**Date**: 2026-03-19
+**Task**: Migrate QQ bot to OneBot v11 (NapCat)
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+
+将 QQ 机器人从官方 Bot API v2 迁回 OneBot v11 协议（NapCat），解决官方 API 支持度不足的问题。
+
+## Changes
+
+| File | Change |
+|------|--------|
+| `server/bot.ts` | 重写：OAuth + Gateway WS → OneBot v11 正向 WS |
+| `server/config.ts` | 配置项替换：`qqBotAppId/Secret` → `onebotWsUrl/Token/qqGroupId` |
+| `server/ipc.ts` | 字段名：`groupOpenid` → `groupId` |
+| `server/processes/llm-worker.ts` | 同步字段名变更 |
+| `napcat/docker-compose.yml` | 新增 NapCat Docker 部署配置 |
+| `.gitignore` | 排除 napcat 数据目录 |
+
+## Key Decisions
+
+- 使用正向 WebSocket 连接 NapCat（与原官方 Gateway 模式一致，改动最小）
+- 通过 WS action `send_group_msg` 发送消息（支持主动推送，不再受被动回复限制）
+- 保留命令交互（日报、传记），非命令消息静默忽略
+- NapCat 通过 Docker 部署，WS 端口映射到宿主机 3002
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7656ae0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
