@@ -1,0 +1,48 @@
+{
+  "id": "faction-system",
+  "name": "faction-system",
+  "title": "brainstorm: 势力系统设计",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "priority": "P2",
+  "creator": "vitoyang",
+  "assignee": "vitoyang",
+  "createdAt": "2026-03-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "review"
+    },
+    {
+      "phase": 4,
+      "action": "finish"
+    },
+    {
+      "phase": 5,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
