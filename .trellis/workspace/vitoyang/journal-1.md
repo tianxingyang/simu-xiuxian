@@ -1427,3 +1427,76 @@ CLI Log panel never showed backend logs due to:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: feat: mortal settlement simulation system
+
+**Date**: 2026-03-20
+**Task**: feat: mortal settlement simulation system
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+
+Replace fixed `spawnCultivators(1000)` with organic household-driven cultivator awakening system. Complete mortal settlement simulation: households grow naturally, awaken cultivators based on spiritual energy, and upgrade into settlements (hamlet/village/town/city).
+
+## Key Decisions (from brainstorm)
+
+| Decision | Choice |
+|----------|--------|
+| Mortal simulation granularity | Household-level (not individual) |
+| Map organization | Settlement layer (settlement -> household[]) |
+| Spiritual root mechanism | Pure random awakening, affected by spiritualEnergy |
+| Cultivator-mortal relationship | Indirect: disciple source + territory + war byproduct |
+| Settlement-faction relationship | Settlement as faction infrastructure layer |
+| Household-settlement lifecycle | Unified growth model (household upgrades to settlement) |
+| Initial world | Start from zero, wilderness era |
+
+## New Files
+
+- `src/engine/household.ts` — HouseholdSystem (growth, awakening, splitting, combat collateral)
+- `src/engine/settlement.ts` — SettlementSystem (creation, expansion, pruning, naming, type classification)
+- `test/household.test.ts` — 21 unit tests
+- `test/settlement.test.ts` — 15 unit tests
+- `test/settlement-integration.test.ts` — 11 PRD-based integration tests
+
+## Modified Files
+
+- `src/engine/simulation.ts` — Core refactor: tickYear household-driven, snapshot v4
+- `src/types.ts` — Household, Settlement interfaces, Cultivator origin fields
+- `src/constants.ts` — Growth rate, awakening rate, settlement thresholds
+- `src/engine/combat.ts` — Combat collateral damage to both cells
+- `server/identity.ts` — Origin settlement name in JieDan naming
+- `server/runner.ts` — Extinction check includes household count
+- `server/ipc.ts` — WorldContext settlement summary
+- `src/components/Controls.tsx` — Label "初始家户数", default 200
+- `src/components/StatsPanel.tsx` — Settlement stats display
+- `cli.ts` — Prompt "Households", default 200
+
+## Review Notes
+
+- Codex review found 2 critical + 8 warning issues, all critical + 5 warnings fixed
+- Remaining: settlement persistence (DB table), legacy v1-v3 migration semantics
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4164eb5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

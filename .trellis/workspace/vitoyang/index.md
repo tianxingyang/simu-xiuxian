@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 29
+- **Total Sessions**: 30
 - **Last Active**: 2026-03-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1429 | Active |
+| `journal-1.md` | ~1502 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits |
 |---|------|-------|---------|
+| 30 | 2026-03-20 | feat: mortal settlement simulation system | `4164eb5` |
 | 29 | 2026-03-20 | fix: protect cultivators from premature forgotten marking | `94966fc` |
 | 28 | 2026-03-19 | refactor(bot): centralize command routing in gateway | `d7c8b82` |
 | 27 | 2026-03-19 | fix: multi-process DB schema race condition | `05d5686` |
