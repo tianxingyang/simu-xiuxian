@@ -13,7 +13,7 @@ import {
 } from '../constants';
 import type { SimulationEngine } from './simulation';
 import { profiler } from './profiler';
-import { TERRAIN_DANGER_ENCOUNTER_FACTOR } from './area-tag';
+import { TERRAIN_DANGER_ENCOUNTER_FACTOR } from '../constants';
 
 type CellSet = Set<number>;
 

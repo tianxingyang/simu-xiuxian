@@ -1,4 +1,4 @@
-import { LEVEL_NAMES } from '../src/constants.js';
+import { LEVEL_NAMES } from '../src/constants/index.js';
 import { toYaml } from './yaml.js';
 import type { BehaviorState, RichEvent, NewsRank } from '../src/types.js';
 import type { WorldContext } from './ipc.js';

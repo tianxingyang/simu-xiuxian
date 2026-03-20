@@ -6,7 +6,7 @@ import { config, llmConfig } from './config.js';
 import { startBot, stopBot, sendGroupMessage, type BotGroupMessage } from './bot.js';
 import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext } from './ipc.js';
 import type { StateSnapshot } from './runner.js';
-import { LEVEL_NAMES } from '../src/constants.js';
+import { LEVEL_NAMES } from '../src/constants/index.js';
 import { initLogger, getLogger } from './logger.js';
 
 initLogger();

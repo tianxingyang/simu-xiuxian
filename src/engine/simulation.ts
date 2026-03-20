@@ -1,11 +1,11 @@
 import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
-import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COMBAT_COLLATERAL_POP_LOSS, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
+import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COMBAT_COLLATERAL_POP_LOSS, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
 import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
 import { type PRNG, createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
 import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial';
-import { AreaTagSystem, SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR } from './area-tag';
+import { AreaTagSystem } from './area-tag';
 import { HouseholdSystem } from './household';
 import { SettlementSystem } from './settlement';
 

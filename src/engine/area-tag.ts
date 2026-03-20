@@ -10,20 +10,6 @@ const NOISE_GRID_SIZE = 8;
 const NOISE_GRID_MASK = NOISE_GRID_SIZE - 1;
 const SEED_OFFSET_TERRAIN = 0x5f3759df;
 
-// Breakthrough chance multiplier by spiritual energy level (1-5)
-export const SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR: readonly number[] = [
-  0, 0.7, 0.85, 1.0, 1.2, 1.5,
-] as const;
-
-// Encounter rate multiplier by terrain danger level (1-5)
-export const TERRAIN_DANGER_ENCOUNTER_FACTOR: readonly number[] = [
-  0, 0.6, 0.8, 1.0, 1.3, 1.6,
-] as const;
-
-// Evasion probability adjustment by terrain danger level (1-5)
-export const TERRAIN_DANGER_EVASION_ADJUST: readonly number[] = [
-  0, 0.05, 0.025, 0, -0.05, -0.1,
-] as const;
 
 function clampTag(v: number): number {
   return v < AREA_TAG_MIN ? AREA_TAG_MIN : v > AREA_TAG_MAX ? AREA_TAG_MAX : v;

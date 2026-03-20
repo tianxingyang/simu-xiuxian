@@ -1,6 +1,6 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { SimulationEngine } from '../src/engine/simulation.ts';
-import { LEVEL_COUNT } from '../src/constants.ts';
+import { LEVEL_COUNT } from '../src/constants';
 
 type DistributionWorkerInput = {
   seed: number;

@@ -1,4 +1,4 @@
-import { LEVEL_NAMES } from '../src/constants.js';
+import { LEVEL_NAMES } from '../src/constants/index.js';
 import type { DefeatOutcome, RichEvent, SimEvent } from '../src/types.js';
 
 export { scoreNewsRank } from '../src/engine/combat.js';

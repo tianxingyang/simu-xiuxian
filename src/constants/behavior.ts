@@ -1,0 +1,5 @@
+export const ESCAPING_MOVE_PROB = 1.0;
+export const RECUPERATING_MOVE_PROB = 0.05;
+export const SEEKING_BREAKTHROUGH_MOVE_PROB = 0.6;
+export const SETTLING_FRACTION = 0.05;
+export const BEHAVIOR_EVAL_BASE_INTERVAL = 5;

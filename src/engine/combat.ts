@@ -40,7 +40,7 @@ import { prngShuffle, truncatedGaussian } from './prng';
 import { tryBreakthrough, type SimulationEngine } from './simulation';
 import { profiler } from './profiler';
 import { buildEncounterProbCache, findSpatialOpponent, localEncounterProbability } from './spatial';
-import { TERRAIN_DANGER_EVASION_ADJUST } from './area-tag';
+import { TERRAIN_DANGER_EVASION_ADJUST } from '../constants';
 
 type EventBuffer = RichEvent[] | null;
 

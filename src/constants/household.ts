@@ -1,0 +1,9 @@
+export const YEARLY_NEW = 1000;
+export const HOUSEHOLD_BASE_GROWTH_RATE = 0.03;
+export const HOUSEHOLD_SPLIT_THRESHOLD = 50;
+export const HOUSEHOLD_SPLIT_COUNT = 5;
+export const HOUSEHOLD_SPLIT_POP = 10;
+export const BASE_AWAKENING_RATE = 0.0005;
+export const INITIAL_HOUSEHOLD_COUNT = 200;
+export const INITIAL_HOUSEHOLD_POP = 5;
+export const COMBAT_COLLATERAL_POP_LOSS = 3;
