@@ -1379,3 +1379,51 @@ CLI Log panel never showed backend logs due to:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: fix: protect cultivators from premature forgotten marking
+
+**Date**: 2026-03-20
+**Task**: fix: protect cultivators from premature forgotten marking
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 问题
+日报和传记生成的内容互相矛盾：
+- 日报称"化神大能杨涛海"被"章峰君"所斩
+- 传记却描述杨涛海在结丹期被"陈亦松"杀死
+
+## 根因
+`processMemoryDecayBatch` 标记遗忘时一刀切，未考虑事件关联关系。
+当修士 A 被标记遗忘并 purge 后，其 ID 被复用给新修士，
+`INSERT OR IGNORE` + `UPDATE` 组合导致老记录被新修士数据覆盖，
+传记 LLM 拿到脏数据后生成了矛盾内容。
+
+## 修复
+在 `server/db.ts` 的 `processMemoryDecayBatch` 标记遗忘查询中增加 `NOT EXISTS` 子查询：
+如果修士与任何未遗忘修士共享事件（通过 `event_cultivators` 关联），则不标记为遗忘。
+
+**修改文件**: `server/db.ts`
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `94966fc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
