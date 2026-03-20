@@ -212,6 +212,14 @@ export function processMemoryDecayBatch(
         AND death_year IS NOT NULL
         AND death_cause != 'ascension'
         AND (? - death_year) > ${caseExpr}
+        AND NOT EXISTS (
+          SELECT 1 FROM event_cultivators ec
+          JOIN event_cultivators ec2 ON ec2.event_id = ec.event_id
+          JOIN named_cultivators nc2 ON ec2.cultivator_id = nc2.id
+          WHERE ec.cultivator_id = named_cultivators.id
+            AND nc2.id != named_cultivators.id
+            AND nc2.forgotten = 0
+        )
     `).run(currentYear);
 
     if (markResult.changes === 0) {
