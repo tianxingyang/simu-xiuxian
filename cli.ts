@@ -314,6 +314,7 @@ const menuGrid: { group: string; items: MenuItem[] }[] = [
     { key: '4', label: 'Start FE', color: 'cyan' },
     { key: '5', label: 'Stop BE', color: 'cyan' },
     { key: '6', label: 'Stop FE', color: 'cyan' },
+    { key: '0', label: 'Restart BE', color: 'cyan' },
   ]},
   { group: 'Simulate', items: [
     { key: 'r', label: 'Run', color: 'yellow' },
@@ -497,6 +498,20 @@ function confirm(label: string): Promise<boolean> {
 }
 
 // ─── actions ─────────────────────────────────────────────────────────────────
+async function actionRestartBackend(): Promise<void> {
+  disconnectSim();
+  logMsg(stopService('backend'));
+  const port = getPort();
+  for (let i = 0; i < 30; i++) {
+    if (!portInUse(port)) break;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (portInUse(port)) { logMsg(`{red-fg}Port ${port} still in use after timeout{/}`); return; }
+  logMsg(startService('backend'));
+  connectSim();
+  startLogTail();
+}
+
 async function actionStartAll(): Promise<void> {
   logMsg(startService('backend'));
   logMsg(startService('frontend'));
@@ -644,6 +659,7 @@ function execByKey(key: string): void {
     case '4': logMsg(startService('frontend')); startLogTail(); refreshUI(); break;
     case '5': disconnectSim(); logMsg(stopService('backend')); refreshUI(); break;
     case '6': logMsg(stopService('frontend')); refreshUI(); break;
+    case '0': withLock(actionRestartBackend); break;
     case 'r': withLock(actionRunSim); break;
     case 'p': logMsg(wsSend({ type: 'pause' })); refreshUI(); break;
     case 'v': {

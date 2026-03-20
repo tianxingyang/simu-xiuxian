@@ -6,6 +6,7 @@ import { config, llmConfig } from './config.js';
 import { startBot, stopBot, sendGroupMessage, type BotGroupMessage } from './bot.js';
 import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext } from './ipc.js';
 import type { StateSnapshot } from './runner.js';
+import { LEVEL_NAMES } from '../src/constants.js';
 import { initLogger, getLogger } from './logger.js';
 
 initLogger();
@@ -403,6 +404,11 @@ function parseCommand(raw: string, selfId?: number): { cmd: string; arg: string 
   text = text.replace(/^\s*\//, '').trim();
   if (!text) return null;
   if (text === '日报') return { cmd: 'report', arg: '' };
+  if (text === '状态') return { cmd: 'status', arg: '' };
+  if (text === 'help' || text === '帮助') return { cmd: 'help', arg: '' };
+  if (text === 'about') return { cmd: 'about', arg: '' };
+  const aboutMatch = text.match(/^about\s+(.+)$/);
+  if (aboutMatch) return { cmd: 'about', arg: aboutMatch[1].trim() };
   const bioMatch = text.match(/^传记\s+(.+)$/);
   if (bioMatch) return { cmd: 'biography', arg: bioMatch[1].trim() };
   return null;
@@ -434,12 +440,90 @@ async function handleBotBiography(groupId: number, name: string): Promise<void> 
   sendGroupMessage(groupId, text);
 }
 
+function formatStatus(): string {
+  const s = cachedState;
+  const lines: string[] = [];
+  lines.push(`【修仙世界状态】`);
+  lines.push(`纪元：第 ${s.year} 年`);
+  lines.push(`状态：${s.running ? '运行中' : '已暂停'} | 速度：${s.speed}x`);
+  lines.push(`Sim：${simReady ? '就绪' : '未就绪'} | LLM：${llmReady ? '就绪' : '未就绪'}`);
+
+  if (s.summary) {
+    const sm = s.summary;
+    lines.push(`人口：${sm.totalPopulation}`);
+    const dist = sm.levelCounts
+      .map((n, i) => n > 0 ? `${LEVEL_NAMES[i]}:${n}` : '')
+      .filter(Boolean)
+      .join(' | ');
+    if (dist) lines.push(`境界分布：${dist}`);
+    lines.push(`最高境界：${LEVEL_NAMES[sm.highestLevel] ?? '炼气'}`);
+  }
+  return lines.join('\n');
+}
+
+const MODULE_INFO: Record<string, string> = {
+  模拟引擎: '核心世界模拟引擎，驱动修仙世界每一个 tick 的演化：修士诞生、修炼、突破、战斗、陨落，均由引擎调度执行。',
+  战斗: '修士间的战斗计算系统，基于境界、气运、装备等因素综合决斗，胜者可获取战利品提升实力。',
+  境界: '八大修炼境界：炼气→筑基→结丹→元婴→化神→炼虚→合体→大乘。每个境界有独立的突破概率、寿命上限和战力系数。',
+  地图: '32×32 的修仙大陆，划分为 10 个地理区域：朔北冻原、苍茫草海、西嶂高原、天断山脉、河洛中野、东陵林海、赤岚丘陵、南淮泽国、裂潮海岸、潮生群岛。',
+  身份: '命名修士管理系统，基于 Ebbinghaus 记忆衰减模型追踪修士的知名度，从活跃记忆逐渐淡出至被遗忘。',
+  日报: 'LLM 驱动的每日修仙界新闻，自动从世界事件中提取要闻并生成叙事风格的日报。',
+  传记: 'LLM 驱动的修士传记系统，包含鲜明记忆、渐淡记忆、传说、遗忘四个记忆层级，为每位修士编织独特的生平故事。',
+  数据库: 'SQLite 持久化存储，记录世界事件、修士档案和命名身份等核心数据。',
+  机器人: '基于 OneBot v11 协议的 QQ 群机器人，支持通过群聊命令查询世界状态、生成日报和传记。',
+};
+
+const MODULE_ALIASES: Record<string, string> = {
+  engine: '模拟引擎', 引擎: '模拟引擎', 模拟: '模拟引擎',
+  combat: '战斗', 战斗系统: '战斗',
+  level: '境界', 境界系统: '境界', 修炼: '境界',
+  map: '地图', spatial: '地图', 区域: '地图', 空间: '地图',
+  identity: '身份', 身份系统: '身份', 记忆: '身份',
+  report: '日报', reporter: '日报', 日报系统: '日报',
+  biography: '传记', bio: '传记', 传记系统: '传记',
+  db: '数据库', database: '数据库', sqlite: '数据库',
+  bot: '机器人', qq: '机器人', onebot: '机器人',
+};
+
+function formatAbout(arg: string): string {
+  if (!arg) {
+    const modules = Object.keys(MODULE_INFO).join('、');
+    return `修仙世界模拟器：AI 驱动的修仙界沙盒，自动演化修士的诞生、修炼、战斗与陨落，并生成叙事日报与传记。\n\n可查询模块：${modules}`;
+  }
+  const key = MODULE_INFO[arg] ? arg : MODULE_ALIASES[arg.toLowerCase()];
+  if (key && MODULE_INFO[key]) return `【${key}】\n${MODULE_INFO[key]}`;
+  const modules = Object.keys(MODULE_INFO).join('、');
+  return `未知模块「${arg}」。可查询的模块：${modules}`;
+}
+
 function handleBotMessage(msg: BotGroupMessage): void {
   const parsed = parseCommand(msg.content, msg.selfId);
   if (!parsed) return;
 
   const { groupId } = msg;
   log.info(`bot command: ${parsed.cmd}${parsed.arg ? ` arg="${parsed.arg}"` : ''} from group ${groupId}`);
+
+  if (parsed.cmd === 'help') {
+    sendGroupMessage(groupId, [
+      '【可用命令】',
+      '/状态 — 查看当前模拟世界状态',
+      '/日报 — 生成今日修仙界日报',
+      '/传记 <名字> — 生成指定修仙者的传记',
+      '/about [模块] — 系统简介或模块详情',
+      '/help — 显示本帮助信息',
+    ].join('\n'));
+    return;
+  }
+
+  if (parsed.cmd === 'about') {
+    sendGroupMessage(groupId, formatAbout(parsed.arg));
+    return;
+  }
+
+  if (parsed.cmd === 'status') {
+    sendGroupMessage(groupId, formatStatus());
+    return;
+  }
 
   if (_busyGroups.has(groupId)) {
     sendGroupMessage(groupId, '正在生成中，请稍后再试。');

@@ -181,6 +181,7 @@ if (size > CONFIG.MAX_SIZE) {
 | -    | Debounce + save logic copied 5 times   | If logic will repeat, create abstraction **before** first use      |
 | -    | Created `const X = IMPORTED.X` aliases | Never create local aliases for imported constants--use directly    |
 | -    | Type defined in both main and renderer | Cross-IPC types must be in shared location                         |
+| -    | Restart BE port conflict               | Process death ≠ resource release; stop-then-start must await port free |
 
 ---
 
