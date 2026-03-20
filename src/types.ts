@@ -23,6 +23,28 @@ export interface Cultivator {
   y: number;
   behaviorState: BehaviorState;
   settlingUntil: number;
+  originSettlementId: number;
+  originHouseholdId: number;
+}
+
+// --- Household & Settlement ---
+
+export interface Household {
+  id: number;
+  settlementId: number; // -1 = unaffiliated (scattered)
+  population: number;
+  growthAccum: number;
+  cellIdx: number; // y * MAP_SIZE + x
+}
+
+export type SettlementType = 'hamlet' | 'village' | 'town' | 'city';
+
+export interface Settlement {
+  id: number;
+  name: string;
+  cells: number[]; // cell indices
+  originHouseholdId: number;
+  foundedYear: number;
 }
 
 export interface LevelStat {
@@ -55,6 +77,13 @@ export interface YearSummary {
   breakthroughSuccesses: number;
   breakthroughFailures: number;
   levelStats: LevelStat[];
+  mortalPopulation: number;
+  householdCount: number;
+  settlementCount: number;
+  hamletCount: number;
+  villageCount: number;
+  townCount: number;
+  cityCount: number;
 }
 
 export interface SimEvent {
@@ -171,6 +200,7 @@ export interface EngineHooks {
   onExpiry(c: Cultivator, year: number): void;
   onTribulation(c: Cultivator, outcome: 'ascension' | 'death', year: number): void;
   getName(id: number): string | undefined;
+  getSettlementName(settlementId: number): string | undefined;
 }
 
 export type ToServer =

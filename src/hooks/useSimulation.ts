@@ -23,7 +23,11 @@ interface SimulationControls {
 }
 
 const WS_URL = import.meta.env.VITE_WS_URL ??
-  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
+  `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${
+    import.meta.env.VITE_BACKEND_PORT
+      ? `${location.hostname}:${import.meta.env.VITE_BACKEND_PORT}`
+      : location.host
+  }/ws`;
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 

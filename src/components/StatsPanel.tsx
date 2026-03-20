@@ -32,6 +32,13 @@ export default memo(function StatsPanel({ summary }: Props) {
           <Stat label="本年晋升" value={fmt(summary.promotions.reduce((a, b) => a + b, 0))} />
           <Stat label="最高境界" value={LEVEL_NAMES[summary.highestLevel]} highlight />
           <Stat label="最高修为" value={fmt(summary.highestCultivation)} highlight />
+          <Stat label="凡人人口" value={fmt(summary.mortalPopulation)} />
+          <Stat label="家户数" value={fmt(summary.householdCount)} />
+          <Stat label="聚落数" value={fmt(summary.settlementCount)} />
+          <Stat label="├ 村落" value={fmt(summary.hamletCount)} sub />
+          <Stat label="├ 村庄" value={fmt(summary.villageCount)} sub />
+          <Stat label="├ 镇" value={fmt(summary.townCount)} sub />
+          <Stat label="└ 城" value={fmt(summary.cityCount)} sub />
         </div>
         <table className="level-stats-table">
           <thead>

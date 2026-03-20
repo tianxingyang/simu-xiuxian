@@ -12,12 +12,23 @@ export interface RegionProfile {
   avgTerrainDanger: number;
 }
 
+export interface SettlementSummary {
+  totalSettlements: number;
+  mortalPopulation: number;
+  householdCount: number;
+  hamlet: number;
+  village: number;
+  town: number;
+  city: number;
+}
+
 export interface WorldContext {
   currentYear: number;
   population: number;
   levelCounts: number[];
   regionProfiles: RegionProfile[];
   behaviorDistribution: Record<BehaviorState, number>;
+  settlementSummary?: SettlementSummary;
 }
 
 // ---------------------------------------------------------------------------

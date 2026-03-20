@@ -529,7 +529,7 @@ async function actionRunSim(): Promise<void> {
   if (!sim.connected) { logMsg('{red-fg}Not connected to backend{/}'); return; }
   if (sim.extinct) { logMsg('{red-fg}Population extinct — use Reset first{/}'); return; }
   const seed = Number(await prompt('Seed', '42'));
-  const pop = Number(await prompt('Population', '1000'));
+  const pop = Number(await prompt('Households', '200'));
   const speed = Number(await prompt('Speed (1/2/3)', '1'));
   logMsg(wsSend({ type: 'start', seed, initialPop: pop, speed }));
 }
@@ -671,7 +671,7 @@ function execByKey(key: string): void {
     case 't': logMsg(wsSend({ type: 'step' })); refreshUI(); break;
     case 'x': withLock(async () => {
       const seed = Number(await prompt('Seed', '42'));
-      const pop = Number(await prompt('Population', '1000'));
+      const pop = Number(await prompt('Households', '200'));
       logMsg(wsSend({ type: 'reset', seed, initialPop: pop }));
     }); break;
     case 'e': withLock(actionEnvConfig); break;

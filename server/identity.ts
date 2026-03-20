@@ -270,6 +270,7 @@ export class IdentityManager {
   private dirty = new Set<number>();
   private pendingInserts: NamedCultivator[] = [];
   private namePrng: () => number;
+  settlementNameResolver?: (settlementId: number) => string | undefined;
 
   constructor(seed: number) {
     this.namePrng = createPRNG(seed ^ NAME_SEED_XOR);
@@ -331,7 +332,19 @@ export class IdentityManager {
       return;
     }
     if (toLevel < 2) return;
-    const name = this.generateName();
+    let name = this.generateName();
+    // For JieDan (level 2) cultivators, optionally prepend origin settlement name
+    if (toLevel === 2 && c.originSettlementId >= 0 && this.settlementNameResolver) {
+      const sName = this.settlementNameResolver(c.originSettlementId);
+      if (sName) {
+        const fullName = sName + name;
+        if (!this.usedNames.has(fullName)) {
+          this.usedNames.delete(name);
+          this.usedNames.add(fullName);
+          name = fullName;
+        }
+      }
+    }
     const newNc: NamedCultivator = {
       id: c.id,
       name,

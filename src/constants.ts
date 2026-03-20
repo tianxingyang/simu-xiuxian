@@ -215,6 +215,40 @@ export function effectiveCourage(c: Cultivator): number {
   return round2(base * factor);
 }
 
+// ---------------------------------------------------------------------------
+// Household & Settlement constants
+// ---------------------------------------------------------------------------
+
+export const HOUSEHOLD_BASE_GROWTH_RATE = 0.03;
+export const HOUSEHOLD_SPLIT_THRESHOLD = 50;
+export const HOUSEHOLD_SPLIT_COUNT = 5;
+export const HOUSEHOLD_SPLIT_POP = 10;
+export const BASE_AWAKENING_RATE = 0.0005;
+export const INITIAL_HOUSEHOLD_COUNT = 200;
+export const INITIAL_HOUSEHOLD_POP = 5;
+export const COMBAT_COLLATERAL_POP_LOSS = 3;
+
+// Terrain safety factor for household growth: terrainDanger 1-5 -> factor
+export const TERRAIN_SAFETY_FACTOR: readonly number[] = [
+  0, 1.2, 1.1, 1.0, 0.8, 0.5,
+] as const;
+
+// Spiritual energy factor for awakening: spiritualEnergy 1-5 -> factor
+export const SPIRITUAL_ENERGY_AWAKENING_FACTOR: readonly number[] = [
+  0, 0.5, 0.8, 1.0, 1.5, 2.5,
+] as const;
+
+// Settlement type thresholds (totalPopulation)
+export const SETTLEMENT_HAMLET_MAX = 199;
+export const SETTLEMENT_VILLAGE_MIN = 200;
+export const SETTLEMENT_VILLAGE_MAX = 999;
+export const SETTLEMENT_TOWN_MIN = 1000;
+export const SETTLEMENT_TOWN_MAX = 4999;
+export const SETTLEMENT_CITY_MIN = 5000;
+
+// Settlement expansion: population threshold to claim adjacent cell
+export const SETTLEMENT_EXPAND_THRESHOLD = 1000;
+
 export const MAP_SIZE = 32;
 export const MAP_MASK = MAP_SIZE - 1;
 export const ENCOUNTER_RADIUS: readonly number[] = [2, 3, 4, 5, 6, 7, 8, 16] as const;

@@ -104,7 +104,7 @@ export class Runner {
       this.identity.rebuildFromDB();
       this.bindHooks();
 
-      this.extinct = this.engine.aliveCount === 0;
+      this.extinct = this.engine.aliveCount === 0 && this.engine.households.count === 0;
       this.running = false;
       this.awaitingAck = false;
       this.lastSummary = this.engine.getSummary();
@@ -202,12 +202,15 @@ export class Runner {
   private bindHooks(): void {
     if (!this.engine || !this.identity) return;
     const id = this.identity;
+    const engine = this.engine;
+    id.settlementNameResolver = (sid) => engine.settlements.getSettlement(sid)?.name;
     const hooks: EngineHooks = {
       onPromotion(c, lv, y) { id.onPromotion(c, lv, y); },
       onCombatResult(w, l, d, y) { id.onCombatResult(w, l, d, y); },
       onExpiry(c, y) { id.onExpiry(c, y); },
       onTribulation(c, outcome, y) { id.onTribulation(c, outcome, y); },
       getName(cid) { return id.getActive(cid)?.name; },
+      getSettlementName(sid) { return engine.settlements.getSettlement(sid)?.name; },
     };
     this.engine.hooks = hooks;
   }

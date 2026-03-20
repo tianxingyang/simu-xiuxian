@@ -4,7 +4,8 @@ import { SimulationEngine, tryBreakthrough } from '../src/engine/simulation';
 
 describe('Lifespan cap', () => {
   it('caps Lv7 maxAge at 100000 years', () => {
-    const engine = new SimulationEngine(1, 1);
+    const engine = new SimulationEngine(1, 0);
+    engine.spawnCultivators(1);
     engine.prng = () => 0;
 
     const cultivator = engine.cultivators[0];

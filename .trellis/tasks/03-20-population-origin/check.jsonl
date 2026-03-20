@@ -1,0 +1,10 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check-backend.md", "reason": "Backend check spec"}
+{"file": ".claude/commands/trellis/check-frontend.md", "reason": "Frontend check spec"}
+{"file": ".trellis/spec/backend/database.md", "reason": "Verify DB patterns"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "Verify TypeScript conventions"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer verification"}
+{"file": ".trellis/spec/guides/semantic-change-checklist.md", "reason": "Semantic change verification"}
+{"file": "src/engine/area-tag.ts", "reason": "Reference pattern for subsystem quality"}
+{"file": "src/engine/simulation.ts", "reason": "Verify engine integration"}
+{"file": "src/types.ts", "reason": "Verify type consistency"}

@@ -29,7 +29,7 @@ export default function Controls({
 }: Props) {
   const [speedTier, setSpeedTier] = useState(1);
   const [inputSeed, setInputSeed] = useState<number | ''>(seed);
-  const [inputPop, setInputPop] = useState<number | ''>(1000);
+  const [inputPop, setInputPop] = useState<number | ''>(200);
   const canEdit = !isRunning && isPaused;
 
   const resolveSeed = () => (inputSeed === '' ? 0 : inputSeed);
@@ -71,7 +71,7 @@ export default function Controls({
           />
         </label>
         <label>
-          初始人口
+          初始家户数
           <input
             type="number"
             min={100}

@@ -1,0 +1,45 @@
+# Code Review: Settlement System
+
+## Critical Issues
+
+1. **Settlement founding can overwrite existing settlements**
+   `splitHousehold()` chooses a shuffled neighbor without checking occupancy, and `createSettlement()` blindly overwrites `cellToSettlement`. A new settlement can steal a cell from an existing one.
+   Files: household.ts:208,224, settlement.ts:28,74
+
+2. **Awakening tuning skips PRD's intended "蛮荒时代"**
+   With INITIAL_HOUSEHOLD_COUNT=800, INITIAL_HOUSEHOLD_POP=8, BASE_AWAKENING_RATE=0.005, and factor up to 2.5, the system produces many awakenings in year 1 instead of a long mortal-only ramp. PRD says "前几十年无修士".
+   Files: constants.ts:226-238, household.ts:161
+
+## Warnings
+
+1. **`initialPop` is now dead** - Server/UI still send it but engine ignores it. PRD wanted initial household count to be configurable.
+
+2. **One-settlement-per-cell** - Implementation uses single Map<number,number> for cell ownership, but PRD says "一格可有多个聚落".
+
+3. **Legacy v1-v3 snapshot migration** - Households regenerated from current prngState, not original seed. Mortal layer depends on when snapshot was saved, not which world it represents.
+
+4. **Settlement population scan is O(settlements * households)** - `settlementPopulation()` does full household scan, called multiple times per tick.
+
+5. **Combat collateral only damages winner's cell** - Fights between cultivators in different cells can miss the loser's settlement.
+
+6. **No ocean check** - Household generation doesn't check region codes, households can spawn in ocean tiles.
+
+7. **No settlement persistence** - No DB table, no WebSocket payload for actual Settlement objects (only summary counts).
+
+8. **No unit tests** for household growth/split, settlement lifecycle, v4 snapshots, or origin tracing.
+
+## Suggestions
+
+- Decide the real cell model: implement multi-settlement-per-cell or narrow PRD to one-per-cell
+- Thread world-generation params into HouseholdSystem.generate() instead of buried constants
+- Cache settlement population incrementally instead of repeated full scans
+- Make v1-v3 migration explicit using original saved seed
+
+## Positive Observations
+
+- v4 binary layout is internally consistent: origin fields serialized/deserialized in matching order and size
+- New randomness is deterministic - no Math.random() found in settlement paths
+- Aggregate summary fields wired correctly through engine -> server -> frontend
+
+## Verdict
+FAIL

@@ -1,0 +1,14 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": ".trellis/spec/backend/database.md", "reason": "DB schema migration pattern"}
+{"file": ".trellis/spec/backend/type-safety.md", "reason": "Type safety rules"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "TypeScript conventions (no Zod, interface for entities)"}
+{"file": ".trellis/spec/frontend/hooks.md", "reason": "Hook pattern for useSimulation"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "WebSocket protocol and state architecture"}
+{"file": "src/engine/area-tag.ts", "reason": "Model for new subsystem with serialization"}
+{"file": "src/engine/simulation.ts", "reason": "Core engine: tickYear, spawnCultivators, serialize/deserialize"}
+{"file": "src/types.ts", "reason": "Core types: Cultivator, YearSummary"}
+{"file": "src/constants.ts", "reason": "Constants to extend"}
+{"file": "server/identity.ts", "reason": "Name generation pattern for settlements"}
+{"file": "server/db.ts", "reason": "DB schema for new settlement table"}

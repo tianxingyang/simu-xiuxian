@@ -28,6 +28,7 @@ import {
   LUCK_MEAN,
   LUCK_MIN,
   LUCK_STDDEV,
+  MAP_SIZE,
   MERIDIAN_COMBAT_PENALTY,
   MERIDIAN_DAMAGE_DURATION,
   effectiveCourage,
@@ -289,6 +290,14 @@ function resolveCombat(
   }
 
   engine.hooks?.onCombatResult(winner, loser, loserDied, year);
+
+  // Combat collateral damage to both combatants' cells
+  const winnerCellIdx = winner.y * MAP_SIZE + winner.x;
+  const loserCellIdx = loser.y * MAP_SIZE + loser.x;
+  engine.applyCombatCollateral(winnerCellIdx);
+  if (loserCellIdx !== winnerCellIdx) {
+    engine.applyCombatCollateral(loserCellIdx);
+  }
 
   if (events) {
     if (combatLevel >= eventMinLevel) {

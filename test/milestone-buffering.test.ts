@@ -4,7 +4,8 @@ import { SimulationEngine, tryBreakthrough } from '../src/engine/simulation';
 
 describe('Milestone buffering', () => {
   it('keeps promotion milestone state even when events are skipped', () => {
-    const engine = new SimulationEngine(42, 2);
+    const engine = new SimulationEngine(42, 0);
+    engine.spawnCultivators(2);
     engine.prng = () => 0;
 
     for (const cultivator of engine.cultivators) {

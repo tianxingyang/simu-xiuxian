@@ -1,11 +1,13 @@
 import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
-import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
+import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COMBAT_COLLATERAL_POP_LOSS, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
 import { getBalanceProfile } from '../balance';
 import { processEncounters, scoreNewsRank } from './combat';
 import { type PRNG, createPRNG, truncatedGaussian } from './prng';
 import { profiler } from './profiler';
 import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial';
 import { AreaTagSystem, SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR } from './area-tag';
+import { HouseholdSystem } from './household';
+import { SettlementSystem } from './settlement';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -87,6 +89,8 @@ export class SimulationEngine {
   milestones = new MilestoneTracker();
   spatialIndex = new SpatialIndex();
   areaTags = new AreaTagSystem();
+  households = new HouseholdSystem();
+  settlements = new SettlementSystem();
 
   combatDeaths = 0;
   combatDemotions = 0;
@@ -126,48 +130,63 @@ export class SimulationEngine {
     this._ageBuffers = initBuffers();
     this._courageBuffers = initBuffers();
     this.areaTags.generate(seed);
-    this.spawnCultivators(initialPopCount);
+    this.households.generate(seed, this.prng, this.areaTags, initialPopCount);
+    // No initial cultivators -- they awaken from households over time
     this._defeatedBuf = new Uint8Array(this.nextId);
     this._levelArrayIndex = new Int32Array(this.nextId);
   }
 
+  spawnCultivator(x: number, y: number, originSettlementId: number, originHouseholdId: number): void {
+    const courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
+    let id: number;
+    if (this.freeSlots.length > 0) {
+      id = this.freeSlots[this.freeSlots.length - 1];
+      this.freeSlots.length--;
+      const c = this.cultivators[id];
+      c.id = id;
+      c.age = 10;
+      c.cultivation = 0;
+      c.level = 0;
+      (c as { courage: number }).courage = courage;
+      c.maxAge = MORTAL_MAX_AGE;
+      c.injuredUntil = 0;
+      c.lightInjuryUntil = 0;
+      c.meridianDamagedUntil = 0;
+      c.breakthroughCooldownUntil = 0;
+      c.alive = true;
+      c.cachedCourage = effectiveCourage(c);
+      c.reachedMaxLevelAt = 0;
+      c.x = x;
+      c.y = y;
+      c.behaviorState = 'wandering';
+      c.settlingUntil = 0;
+      c.originSettlementId = originSettlementId;
+      c.originHouseholdId = originHouseholdId;
+    } else {
+      id = this.nextId++;
+      const nc = this.cultivators[id] = {
+        id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE,
+        injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0,
+        breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0,
+        reachedMaxLevelAt: 0, x, y,
+        behaviorState: 'wandering' as BehaviorState, settlingUntil: 0,
+        originSettlementId, originHouseholdId,
+      };
+      nc.cachedCourage = effectiveCourage(nc);
+    }
+    this.aliveCount++;
+    this.levelGroups[0].add(id);
+    this.spatialIndex.add(id, 0, x, y);
+    this.spawned++;
+  }
+
+  /** @deprecated Legacy bulk spawn (for backward compat in deserialization) */
   spawnCultivators(count: number): void {
     for (let i = 0; i < count; i++) {
-      const courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
       const x = Math.floor(this.prng() * MAP_SIZE);
       const y = Math.floor(this.prng() * MAP_SIZE);
-      let id: number;
-      if (this.freeSlots.length > 0) {
-        id = this.freeSlots[this.freeSlots.length - 1];
-        this.freeSlots.length--;
-        const c = this.cultivators[id];
-        c.id = id;
-        c.age = 10;
-        c.cultivation = 0;
-        c.level = 0;
-        (c as { courage: number }).courage = courage;
-        c.maxAge = MORTAL_MAX_AGE;
-        c.injuredUntil = 0;
-        c.lightInjuryUntil = 0;
-        c.meridianDamagedUntil = 0;
-        c.breakthroughCooldownUntil = 0;
-        c.alive = true;
-        c.cachedCourage = effectiveCourage(c);
-        c.reachedMaxLevelAt = 0;
-        c.x = x;
-        c.y = y;
-        c.behaviorState = 'wandering';
-        c.settlingUntil = 0;
-      } else {
-        id = this.nextId++;
-        const nc = this.cultivators[id] = { id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE, injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0, breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0, reachedMaxLevelAt: 0, x, y, behaviorState: 'wandering' as BehaviorState, settlingUntil: 0 };
-        nc.cachedCourage = effectiveCourage(nc);
-      }
-      this.aliveCount++;
-      this.levelGroups[0].add(id);
-      this.spatialIndex.add(id, 0, x, y);
+      this.spawnCultivator(x, y, -1, -1);
     }
-    this.spawned += count;
   }
 
   tickCultivators(events: EventBuffer = null): void {
@@ -293,6 +312,8 @@ export class SimulationEngine {
     }
     profiler.end('getSummary.median');
 
+    const typeCounts = this.settlements.getTypeCounts();
+
     profiler.end('getSummary');
     return {
       year: this._summaryYear,
@@ -317,14 +338,31 @@ export class SimulationEngine {
       breakthroughSuccesses: this.breakthroughSuccesses,
       breakthroughFailures: this.breakthroughFailures,
       levelStats,
+      mortalPopulation: this.households.totalPopulation(),
+      householdCount: this.households.count,
+      settlementCount: this.settlements.count,
+      hamletCount: typeCounts.hamlet,
+      villageCount: typeCounts.village,
+      townCount: typeCounts.town,
+      cityCount: typeCounts.city,
     };
   }
 
   getWorldContext(): {
+    currentYear: number;
     population: number;
     levelCounts: number[];
     regionProfiles: { name: string; population: number; avgSpiritualEnergy: number; avgTerrainDanger: number }[];
     behaviorDistribution: Record<BehaviorState, number>;
+    settlementSummary: {
+      totalSettlements: number;
+      mortalPopulation: number;
+      householdCount: number;
+      hamlet: number;
+      village: number;
+      town: number;
+      city: number;
+    };
   } {
     const levelCounts = new Array(LEVEL_COUNT).fill(0) as number[];
     const behaviorDist: Record<BehaviorState, number> = {
@@ -357,7 +395,15 @@ export class SimulationEngine {
     }
     regionProfiles.sort((a, b) => b.population - a.population);
 
-    return { currentYear: this.year, population: this.aliveCount, levelCounts, regionProfiles, behaviorDistribution: behaviorDist };
+    const typeCounts = this.settlements.getTypeCounts();
+    const settlementSummary = {
+      totalSettlements: this.settlements.count,
+      mortalPopulation: this.households.totalPopulation(),
+      householdCount: this.households.count,
+      ...typeCounts,
+    };
+
+    return { currentYear: this.year, population: this.aliveCount, levelCounts, regionProfiles, behaviorDistribution: behaviorDist, settlementSummary };
   }
 
   evaluateBehaviorStates(): void {
@@ -438,14 +484,51 @@ export class SimulationEngine {
   tickYear(collectEvents = true): { isExtinct: boolean; events: RichEvent[] } {
     profiler.start('tickYear');
     this.resetYearCounters();
-    this.spawnCultivators(this.yearlySpawn);
+
+    // Household tick: growth, awakening, split
+    profiler.start('tickYear.households');
+    const { awakenings, splits } = this.households.tickAll(this.prng, this.areaTags);
+
+    // Spawn cultivators from awakenings
+    for (const aw of awakenings) {
+      const x = aw.cellIdx % MAP_SIZE;
+      const y = (aw.cellIdx - x) / MAP_SIZE;
+      this.spawnCultivator(x, y, aw.settlementId, aw.householdId);
+    }
+
+    // Process household splits -> create settlements
+    for (const sp of splits) {
+      const result = this.households.splitHousehold(sp.parentId, this.prng, this.settlements);
+      if (result) {
+        // Create a settlement from the split
+        const s = this.settlements.createSettlement(
+          sp.parentId, result.originCell, this.year, this.prng, this.households,
+        );
+        // Affiliate newly created households to the new settlement
+        for (const nh of result.newHouseholds) {
+          this.households.updateSettlementAffiliation(nh.id, s.id);
+        }
+      }
+    }
+
+    // Try settlement expansion
+    for (const s of this.settlements.allSettlements()) {
+      this.settlements.tryExpand(s.id, this.prng, this.households);
+    }
+
+    // Prune dead settlements
+    this.settlements.pruneDestroyed(this.households);
+    this.settlements.recountTypes(this.households);
+
+    profiler.end('tickYear.households');
+
     const events: EventBuffer = collectEvents ? [] : null;
     this.tickCultivators(events);
     this.evaluateBehaviorStates();
     moveCultivators(this);
     processEncounters(this, events);
     this.purgeDead();
-    const isExtinct = this.aliveCount === 0;
+    const isExtinct = this.aliveCount === 0 && this.households.count === 0;
     this._summaryYear = this.year;
     this.year++;
     profiler.end('tickYear');
@@ -487,32 +570,32 @@ export class SimulationEngine {
     this.spatialIndex.reset();
     this.areaTags.reset();
     this.areaTags.generate(seed);
+    this.households.reset();
+    this.settlements.reset();
     this.year = 1;
     this._summaryYear = 1;
     this.prng = createPRNG(seed);
     this.yearlySpawn = YEARLY_NEW;
     this.resetYearCounters();
-    this.spawnCultivators(initialPop);
+    this.households.generate(seed, this.prng, this.areaTags, initialPop);
     this._defeatedBuf = new Uint8Array(this.nextId);
     this._levelArrayIndex = new Int32Array(this.nextId);
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 3;
+    const SNAPSHOT_VERSION = 4;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
-    // Per cultivator: alive(u8) + age(i32) + cultivation(f64) + level(u8) + courage(f64)
-    //   + maxAge(i32) + injuredUntil(i32) + lightInjuryUntil(i32) + meridianDamagedUntil(i32)
-    //   + breakthroughCooldownUntil(i32) + cachedCourage(f64) + reachedMaxLevelAt(i32) + x(i32) + y(i32)
-    //   + behaviorState(u8) + settlingUntil(i32)
-    // = 3*u8(3) + 3*f64(24) + 10*i32(40) = 67 bytes
-    const CULTIVATOR_SIZE = 67;
+    // Per cultivator: v3 fields (67) + originSettlementId(i32) + originHouseholdId(i32) = 75 bytes
+    const CULTIVATOR_SIZE = 75;
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
     // Milestones: highestLevelEverReached(i32) + levelEverPopulated(u8 * LEVEL_COUNT)
     const milestonesSize = 4 + LEVEL_COUNT;
     const areaTagsSize = this.areaTags.serializeSize();
-    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + milestonesSize + areaTagsSize;
+    const householdsSize = this.households.serializeSize();
+    const settlementsSize = this.settlements.serializeSize();
+    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize;
 
     const buf = Buffer.alloc(totalSize);
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -532,7 +615,7 @@ export class SimulationEngine {
       dv.setInt32(off, this.freeSlots[i], true); off += 4;
     }
 
-    // Cultivators
+    // Cultivators (v4: includes origin fields)
     for (let i = 0; i < this.nextId; i++) {
       const c = this.cultivators[i];
       dv.setUint8(off, c.alive ? 1 : 0); off += 1;
@@ -551,6 +634,8 @@ export class SimulationEngine {
       dv.setInt32(off, c.y, true); off += 4;
       dv.setUint8(off, encodeBehaviorState(c.behaviorState)); off += 1;
       dv.setInt32(off, c.settlingUntil, true); off += 4;
+      dv.setInt32(off, c.originSettlementId, true); off += 4;
+      dv.setInt32(off, c.originHouseholdId, true); off += 4;
     }
 
     // Milestones
@@ -562,7 +647,18 @@ export class SimulationEngine {
     // AreaTags
     off = this.areaTags.serializeTo(dv, off);
 
+    // Households (v4)
+    off = this.households.serializeTo(dv, off);
+
+    // Settlements (v4)
+    off = this.settlements.serializeTo(dv, off, buf);
+
     return buf;
+  }
+
+  /** Apply combat collateral damage to households at a cell */
+  applyCombatCollateral(cellIdx: number): void {
+    this.households.applyCombatDamage(cellIdx, COMBAT_COLLATERAL_POP_LOSS);
   }
 
   static deserialize(buf: Buffer): SimulationEngine {
@@ -571,7 +667,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version < 1 || version > 3) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 4) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -615,11 +711,19 @@ export class SimulationEngine {
         settlingUntil = dv.getInt32(off, true); off += 4;
       }
 
+      let originSettlementId = -1;
+      let originHouseholdId = -1;
+      if (version >= 4) {
+        originSettlementId = dv.getInt32(off, true); off += 4;
+        originHouseholdId = dv.getInt32(off, true); off += 4;
+      }
+
       const c: Cultivator = {
         id: i, age, cultivation, level, courage, maxAge,
         injuredUntil, lightInjuryUntil, meridianDamagedUntil,
         breakthroughCooldownUntil, alive, cachedCourage, reachedMaxLevelAt, x, y,
         behaviorState, settlingUntil,
+        originSettlementId, originHouseholdId,
       };
       cultivators[i] = c;
 
@@ -648,6 +752,24 @@ export class SimulationEngine {
       areaTags.generate(prngState);
     }
 
+    // Households & Settlements (v4)
+    let households: HouseholdSystem;
+    let settlements: SettlementSystem;
+    if (version >= 4) {
+      const hResult = HouseholdSystem.deserializeFrom(dv, off);
+      households = hResult.system;
+      off = hResult.offset;
+      const sResult = SettlementSystem.deserializeFrom(dv, off, buf);
+      settlements = sResult.system;
+      off = sResult.offset;
+    } else {
+      // Legacy snapshots: create empty households/settlements and generate initial state
+      households = new HouseholdSystem();
+      const tempPrng = createPRNG(prngState);
+      households.generate(prngState, tempPrng, areaTags);
+      settlements = new SettlementSystem();
+    }
+
     // Construct engine bypassing constructor
     const engine = Object.create(SimulationEngine.prototype) as SimulationEngine;
     engine.prng = createPRNG(prngState);
@@ -663,6 +785,8 @@ export class SimulationEngine {
     engine.spatialIndex = spatialIndex;
     engine.milestones = milestones;
     engine.areaTags = areaTags;
+    engine.households = households;
+    engine.settlements = settlements;
     engine.levelArrayCache = initLevelArrayCache();
     engine.aliveIds = [];
     engine['_levelCountsBuf'] = new Array<number>(LEVEL_COUNT).fill(0);
@@ -691,6 +815,9 @@ export class SimulationEngine {
     engine.tribulationDeaths = 0;
     engine.promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
     engine.spawned = 0;
+
+    // Recount settlement types
+    settlements.recountTypes(households);
 
     return engine;
   }
