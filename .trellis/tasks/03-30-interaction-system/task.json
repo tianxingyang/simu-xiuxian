@@ -37,9 +37,7 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [
-    "03-30-cooperative-tasks"
-  ],
+  "children": [],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
