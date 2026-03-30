@@ -102,6 +102,39 @@ export class SpatialIndex {
     return count;
   }
 
+  findNearbyAny(cx: number, cy: number, radius: number, excludeId: number): number | -1 {
+    for (let dy = -radius; dy <= radius; dy++) {
+      const wy = (cy + dy + MAP_SIZE) & MAP_MASK;
+      for (let dx = -radius; dx <= radius; dx++) {
+        const wx = (cx + dx + MAP_SIZE) & MAP_MASK;
+        const idx = wy * MAP_SIZE + wx;
+        for (let lv = 0; lv < LEVEL_COUNT; lv++) {
+          const cell = this.grid[lv][idx];
+          if (cell.size === 0) continue;
+          for (const id of cell) {
+            if (id !== excludeId) return id;
+          }
+        }
+      }
+    }
+    return -1;
+  }
+
+  findNearbyAtLevel(cx: number, cy: number, radius: number, level: number, excludeId: number): number | -1 {
+    for (let dy = -radius; dy <= radius; dy++) {
+      const wy = (cy + dy + MAP_SIZE) & MAP_MASK;
+      for (let dx = -radius; dx <= radius; dx++) {
+        const wx = (cx + dx + MAP_SIZE) & MAP_MASK;
+        const idx = wy * MAP_SIZE + wx;
+        const cell = this.grid[level][idx];
+        for (const id of cell) {
+          if (id !== excludeId) return id;
+        }
+      }
+    }
+    return -1;
+  }
+
   reset(): void {
     for (let lv = 0; lv < LEVEL_COUNT; lv++) {
       for (let i = 0; i < CELLS; i++) this.grid[lv][i].clear();

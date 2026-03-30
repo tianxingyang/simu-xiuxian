@@ -121,6 +121,23 @@ export type DisasterTuning = {
   types: Record<DisasterType, DisasterConfig>;
 };
 
+export type RelationshipTuning = {
+  enabled: boolean;
+  allyDecayRate: number;
+  rivalDecayRate: number;
+  allyStrengthPerEncounter: number;
+  rivalIntensityPerCombat: number;
+  mentorCultivationBonus: number;
+  mentorTeachingBonus: number;
+  mentorLevelGap: number;
+  mentorFormChance: number;
+  allyFormChance: number;
+  allyLevelGapMax: number;
+  rivalCombatThreshold: number;
+  fellowDiscipleCombatReduction: number;
+  closeAllyThreshold: number;
+};
+
 export type MemoryTuning = {
   enabled: boolean;
   // Emotional decay (per year: value = baseline + (value - baseline) * decayRate)
@@ -167,6 +184,7 @@ export type SimTuning = {
   mortalDeath: MortalDeathTuning;
   disaster: DisasterTuning;
   memory: MemoryTuning;
+  relationship: RelationshipTuning;
 };
 
 type DeepPartial<T> =
@@ -283,6 +301,22 @@ export const DEFAULT_SIM_TUNING: Readonly<SimTuning> = Object.freeze({
       qi_disruption: Object.freeze({ popLossMin: 0.05, popLossMax: 0.20, densityWeight: 0.5, terrainDangerWeight: 0, spiritualEnergyWeight: 3.0, baseProb: 0.001 }),
     }),
   }),
+  relationship: Object.freeze({
+    enabled: true,
+    allyDecayRate: 0.02,
+    rivalDecayRate: 0.01,
+    allyStrengthPerEncounter: 0.1,
+    rivalIntensityPerCombat: 0.2,
+    mentorCultivationBonus: 0.4,
+    mentorTeachingBonus: 0.1,
+    mentorLevelGap: 2,
+    mentorFormChance: 0.15,
+    allyFormChance: 0.1,
+    allyLevelGapMax: 2,
+    rivalCombatThreshold: 3,
+    fellowDiscipleCombatReduction: 0.5,
+    closeAllyThreshold: 0.6,
+  }),
   memory: Object.freeze({
     enabled: true,
     emotionalDecayRate: 0.95,
@@ -369,6 +403,7 @@ export function cloneSimTuning(tuning: Readonly<SimTuning>): SimTuning {
       },
     },
     memory: { ...tuning.memory },
+    relationship: { ...tuning.relationship },
   };
 }
 
@@ -543,6 +578,22 @@ function mergeSimTuning(overrides: SimTuningInput = {}): SimTuning {
       powerSpotAttraction: overrides.memory?.powerSpotAttraction ?? DEFAULT_SIM_TUNING.memory.powerSpotAttraction,
       bloodlustDangerAttraction: overrides.memory?.bloodlustDangerAttraction ?? DEFAULT_SIM_TUNING.memory.bloodlustDangerAttraction,
       breakthroughFearDelayProb: overrides.memory?.breakthroughFearDelayProb ?? DEFAULT_SIM_TUNING.memory.breakthroughFearDelayProb,
+    },
+    relationship: {
+      enabled: overrides.relationship?.enabled ?? DEFAULT_SIM_TUNING.relationship.enabled,
+      allyDecayRate: overrides.relationship?.allyDecayRate ?? DEFAULT_SIM_TUNING.relationship.allyDecayRate,
+      rivalDecayRate: overrides.relationship?.rivalDecayRate ?? DEFAULT_SIM_TUNING.relationship.rivalDecayRate,
+      allyStrengthPerEncounter: overrides.relationship?.allyStrengthPerEncounter ?? DEFAULT_SIM_TUNING.relationship.allyStrengthPerEncounter,
+      rivalIntensityPerCombat: overrides.relationship?.rivalIntensityPerCombat ?? DEFAULT_SIM_TUNING.relationship.rivalIntensityPerCombat,
+      mentorCultivationBonus: overrides.relationship?.mentorCultivationBonus ?? DEFAULT_SIM_TUNING.relationship.mentorCultivationBonus,
+      mentorTeachingBonus: overrides.relationship?.mentorTeachingBonus ?? DEFAULT_SIM_TUNING.relationship.mentorTeachingBonus,
+      mentorLevelGap: overrides.relationship?.mentorLevelGap ?? DEFAULT_SIM_TUNING.relationship.mentorLevelGap,
+      mentorFormChance: overrides.relationship?.mentorFormChance ?? DEFAULT_SIM_TUNING.relationship.mentorFormChance,
+      allyFormChance: overrides.relationship?.allyFormChance ?? DEFAULT_SIM_TUNING.relationship.allyFormChance,
+      allyLevelGapMax: overrides.relationship?.allyLevelGapMax ?? DEFAULT_SIM_TUNING.relationship.allyLevelGapMax,
+      rivalCombatThreshold: overrides.relationship?.rivalCombatThreshold ?? DEFAULT_SIM_TUNING.relationship.rivalCombatThreshold,
+      fellowDiscipleCombatReduction: overrides.relationship?.fellowDiscipleCombatReduction ?? DEFAULT_SIM_TUNING.relationship.fellowDiscipleCombatReduction,
+      closeAllyThreshold: overrides.relationship?.closeAllyThreshold ?? DEFAULT_SIM_TUNING.relationship.closeAllyThreshold,
     },
   };
 }

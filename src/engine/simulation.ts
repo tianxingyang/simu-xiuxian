@@ -1,4 +1,4 @@
-import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types.js';
+import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichRelationshipEvent, RichTribulationEvent, YearSummary } from '../types.js';
 import { getSimTuning } from '../sim-tuning.js';
 import { LEVEL_COUNT, MAP_SIZE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, sustainableMaxAge, threshold, tribulationChance } from '../constants/index.js';
 import { getBalanceProfile } from '../balance.js';
@@ -14,11 +14,16 @@ import type { PolicyEngine } from './ai-policy.js';
 import { extractState } from './ai-state-extract.js';
 import {
   type CharacterMemory, createEmptyMemory, resetMemory,
-  serializeMemory, deserializeMemory, MEMORY_SERIALIZE_BYTES,
+  serializeMemory, deserializeMemory, deserializeMemoryLegacy, MEMORY_SERIALIZE_BYTES,
   tickEmotionalDecay, tickRootedness,
-  onCombatWin, onCombatLoss, onKinKilled,
   onBreakthroughSuccess, onBreakthroughFail,
 } from './memory.js';
+import {
+  type CharacterRelationships, createEmptyRelationships, resetRelationships,
+  serializeRelationships, deserializeRelationships, RELATIONSHIP_SERIALIZE_BYTES,
+  tickRelationshipDecay, purgeDeadFromRelationships,
+  addAlly, removeDisciple, clearMentor,
+} from './relationship.js';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -89,6 +94,7 @@ export class MilestoneTracker {
 export class SimulationEngine {
   cultivators: Cultivator[] = [];
   memories: CharacterMemory[] = [];
+  relationships: CharacterRelationships[] = [];
   levelGroups: Set<number>[];
   aliveLevelIds: Set<number>[];
   nextId = 0;
@@ -180,6 +186,7 @@ export class SimulationEngine {
       c.originSettlementId = originSettlementId;
       c.originHouseholdId = originHouseholdId;
       resetMemory(this.memories[id], c);
+      resetRelationships(this.relationships[id]);
     } else {
       id = this.nextId++;
       const nc = this.cultivators[id] = {
@@ -192,6 +199,7 @@ export class SimulationEngine {
       };
       nc.cachedCourage = effectiveCourage(nc);
       this.memories[id] = createEmptyMemory(nc);
+      this.relationships[id] = createEmptyRelationships();
     }
     this.aliveCount++;
     this.levelGroups[0].add(id);
@@ -229,6 +237,60 @@ export class SimulationEngine {
         const mem = this.memories[i];
         tickEmotionalDecay(mem, c, tuning.memory);
         tickRootedness(mem, c.behaviorState === 'settling', tuning.memory);
+      }
+
+      // Relationship: decay + mentor bonus
+      const rt = tuning.relationship;
+      if (rt.enabled) {
+        const rel = this.relationships[i];
+        tickRelationshipDecay(rel, rt);
+        if (rel.mentor >= 0) {
+          const mentor = this.cultivators[rel.mentor];
+          if (mentor.alive) {
+            const levelBonus = Math.max(0, mentor.level - c.level);
+            c.cultivation += rt.mentorCultivationBonus * (1 + levelBonus * 0.1);
+          } else {
+            clearMentor(rel);
+            if (tuning.memory.enabled) {
+              const mem = this.memories[i];
+              mem.ambition = Math.min(1, mem.ambition + 0.2);
+              mem.grief = Math.min(1, mem.grief + 0.5);
+            }
+          }
+        }
+        if (rel.discipleCount > 0) {
+          let aliveDisciples = 0;
+          for (let d = 0; d < 3; d++) {
+            const did = rel.disciples[d];
+            if (did >= 0 && this.cultivators[did].alive) aliveDisciples++;
+          }
+          c.cultivation += rt.mentorTeachingBonus * aliveDisciples;
+        }
+        // Graduate: disciple level >= mentor level
+        if (rel.mentor >= 0) {
+          const mentorId = rel.mentor;
+          const mentor = this.cultivators[mentorId];
+          if (mentor.alive && c.level >= mentor.level) {
+            const mentorRel = this.relationships[mentorId];
+            removeDisciple(mentorRel, c.id);
+            clearMentor(rel);
+            addAlly(rel, mentorId, this.year, 0.5);
+            addAlly(mentorRel, c.id, this.year, 0.5);
+            if (events && c.level >= 2) {
+              const mn = this.hooks?.getName(mentorId);
+              const dn = this.hooks?.getName(c.id);
+              const ge: RichRelationshipEvent = {
+                type: 'relationship', year: this.year,
+                newsRank: c.level >= 4 ? 'A' : 'B',
+                subtype: 'graduate',
+                actorA: { id: c.id, name: dn, level: c.level },
+                actorB: { id: mentorId, name: mn, level: mentor.level },
+                region: getRegionName(c.x, c.y),
+              };
+              events.push(ge);
+            }
+          }
+        }
       }
 
       const target = sustainableMaxAge(c.level);
@@ -286,8 +348,16 @@ export class SimulationEngine {
   purgeDead(): void {
     const deadIds = this._deadIds;
     const freeSlots = this.freeSlots;
+    const rt = getSimTuning().relationship;
     for (let i = 0; i < deadIds.length; i++) {
-      freeSlots.push(deadIds[i]);
+      const deadId = deadIds[i];
+      freeSlots.push(deadId);
+      if (rt.enabled) {
+        for (let j = 0; j < this.nextId; j++) {
+          if (!this.cultivators[j].alive) continue;
+          purgeDeadFromRelationships(this.relationships[j], deadId);
+        }
+      }
     }
     deadIds.length = 0;
   }
@@ -686,6 +756,7 @@ export class SimulationEngine {
 
   reset(seed: number, initialPop: number): void {
     this.cultivators.length = 0;
+    this.relationships.length = 0;
     this.freeSlots.length = 0;
     this._deadIds.length = 0;
     this.nextId = 0;
@@ -713,7 +784,7 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 6;
+    const SNAPSHOT_VERSION = 7;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
@@ -721,12 +792,13 @@ export class SimulationEngine {
     const CULTIVATOR_SIZE = 75;
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
     const memoriesSize = this.nextId * MEMORY_SERIALIZE_BYTES;
+    const relationshipsSize = this.nextId * RELATIONSHIP_SERIALIZE_BYTES;
     // Milestones: highestLevelEverReached(i32) + levelEverPopulated(u8 * LEVEL_COUNT)
     const milestonesSize = 4 + LEVEL_COUNT;
     const areaTagsSize = this.areaTags.serializeSize();
     const householdsSize = this.households.serializeSize();
     const settlementsSize = this.settlements.serializeSize();
-    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + memoriesSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize;
+    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + memoriesSize + relationshipsSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize;
 
     const buf = Buffer.alloc(totalSize);
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -769,9 +841,14 @@ export class SimulationEngine {
       dv.setInt32(off, c.originHouseholdId, true); off += 4;
     }
 
-    // Memories (v5)
+    // Memories (v7)
     for (let i = 0; i < this.nextId; i++) {
       off = serializeMemory(dv, off, this.memories[i]);
+    }
+
+    // Relationships (v7)
+    for (let i = 0; i < this.nextId; i++) {
+      off = serializeRelationships(dv, off, this.relationships[i]);
     }
 
     // Milestones
@@ -803,7 +880,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version < 1 || version > 6) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 7) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -870,17 +947,37 @@ export class SimulationEngine {
       }
     }
 
-    // Memories (v5+)
+    // Memories
     const memories: CharacterMemory[] = new Array(nextId);
-    if (version >= 5) {
+    if (version >= 7) {
       for (let i = 0; i < nextId; i++) {
         const result = deserializeMemory(dv, off);
+        memories[i] = result.mem;
+        off = result.offset;
+      }
+    } else if (version >= 5) {
+      for (let i = 0; i < nextId; i++) {
+        const result = deserializeMemoryLegacy(dv, off);
         memories[i] = result.mem;
         off = result.offset;
       }
     } else {
       for (let i = 0; i < nextId; i++) {
         memories[i] = createEmptyMemory(cultivators[i]);
+      }
+    }
+
+    // Relationships (v7+)
+    const relationships: CharacterRelationships[] = new Array(nextId);
+    if (version >= 7) {
+      for (let i = 0; i < nextId; i++) {
+        const result = deserializeRelationships(dv, off);
+        relationships[i] = result.rel;
+        off = result.offset;
+      }
+    } else {
+      for (let i = 0; i < nextId; i++) {
+        relationships[i] = createEmptyRelationships();
       }
     }
 
@@ -930,6 +1027,7 @@ export class SimulationEngine {
     engine.yearlySpawn = yearlySpawn;
     engine.cultivators = cultivators;
     engine.memories = memories;
+    engine.relationships = relationships;
     engine.freeSlots = freeSlots;
     engine.levelGroups = levelGroups;
     engine.aliveLevelIds = levelGroups;

@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "naming conventions, no ! assertions, no any"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "interface for entities, type for unions, discriminated unions for events"}
+{"file": "src/engine/memory.ts", "reason": "ring buffer pattern, emotional states, binary serialization pattern to follow"}
+{"file": "src/engine/combat.ts", "reason": "encounter processing, willingness calc, death handling for vendetta triggers"}
+{"file": "src/types.ts", "reason": "RichEvent union pattern, Cultivator interface, EngineHooks"}
+{"file": "src/engine/simulation.ts", "reason": "tick loop, parallel arrays, serialize/deserialize, SNAPSHOT_VERSION"}
+{"file": "src/engine/ai-state-extract.ts", "reason": "feature extraction pattern to extend with relationship features"}
+{"file": "src/sim-tuning.ts", "reason": "tuning type pattern, DEFAULT values, merge/clone"}
+{"file": "server/events.ts", "reason": "toDisplayEvent switch pattern for Chinese text"}
+{"file": "src/engine/spatial.ts", "reason": "spatial queries, findSpatialOpponent pattern"}

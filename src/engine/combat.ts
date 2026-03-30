@@ -19,7 +19,12 @@ import { prngShuffle, truncatedGaussian } from './prng.js';
 import { tryBreakthrough, type SimulationEngine } from './simulation.js';
 import { profiler } from './profiler.js';
 import { buildEncounterProbCache, findSpatialOpponent, localEncounterProbability } from './spatial.js';
-import { onCombatWin, onCombatLoss, onKinKilled, pushPlace, PLACE_DANGER, findEncounter, ENCOUNTER_LOSS, ENCOUNTER_KIN_KILLED } from './memory.js';
+import { onCombatWin, onCombatLoss, onKinKilled, pushPlace, PLACE_DANGER, findEncounter, ENCOUNTER_LOSS, ENCOUNTER_KIN_KILLED, countEncountersWith } from './memory.js';
+import {
+  isFellowDisciple, isAlly, isRival, hasVendettaAgainst, findAlly,
+  addRival, addVendetta, addAlly, removeRival, setMentor, addDisciple,
+} from './relationship.js';
+import type { RichRelationshipEvent } from '../types.js';
 
 type EventBuffer = RichEvent[] | null;
 
@@ -32,6 +37,7 @@ const OUTCOME_NAMES: DefeatOutcome[] = [
 export function scoreNewsRank(e: RichEvent): NewsRank {
   if (e.type === 'milestone') return 'S';
   if (e.type === 'tribulation') return 'S';
+  if (e.type === 'relationship') return e.newsRank;
   if (e.type === 'combat' && e.outcome === 'death' && e.loser.level >= 6) return 'S';
   if (e.type === 'combat') {
     const lv = Math.max(e.winner.level, e.loser.level);
@@ -117,6 +123,13 @@ export function processEncounters(engine: SimulationEngine, events: EventBuffer 
     resolveCombat(engine, c, opp, events, eventMinLevel);
   }
   profiler.end('processEncounters.combatLoop');
+
+  const rlt = getSimTuning().relationship;
+  if (rlt.enabled) {
+    profiler.start('processEncounters.relationships');
+    processRelationshipFormation(engine, events);
+    profiler.end('processEncounters.relationships');
+  }
 
   profiler.end('processEncounters');
 }
@@ -216,6 +229,25 @@ function resolveCombat(
     if (a.originSettlementId >= 0 && a.originSettlementId === b.originSettlementId) {
       aCourage *= (1 - mt.kinCombatReduction);
       bCourage *= (1 - mt.kinCombatReduction);
+    }
+
+    // Relationship-based combat willingness (rule-based fallback)
+    const rlt = tuning.relationship;
+    if (rlt.enabled) {
+      const aRel = engine.relationships[a.id];
+      const bRel = engine.relationships[b.id];
+      if (isFellowDisciple(aRel, bRel)) {
+        aCourage *= (1 - rlt.fellowDiscipleCombatReduction);
+        bCourage *= (1 - rlt.fellowDiscipleCombatReduction);
+      }
+      const aAllyOfB = findAlly(aRel, b.id);
+      if (aAllyOfB) aCourage *= (1 - aAllyOfB.strength * 0.5);
+      const bAllyOfA = findAlly(bRel, a.id);
+      if (bAllyOfA) bCourage *= (1 - bAllyOfA.strength * 0.5);
+      if (isRival(aRel, b.id)) aCourage *= 1.3;
+      if (isRival(bRel, a.id)) bCourage *= 1.3;
+      if (hasVendettaAgainst(aRel, b.id)) aCourage *= 1.5;
+      if (hasVendettaAgainst(bRel, a.id)) bCourage *= 1.5;
     }
   }
 
@@ -356,7 +388,107 @@ function resolveCombat(
       // Loser was killed by someone from the same settlement — not a kin-kill scenario
     } else if (loserDied && loser.originSettlementId >= 0) {
       // Winner killed someone from a different settlement — loser's kin would be angry at winner
-      // We record this on the winner's memory as well (they know they killed a rival's kin)
+    }
+  }
+
+  // Relationship updates
+  const rlt = tuning.relationship;
+  if (rlt.enabled) {
+    const winRel = engine.relationships[winner.id];
+    if (!loserDied) {
+      const loseRel = engine.relationships[loser.id];
+      const wEncounters = countEncountersWith(engine.memories[winner.id], loser.id);
+      if (wEncounters.total >= rlt.rivalCombatThreshold) {
+        addRival(winRel, loser.id, year, rlt.rivalIntensityPerCombat);
+        addRival(loseRel, winner.id, year, rlt.rivalIntensityPerCombat);
+        if (events && combatLevel >= 2) {
+          const wn = engine.hooks?.getName(winner.id);
+          const ln = engine.hooks?.getName(loser.id);
+          const re: RichRelationshipEvent = {
+            type: 'relationship', year, newsRank: 'C', subtype: 'rival_formed',
+            actorA: { id: winner.id, name: wn, level: winner.level },
+            actorB: { id: loser.id, name: ln, level: loser.level },
+            region: getRegionName(winner.x, winner.y),
+          };
+          events.push(re);
+        }
+      }
+      if (outcomeCode === 1 || outcomeCode === 2) {
+        addRival(loseRel, winner.id, year, rlt.rivalIntensityPerCombat);
+      }
+    } else {
+      const loserRel = engine.relationships[loser.id];
+      // Vendetta: loser's disciples
+      for (let d = 0; d < 3; d++) {
+        const did = loserRel.disciples[d];
+        if (did >= 0 && engine.cultivators[did].alive) {
+          addVendetta(engine.relationships[did], winner.id, 'killed_mentor', year);
+          if (mt.enabled) engine.memories[did].grief = Math.min(1, engine.memories[did].grief + 0.6);
+          if (events) {
+            const dn = engine.hooks?.getName(did);
+            const wn = engine.hooks?.getName(winner.id);
+            const ve: RichRelationshipEvent = {
+              type: 'relationship', year, newsRank: 'B', subtype: 'vendetta_declared',
+              actorA: { id: did, name: dn, level: engine.cultivators[did].level },
+              actorB: { id: winner.id, name: wn, level: winner.level },
+              region: getRegionName(engine.cultivators[did].x, engine.cultivators[did].y),
+            };
+            events.push(ve);
+          }
+        }
+      }
+      // Vendetta: loser's mentor
+      if (loserRel.mentor >= 0 && engine.cultivators[loserRel.mentor].alive) {
+        addVendetta(engine.relationships[loserRel.mentor], winner.id, 'killed_disciple', year);
+        if (mt.enabled) engine.memories[loserRel.mentor].grief = Math.min(1, engine.memories[loserRel.mentor].grief + 0.5);
+        if (events) {
+          const mentorChar = engine.cultivators[loserRel.mentor];
+          const mn = engine.hooks?.getName(loserRel.mentor);
+          const wn = engine.hooks?.getName(winner.id);
+          const ve: RichRelationshipEvent = {
+            type: 'relationship', year, newsRank: 'B', subtype: 'vendetta_declared',
+            actorA: { id: loserRel.mentor, name: mn, level: mentorChar.level },
+            actorB: { id: winner.id, name: wn, level: winner.level },
+            region: getRegionName(mentorChar.x, mentorChar.y),
+          };
+          events.push(ve);
+        }
+      }
+      // Vendetta: close allies
+      for (let i = 0; i < 6; i++) {
+        const ally = loserRel.allies[i];
+        if (ally.id >= 0 && ally.strength >= rlt.closeAllyThreshold && engine.cultivators[ally.id].alive) {
+          addVendetta(engine.relationships[ally.id], winner.id, 'killed_close_ally', year);
+          if (mt.enabled) engine.memories[ally.id].grief = Math.min(1, engine.memories[ally.id].grief + 0.4);
+          if (events) {
+            const allyChar = engine.cultivators[ally.id];
+            const an = engine.hooks?.getName(ally.id);
+            const wn = engine.hooks?.getName(winner.id);
+            const ve: RichRelationshipEvent = {
+              type: 'relationship', year, newsRank: 'B', subtype: 'vendetta_declared',
+              actorA: { id: ally.id, name: an, level: allyChar.level },
+              actorB: { id: winner.id, name: wn, level: winner.level },
+              region: getRegionName(allyChar.x, allyChar.y),
+            };
+            events.push(ve);
+          }
+        }
+      }
+      // Vendetta fulfilled
+      if (hasVendettaAgainst(winRel, loser.id)) {
+        removeRival(winRel, loser.id);
+        if (events && combatLevel >= 2) {
+          const wn = engine.hooks?.getName(winner.id);
+          const ln = engine.hooks?.getName(loser.id);
+          const re: RichRelationshipEvent = {
+            type: 'relationship', year, newsRank: 'A', subtype: 'vendetta_fulfilled',
+            actorA: { id: winner.id, name: wn, level: winner.level },
+            actorB: { id: loser.id, name: ln, level: combatLevel },
+            region: getRegionName(winner.x, winner.y),
+          };
+          events.push(re);
+        }
+      }
     }
   }
 
@@ -400,5 +532,83 @@ function resolveCombat(
 
   if (tryBreakthrough(engine, winner, events, 'combat')) {
     winner.cachedCourage = effectiveCourage(winner);
+  }
+}
+
+function processRelationshipFormation(engine: SimulationEngine, events: EventBuffer): void {
+  const tuning = getSimTuning();
+  const rlt = tuning.relationship;
+  const year = engine.year;
+  const prng = engine.prng;
+
+  for (let i = 0; i < engine.nextId; i++) {
+    const c = engine.cultivators[i];
+    if (!c.alive || c.level === 0) continue;
+    if (c.behaviorState !== 'settling' && c.behaviorState !== 'wandering') continue;
+
+    const rel = engine.relationships[i];
+    const radius = tuning.spatial.encounterRadius[c.level];
+
+    // Mentor formation: settling cultivator can take a nearby lower-level disciple
+    if (c.behaviorState === 'settling' && rel.discipleCount < 3) {
+      for (let lv = 1; lv < c.level - rlt.mentorLevelGap + 1; lv++) {
+        const candidateId = engine.spatialIndex.findNearbyAtLevel(c.x, c.y, radius, lv, c.id);
+        if (candidateId < 0) continue;
+        const candidate = engine.cultivators[candidateId];
+        if (!candidate.alive) continue;
+        const cRel = engine.relationships[candidateId];
+        if (cRel.mentor >= 0) continue;
+
+        const memMod = tuning.memory.enabled ? engine.memories[i].rootedness * 0.5 : 0;
+        if (prng() >= rlt.mentorFormChance + memMod) continue;
+
+        setMentor(cRel, c.id, year);
+        addDisciple(rel, candidateId);
+        if (tuning.memory.enabled) {
+          engine.memories[candidateId].gratitude = Math.min(1, engine.memories[candidateId].gratitude + 0.3);
+        }
+
+        if (events && c.level >= 2) {
+          const mn = engine.hooks?.getName(c.id);
+          const dn = engine.hooks?.getName(candidateId);
+          const re: RichRelationshipEvent = {
+            type: 'relationship', year,
+            newsRank: c.level >= 4 ? 'A' : 'B',
+            subtype: 'mentor_accept',
+            actorA: { id: c.id, name: mn, level: c.level },
+            actorB: { id: candidateId, name: dn, level: candidate.level },
+            region: getRegionName(c.x, c.y),
+          };
+          events.push(re);
+        }
+        break;
+      }
+    }
+
+    // Ally formation
+    if (prng() >= rlt.allyFormChance) continue;
+    const nearbyId = engine.spatialIndex.findNearbyAny(c.x, c.y, Math.min(radius, 3), c.id);
+    if (nearbyId < 0) continue;
+    const nearby = engine.cultivators[nearbyId];
+    if (!nearby.alive) continue;
+    if (Math.abs(nearby.level - c.level) > rlt.allyLevelGapMax) continue;
+    const nRel = engine.relationships[nearbyId];
+    if (hasVendettaAgainst(rel, nearbyId) || hasVendettaAgainst(nRel, c.id)) continue;
+    if (isRival(rel, nearbyId)) continue;
+
+    addAlly(rel, nearbyId, year, rlt.allyStrengthPerEncounter);
+    addAlly(nRel, c.id, year, rlt.allyStrengthPerEncounter);
+
+    if (events && c.level >= 2) {
+      const an = engine.hooks?.getName(c.id);
+      const bn = engine.hooks?.getName(nearbyId);
+      const re: RichRelationshipEvent = {
+        type: 'relationship', year, newsRank: 'C', subtype: 'ally_formed',
+        actorA: { id: c.id, name: an, level: c.level },
+        actorB: { id: nearbyId, name: bn, level: nearby.level },
+        region: getRegionName(c.x, c.y),
+      };
+      events.push(re);
+    }
   }
 }

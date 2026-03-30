@@ -35,6 +35,9 @@ export interface MilestoneMarkers {
   worstDefeatOpponentId: number;
   greatestVictoryYear: number;
   greatestVictoryOpponentId: number;
+  firstMentorYear: number;
+  firstAllyYear: number;
+  vendettaDeclaredYear: number;
 }
 
 export interface CharacterMemory {
@@ -45,6 +48,8 @@ export interface CharacterMemory {
   bloodlust: number;
   rootedness: number;
   breakthroughFear: number;
+  gratitude: number;
+  grief: number;
 
   // Encounter ring buffer
   encounters: EncounterEntry[];
@@ -69,15 +74,15 @@ export interface CharacterMemory {
 }
 
 // --- Serialization byte sizes ---
-const EMOTIONAL_FIELDS = 6;
+const EMOTIONAL_FIELDS = 8; // +gratitude, grief
 const STAT_FIELDS = 8;
 const ENCOUNTER_ENTRY_BYTES = 4 + 1 + 4; // opponentId(i32) + outcome(u8) + year(i32)
 const PLACE_ENTRY_BYTES = 2 + 1 + 4;     // cellIdx(u16) + type(u8) + year(i32)
-const MILESTONE_BYTES = 8 * 4;           // 8 × i32
+const MILESTONE_BYTES = 11 * 4;          // 11 × i32 (+firstMentorYear, firstAllyYear, vendettaDeclaredYear)
 const METADATA_BYTES = 2;                // encounterHead(u8) + placeHead(u8)
 
 export const MEMORY_SERIALIZE_BYTES =
-  EMOTIONAL_FIELDS * 8 +                           // 6 × float64
+  EMOTIONAL_FIELDS * 8 +                           // 8 × float64
   ENCOUNTER_BUFFER_SIZE * ENCOUNTER_ENTRY_BYTES +   // 12 × 9
   PLACE_BUFFER_SIZE * PLACE_ENTRY_BYTES +           // 4 × 7
   STAT_FIELDS * 2 +                                 // 8 × u16
@@ -98,6 +103,7 @@ function emptyMilestones(): MilestoneMarkers {
     firstBreakthroughYear: 0, firstKillYear: 0,
     worstDefeatYear: 0, worstDefeatOpponentId: -1,
     greatestVictoryYear: 0, greatestVictoryOpponentId: -1,
+    firstMentorYear: 0, firstAllyYear: 0, vendettaDeclaredYear: 0,
   };
 }
 
@@ -114,6 +120,8 @@ export function createEmptyMemory(c: Cultivator): CharacterMemory {
     bloodlust: 0,
     rootedness: 0,
     breakthroughFear: 0,
+    gratitude: 0,
+    grief: 0,
 
     encounters,
     encounterHead: 0,
@@ -135,6 +143,8 @@ export function resetMemory(mem: CharacterMemory, c: Cultivator): void {
   mem.bloodlust = 0;
   mem.rootedness = 0;
   mem.breakthroughFear = 0;
+  mem.gratitude = 0;
+  mem.grief = 0;
   mem.encounterHead = 0;
   for (let i = 0; i < ENCOUNTER_BUFFER_SIZE; i++) {
     mem.encounters[i].opponentId = -1;
@@ -155,6 +165,7 @@ export function resetMemory(mem: CharacterMemory, c: Cultivator): void {
   ms.firstBreakthroughYear = 0; ms.firstKillYear = 0;
   ms.worstDefeatYear = 0; ms.worstDefeatOpponentId = -1;
   ms.greatestVictoryYear = 0; ms.greatestVictoryOpponentId = -1;
+  ms.firstMentorYear = 0; ms.firstAllyYear = 0; ms.vendettaDeclaredYear = 0;
 }
 
 // --- Per-tick emotional decay ---
@@ -171,6 +182,8 @@ export function tickEmotionalDecay(mem: CharacterMemory, c: Cultivator, mt: Memo
   mem.bloodlust = decay(mem.bloodlust, 0, r);
   mem.rootedness = decay(mem.rootedness, 0, r);
   mem.breakthroughFear = decay(mem.breakthroughFear, 0, r);
+  mem.gratitude = decay(mem.gratitude, 0, r);
+  mem.grief = decay(mem.grief, 0, r * 0.98); // grief decays slower
 }
 
 export function tickRootedness(mem: CharacterMemory, isSettling: boolean, mt: MemoryTuning): void {
@@ -309,13 +322,15 @@ export function incrementStat(mem: CharacterMemory, field: keyof CharacterMemory
 // --- Serialization ---
 
 export function serializeMemory(dv: DataView, off: number, mem: CharacterMemory): number {
-  // Emotional states (6 × float64)
+  // Emotional states (8 × float64)
   dv.setFloat64(off, mem.confidence, true); off += 8;
   dv.setFloat64(off, mem.caution, true); off += 8;
   dv.setFloat64(off, mem.ambition, true); off += 8;
   dv.setFloat64(off, mem.bloodlust, true); off += 8;
   dv.setFloat64(off, mem.rootedness, true); off += 8;
   dv.setFloat64(off, mem.breakthroughFear, true); off += 8;
+  dv.setFloat64(off, mem.gratitude, true); off += 8;
+  dv.setFloat64(off, mem.grief, true); off += 8;
 
   // Metadata
   dv.setUint8(off, mem.encounterHead); off += 1;
@@ -347,7 +362,7 @@ export function serializeMemory(dv: DataView, off: number, mem: CharacterMemory)
   dv.setUint16(off, mem.yearsSettled, true); off += 2;
   dv.setUint16(off, mem.timesDisplaced, true); off += 2;
 
-  // Milestones (8 × i32)
+  // Milestones (11 × i32)
   const ms = mem.milestones;
   dv.setInt32(off, ms.firstCombatYear, true); off += 4;
   dv.setInt32(off, ms.firstInjuryYear, true); off += 4;
@@ -357,18 +372,78 @@ export function serializeMemory(dv: DataView, off: number, mem: CharacterMemory)
   dv.setInt32(off, ms.worstDefeatOpponentId, true); off += 4;
   dv.setInt32(off, ms.greatestVictoryYear, true); off += 4;
   dv.setInt32(off, ms.greatestVictoryOpponentId, true); off += 4;
+  dv.setInt32(off, ms.firstMentorYear, true); off += 4;
+  dv.setInt32(off, ms.firstAllyYear, true); off += 4;
+  dv.setInt32(off, ms.vendettaDeclaredYear, true); off += 4;
 
   return off;
 }
 
-export function deserializeMemory(dv: DataView, off: number): { mem: CharacterMemory; offset: number } {
-  // Emotional states
+export function deserializeMemoryLegacy(dv: DataView, off: number): { mem: CharacterMemory; offset: number } {
   const confidence = dv.getFloat64(off, true); off += 8;
   const caution = dv.getFloat64(off, true); off += 8;
   const ambition = dv.getFloat64(off, true); off += 8;
   const bloodlust = dv.getFloat64(off, true); off += 8;
   const rootedness = dv.getFloat64(off, true); off += 8;
   const breakthroughFear = dv.getFloat64(off, true); off += 8;
+  const encounterHead = dv.getUint8(off); off += 1;
+  const placeHead = dv.getUint8(off); off += 1;
+  const encounters: EncounterEntry[] = new Array(ENCOUNTER_BUFFER_SIZE);
+  for (let i = 0; i < ENCOUNTER_BUFFER_SIZE; i++) {
+    const opponentId = dv.getInt32(off, true); off += 4;
+    const outcome = dv.getUint8(off); off += 1;
+    const year = dv.getInt32(off, true); off += 4;
+    encounters[i] = { opponentId, outcome, year };
+  }
+  const places: PlaceEntry[] = new Array(PLACE_BUFFER_SIZE);
+  for (let i = 0; i < PLACE_BUFFER_SIZE; i++) {
+    const raw = dv.getUint16(off, true); off += 2;
+    const cellIdx = raw === 0xFFFF ? -1 : raw;
+    const type = dv.getUint8(off); off += 1;
+    const year = dv.getInt32(off, true); off += 4;
+    places[i] = { cellIdx, type, year };
+  }
+  const combatWins = dv.getUint16(off, true); off += 2;
+  const combatLosses = dv.getUint16(off, true); off += 2;
+  const kills = dv.getUint16(off, true); off += 2;
+  const breakthroughAttempts = dv.getUint16(off, true); off += 2;
+  const breakthroughSuccesses = dv.getUint16(off, true); off += 2;
+  const heavyInjuries = dv.getUint16(off, true); off += 2;
+  const yearsSettled = dv.getUint16(off, true); off += 2;
+  const timesDisplaced = dv.getUint16(off, true); off += 2;
+  const firstCombatYear = dv.getInt32(off, true); off += 4;
+  const firstInjuryYear = dv.getInt32(off, true); off += 4;
+  const firstBreakthroughYear = dv.getInt32(off, true); off += 4;
+  const firstKillYear = dv.getInt32(off, true); off += 4;
+  const worstDefeatYear = dv.getInt32(off, true); off += 4;
+  const worstDefeatOpponentId = dv.getInt32(off, true); off += 4;
+  const greatestVictoryYear = dv.getInt32(off, true); off += 4;
+  const greatestVictoryOpponentId = dv.getInt32(off, true); off += 4;
+  const mem: CharacterMemory = {
+    confidence, caution, ambition, bloodlust, rootedness, breakthroughFear,
+    gratitude: 0, grief: 0,
+    encounters, encounterHead, places, placeHead,
+    combatWins, combatLosses, kills,
+    breakthroughAttempts, breakthroughSuccesses, heavyInjuries, yearsSettled, timesDisplaced,
+    milestones: {
+      firstCombatYear, firstInjuryYear, firstBreakthroughYear, firstKillYear,
+      worstDefeatYear, worstDefeatOpponentId, greatestVictoryYear, greatestVictoryOpponentId,
+      firstMentorYear: 0, firstAllyYear: 0, vendettaDeclaredYear: 0,
+    },
+  };
+  return { mem, offset: off };
+}
+
+export function deserializeMemory(dv: DataView, off: number): { mem: CharacterMemory; offset: number } {
+  // Emotional states (8 × float64)
+  const confidence = dv.getFloat64(off, true); off += 8;
+  const caution = dv.getFloat64(off, true); off += 8;
+  const ambition = dv.getFloat64(off, true); off += 8;
+  const bloodlust = dv.getFloat64(off, true); off += 8;
+  const rootedness = dv.getFloat64(off, true); off += 8;
+  const breakthroughFear = dv.getFloat64(off, true); off += 8;
+  const gratitude = dv.getFloat64(off, true); off += 8;
+  const grief = dv.getFloat64(off, true); off += 8;
 
   // Metadata
   const encounterHead = dv.getUint8(off); off += 1;
@@ -403,7 +478,7 @@ export function deserializeMemory(dv: DataView, off: number): { mem: CharacterMe
   const yearsSettled = dv.getUint16(off, true); off += 2;
   const timesDisplaced = dv.getUint16(off, true); off += 2;
 
-  // Milestones
+  // Milestones (11 × i32)
   const firstCombatYear = dv.getInt32(off, true); off += 4;
   const firstInjuryYear = dv.getInt32(off, true); off += 4;
   const firstBreakthroughYear = dv.getInt32(off, true); off += 4;
@@ -412,15 +487,20 @@ export function deserializeMemory(dv: DataView, off: number): { mem: CharacterMe
   const worstDefeatOpponentId = dv.getInt32(off, true); off += 4;
   const greatestVictoryYear = dv.getInt32(off, true); off += 4;
   const greatestVictoryOpponentId = dv.getInt32(off, true); off += 4;
+  const firstMentorYear = dv.getInt32(off, true); off += 4;
+  const firstAllyYear = dv.getInt32(off, true); off += 4;
+  const vendettaDeclaredYear = dv.getInt32(off, true); off += 4;
 
   const mem: CharacterMemory = {
     confidence, caution, ambition, bloodlust, rootedness, breakthroughFear,
+    gratitude, grief,
     encounters, encounterHead, places, placeHead,
     combatWins, combatLosses, kills,
     breakthroughAttempts, breakthroughSuccesses, heavyInjuries, yearsSettled, timesDisplaced,
     milestones: {
       firstCombatYear, firstInjuryYear, firstBreakthroughYear, firstKillYear,
       worstDefeatYear, worstDefeatOpponentId, greatestVictoryYear, greatestVictoryOpponentId,
+      firstMentorYear, firstAllyYear, vendettaDeclaredYear,
     },
   };
   return { mem, offset: off };

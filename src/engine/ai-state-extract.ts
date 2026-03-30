@@ -1,18 +1,22 @@
 import type { Cultivator } from '../types.js';
 import { getSimTuning } from '../sim-tuning.js';
 import type { CharacterMemory } from './memory.js';
+import type { CharacterRelationships } from './relationship.js';
+import {
+  strongestAllyStrength, maxRivalIntensity, hasAnyVendetta,
+  MAX_DISCIPLES,
+} from './relationship.js';
 
 const MAX_LEVEL = 7;
 
-/**
- * Extract normalized state vector from a cultivator and its environment.
- * Returns number[] matching the feature order in ai-policy/config.json.
- * All values normalized to [0, 1].
- *
- * When memory is provided (non-null), 6 additional dimensions are appended:
- *   [12] confidence, [13] caution, [14] ambition,
- *   [15] bloodlust, [16] rootedness, [17] breakthroughFear
- */
+export interface RelationshipContext {
+  rel: CharacterRelationships;
+  allyNearby: boolean;
+  rivalNearby: boolean;
+  vendettaTargetNearby: boolean;
+  isFellowDisciple: boolean;
+}
+
 export function extractState(
   c: Cultivator,
   year: number,
@@ -20,6 +24,7 @@ export function extractState(
   cellDanger: number,
   thresholdForNextLevel: number,
   mem?: CharacterMemory | null,
+  relCtx?: RelationshipContext | null,
 ): number[] {
   const maxCooldown = getSimTuning().breakthroughFailure.cooldown;
 
@@ -65,6 +70,21 @@ export function extractState(
       mem.bloodlust,
       mem.rootedness,
       mem.breakthroughFear,
+    );
+  }
+
+  if (relCtx) {
+    const rel = relCtx.rel;
+    base.push(
+      rel.mentor >= 0 ? 1 : 0,
+      rel.discipleCount / MAX_DISCIPLES,
+      relCtx.allyNearby ? 1 : 0,
+      strongestAllyStrength(rel),
+      relCtx.rivalNearby ? 1 : 0,
+      maxRivalIntensity(rel),
+      hasAnyVendetta(rel) ? 1 : 0,
+      relCtx.vendettaTargetNearby ? 1 : 0,
+      relCtx.isFellowDisciple ? 1 : 0,
     );
   }
 

@@ -1,5 +1,5 @@
 import { LEVEL_NAMES } from '../src/constants/index.js';
-import type { DefeatOutcome, DisasterType, RichEvent, SimEvent } from '../src/types.js';
+import type { DefeatOutcome, DisasterType, RelationshipSubtype, RichEvent, SimEvent } from '../src/types.js';
 
 export { scoreNewsRank } from '../src/engine/combat.js';
 export { MilestoneTracker } from '../src/engine/simulation.js';
@@ -86,6 +86,22 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
       return {
         id, year: e.year, type: 'disaster', actorLevel: 0,
         detail: `${rp}${e.settlementName}爆发${disasterNames[e.disasterType]}，${e.populationLost}人死亡`,
+      };
+    }
+    case 'relationship': {
+      const subtypeText: Record<RelationshipSubtype, string> = {
+        mentor_accept: '收为弟子',
+        graduate: '弟子出师',
+        ally_formed: '结为道友',
+        rival_formed: '结为宿敌',
+        vendetta_declared: '立下血仇',
+        vendetta_fulfilled: '血仇得报',
+      };
+      const an = e.actorA.name ? `${e.actorA.name}(${LEVEL_NAMES[e.actorA.level]})` : LEVEL_NAMES[e.actorA.level];
+      const bn = e.actorB.name ? `${e.actorB.name}(${LEVEL_NAMES[e.actorB.level]})` : LEVEL_NAMES[e.actorB.level];
+      return {
+        id, year: e.year, type: 'relationship', actorLevel: Math.max(e.actorA.level, e.actorB.level),
+        detail: `${rp}${an}与${bn}${subtypeText[e.subtype]}`,
       };
     }
   }

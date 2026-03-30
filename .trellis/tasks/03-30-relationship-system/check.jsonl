@@ -1,0 +1,6 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "verify no ! assertions, no any"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "verify type patterns"}
+{"file": "src/engine/memory.ts", "reason": "verify serialization follows existing pattern"}
+{"file": "src/types.ts", "reason": "verify event types follow discriminated union pattern"}

@@ -93,7 +93,7 @@ export interface YearSummary {
 export interface SimEvent {
   id: number;
   year: number;
-  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster';
+  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster' | 'relationship';
   actorLevel: number;
   detail: string;
 }
@@ -207,6 +207,24 @@ export interface RichDisasterEvent {
   terrainDanger?: number;
 }
 
+export type RelationshipSubtype =
+  | 'mentor_accept'
+  | 'graduate'
+  | 'ally_formed'
+  | 'rival_formed'
+  | 'vendetta_declared'
+  | 'vendetta_fulfilled';
+
+export interface RichRelationshipEvent {
+  type: 'relationship';
+  year: number;
+  newsRank: NewsRank;
+  subtype: RelationshipSubtype;
+  actorA: { id: number; name?: string; level: number };
+  actorB: { id: number; name?: string; level: number };
+  region?: string;
+}
+
 export type RichEvent =
   | RichCombatEvent
   | RichPromotionEvent
@@ -214,7 +232,8 @@ export type RichEvent =
   | RichMilestoneEvent
   | RichBreakthroughEvent
   | RichTribulationEvent
-  | RichDisasterEvent;
+  | RichDisasterEvent
+  | RichRelationshipEvent;
 
 export interface EngineHooks {
   onPromotion(c: Cultivator, toLevel: number, year: number): void;
