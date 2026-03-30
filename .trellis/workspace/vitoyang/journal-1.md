@@ -1572,3 +1572,70 @@ Replace fixed `spawnCultivators(1000)` with organic household-driven cultivator 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: feat: character memory system
+
+**Date**: 2026-03-30
+**Task**: feat: character memory system
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 完成内容
+
+为修仙模拟中的每个角色植入完整记忆系统，涵盖 5 大维度：
+
+| 维度 | 内容 | 行为效果 |
+|------|------|---------|
+| 角色间记忆 | 12 槽对手记忆 + 同乡识别 | 曾败逃跑+35%, 同乡战斗-60% |
+| 地点记忆 | 4 槽危险/福地记忆 | 回避受伤处, 返回突破地, 故乡归巢 |
+| 性格演化 | 6 情感状态 + 指数衰减 | confidence/caution/ambition/bloodlust/rootedness/breakthroughFear |
+| 突破心理 | 恐惧累积 + ambition 交互 | "心魔"延迟突破, 高 courage 不服输 |
+| 叙事里程碑 | 首次战斗/突破/杀人/最惨失败/最辉煌胜利 | biography 系统素材 |
+
+## 技术实现
+
+- **数据**: `src/engine/memory.ts` — 类型、工厂、环形缓冲、序列化、事件驱动更新
+- **配置**: `src/sim-tuning.ts` — MemoryTuning (22 个可调参数)
+- **序列化**: v5 格式, v4 向后兼容, ~234 bytes/角色
+- **RL 训练**: 状态向量 12→18 维, 网络 [32,16]→[64,32], 2M steps 重训完成
+- **测试**: 27 个新增单元测试, 全部 79 测试通过
+
+## 修改文件
+
+- `src/engine/memory.ts` (新) — 核心记忆模块
+- `src/engine/simulation.ts` — memories[], serialize v5, 情感衰减, 突破心理
+- `src/engine/combat.ts` — 对手记忆, 同乡抑制, confidence/bloodlust
+- `src/engine/spatial.ts` — 故乡归巢, 危险回避, 福地吸引, 戾气趋危
+- `src/engine/ai-state-extract.ts` — 18 维状态向量
+- `src/sim-tuning.ts` — MemoryTuning 配置
+- `src/types.ts` — CharacterMemorySnapshot, EngineHooks 扩展
+- `server/runner.ts` — getMemorySnapshot hook
+- `ai-policy/config.json` — v2 配置
+- `ai-policy/train/env.py` — 训练环境记忆模拟
+- `ai-policy/weights/v2.json` — 重训权重
+- `test/memory.test.ts` — 27 个测试
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6424314` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
