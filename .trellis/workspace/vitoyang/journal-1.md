@@ -1827,3 +1827,85 @@ Village (200-999) and town (1000-4999) were structurally unreachable.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: 非暴力交互系统 - 关系/切磋/传授/护法 + AI Policy v3
+
+**Date**: 2026-03-31
+**Task**: 非暴力交互系统 - 关系/切磋/传授/护法 + AI Policy v3
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Summary
+
+设计并实现了完整的修仙者非暴力交互系统（3 Phase），并重新训练 AI Policy 神经网络。
+
+## Implementation
+
+| Phase | Feature | Commit | Lines |
+|-------|---------|--------|-------|
+| 1 | 关系构建（师徒/道友/宿敌/血仇/同门） | `89c0c0d` | +1692 |
+| 2 | 切磋 + 传授 | `4fc5391` | +354 |
+| 3 | 护法（突破协助） | `9162cc6` | +180 |
+| - | AI Policy v3 + 集成加载 | `6d85764` | +257 |
+| - | bugfix: findNearbyAny 返回值类型 | `b9bd214` | - |
+| - | bugfix: 道友按修为比例而非境界差 | `ccc15c6` | - |
+| - | spec: bug root cause Pattern 6 | `a3e0c80` | +33 |
+
+## Key Design Decisions
+
+- **关系是数据层**，行为决策交给 AI Policy 神经网络，rule-based 仅做轻量 fallback
+- 固定 slot（师徒）+ ring buffer + 衰减（道友/宿敌）+ 不衰减（血仇）的混合存储模型
+- 道友形成条件用修为比例（min 30%）而非境界差，更符合修仙世界观
+- 道侣关系推迟到性别系统完成后
+- AI Policy v3: 34 features, 6 actions, [128,64] hidden layers, 13126 params
+
+## New Files
+
+- `src/engine/relationship.ts` — 关系数据结构、ring buffer、二进制序列化
+- `src/engine/interaction.ts` — 切磋/传授逻辑
+- `ai-policy/weights/v3.json` — 新训练的神经网络权重
+
+## Modified Files
+
+- `src/types.ts` — RichRelationshipEvent/SparringEvent/TeachingEvent, GuardianInfo, BehaviorState+guarding
+- `src/engine/simulation.ts` — 关系并行数组、tick衰减、师徒加速、护法逻辑、序列化v8
+- `src/engine/combat.ts` — 关系影响战斗、宿敌/血仇触发、道友形成
+- `src/engine/ai-state-extract.ts` — 16 新特征
+- `src/engine/spatial.ts` — findNearbyAny
+- `src/engine/memory.ts` — gratitude/grief 情感
+- `src/sim-tuning.ts` — RelationshipTuning, InteractionTuning, GuardianTuning
+- `server/events.ts` — 中文事件文本
+- `server/runner.ts` — AI Policy 加载集成
+- `ai-policy/config.json` — v3 配置
+- `ai-policy/train/env.py` — 关系/交互/合作训练环境
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `89c0c0d` | (see git log) |
+| `4fc5391` | (see git log) |
+| `9162cc6` | (see git log) |
+| `6d85764` | (see git log) |
+| `b9bd214` | (see git log) |
+| `a3e0c80` | (see git log) |
+| `ccc15c6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
