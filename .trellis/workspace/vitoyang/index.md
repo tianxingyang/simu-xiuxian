@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-03-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1788 | Active |
+| `journal-1.md` | ~1829 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-03-30 | Dashboard UI/UX overhaul + WebSocket proxy fix | `42503cf` | `main` |
 | 35 | 2026-03-30 | 聚落地盘收缩机制 | `079796a` | `main` |
 | 34 | 2026-03-30 | fix: settlement level distribution | `98bfe4a` | `main` |
 | 33 | 2026-03-30 | 凡人人口平衡：自然死亡率 + 天灾系统 | `895e8df` | `main` |

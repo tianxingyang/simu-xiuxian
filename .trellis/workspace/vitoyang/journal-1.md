@@ -1786,3 +1786,44 @@ Village (200-999) and town (1000-4999) were structurally unreachable.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Dashboard UI/UX overhaul + WebSocket proxy fix
+
+**Date**: 2026-03-30
+**Task**: Dashboard UI/UX overhaul + WebSocket proxy fix
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+| 改动 | 说明 |
+|------|------|
+| index.css 全量重写 | 更深配色(#050510)、圆角面板、渐变标题、发光边框、微交互动效、自定义滚动条 |
+| EventLog 左边框 | 事件类型彩色左边框指示(战斗红/晋升金/寿尽灰等) |
+| vite.config.ts | 添加 /ws WebSocket 代理到后端 3001 端口，修复 dev 模式连接问题 |
+
+**设计方向**: 修仙主题暗色 Dashboard — 深邃虚空背景 + 灵气辐射渐变 + 蓝金渐变标题
+**工具**: 使用 ui-ux-pro-max skill 生成设计系统(Dark Mode OLED + Gaming Dashboard)
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42503cf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
