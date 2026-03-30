@@ -99,6 +99,30 @@ export class SettlementSystem {
     return s;
   }
 
+  /** Claim a cell for an existing settlement and affiliate unaffiliated households there */
+  addCell(settlementId: number, cellIdx: number, households: HouseholdSystem): void {
+    const s = this.settlements.get(settlementId);
+    if (!s) return;
+    if (!s.cells.includes(cellIdx)) {
+      s.cells.push(cellIdx);
+      let cellSet = this.cellToSettlement.get(cellIdx);
+      if (!cellSet) {
+        cellSet = new Set();
+        this.cellToSettlement.set(cellIdx, cellSet);
+      }
+      cellSet.add(settlementId);
+    }
+    const cellHouseholds = households.getHouseholdsAtCell(cellIdx);
+    if (cellHouseholds) {
+      for (const hid of cellHouseholds) {
+        const h = households.getHousehold(hid);
+        if (h && h.settlementId === -1) {
+          households.updateSettlementAffiliation(hid, settlementId);
+        }
+      }
+    }
+  }
+
   tryExpand(settlementId: number, prng: PRNG, households: HouseholdSystem): boolean {
     const tuning = getSimTuning();
     const s = this.settlements.get(settlementId);

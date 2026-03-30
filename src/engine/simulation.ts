@@ -1,4 +1,4 @@
-import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types.js';
+import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types.js';
 import { getSimTuning } from '../sim-tuning.js';
 import { LEVEL_COUNT, MAP_SIZE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, sustainableMaxAge, threshold, tribulationChance } from '../constants/index.js';
 import { getBalanceProfile } from '../balance.js';
@@ -9,6 +9,7 @@ import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial.js';
 import { AreaTagSystem } from './area-tag.js';
 import { HouseholdSystem } from './household.js';
 import { SettlementSystem } from './settlement.js';
+import { type DisasterResult, processDisasters } from './disaster.js';
 import type { PolicyEngine } from './ai-policy.js';
 import { extractState } from './ai-state-extract.js';
 import {
@@ -119,6 +120,9 @@ export class SimulationEngine {
   tribulationDeaths = 0;
   promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
   spawned = 0;
+  naturalDeaths = 0;
+  disasterDeaths = 0;
+  disasterCount = 0;
 
   aliveIds: number[] = [];
   levelArrayCache: number[][];
@@ -371,6 +375,9 @@ export class SimulationEngine {
       villageCount: typeCounts.village,
       townCount: typeCounts.town,
       cityCount: typeCounts.city,
+      naturalDeaths: this.naturalDeaths,
+      disasterDeaths: this.disasterDeaths,
+      disasterCount: this.disasterCount,
     };
   }
 
@@ -558,7 +565,8 @@ export class SimulationEngine {
 
     // Household tick: growth, awakening, split
     profiler.start('tickYear.households');
-    const { awakenings, splits } = this.households.tickAll(this.prng, this.areaTags);
+    const { awakenings, splits, totalNaturalDeaths } = this.households.tickAll(this.prng, this.areaTags);
+    this.naturalDeaths = totalNaturalDeaths;
 
     // Spawn cultivators from awakenings
     for (const aw of awakenings) {
@@ -567,17 +575,24 @@ export class SimulationEngine {
       this.spawnCultivator(x, y, aw.settlementId, aw.householdId);
     }
 
-    // Process household splits -> create settlements
+    // Process household splits -> grow existing settlements or create new ones
     for (const sp of splits) {
       const result = this.households.splitHousehold(sp.parentId, this.prng, this.settlements);
       if (result) {
-        // Create a settlement from the split
-        const s = this.settlements.createSettlement(
-          sp.parentId, result.originCell, this.year, this.prng, this.households,
-        );
-        // Affiliate newly created households to the new settlement
-        for (const nh of result.newHouseholds) {
-          this.households.updateSettlementAffiliation(nh.id, s.id);
+        if (sp.parentSettlementId >= 0) {
+          // Parent belongs to a settlement: expand it instead of creating a new one
+          this.settlements.addCell(sp.parentSettlementId, result.originCell, this.households);
+          for (const nh of result.newHouseholds) {
+            this.households.updateSettlementAffiliation(nh.id, sp.parentSettlementId);
+          }
+        } else {
+          // Unaffiliated household: create a new settlement
+          const s = this.settlements.createSettlement(
+            sp.parentId, result.originCell, this.year, this.prng, this.households,
+          );
+          for (const nh of result.newHouseholds) {
+            this.households.updateSettlementAffiliation(nh.id, s.id);
+          }
         }
       }
     }
@@ -598,7 +613,43 @@ export class SimulationEngine {
 
     profiler.end('tickYear.households');
 
+    // Disasters
+    const tuning = getSimTuning();
+    let disasterResults: DisasterResult[] | undefined;
+    if (tuning.disaster.enabled) {
+      disasterResults = processDisasters(this.prng, this.settlements, this.households, this.areaTags);
+      for (const d of disasterResults) {
+        this.disasterDeaths += d.populationLost;
+        this.disasterCount++;
+      }
+      if (disasterResults.length > 0) {
+        this.settlements.recountTypes(this.households);
+      }
+    }
+
     const events: EventBuffer = collectEvents ? [] : null;
+
+    if (events && disasterResults) {
+      for (const d of disasterResults) {
+        const originX = d.originCellIdx % MAP_SIZE;
+        const originY = (d.originCellIdx - originX) / MAP_SIZE;
+        const de: RichDisasterEvent = {
+          type: 'disaster',
+          year: this.year,
+          newsRank: d.lossRatio >= 0.25 ? 'A' : 'B',
+          disasterType: d.type,
+          settlementId: d.settlementId,
+          settlementName: d.settlementName,
+          populationBefore: d.populationBefore,
+          populationLost: d.populationLost,
+          lossRatio: d.lossRatio,
+          region: getRegionName(originX, originY),
+          spiritualEnergy: this.areaTags.getSpiritualEnergy(originX, originY),
+          terrainDanger: this.areaTags.getTerrainDanger(originX, originY),
+        };
+        events.push(de);
+      }
+    }
     this.tickCultivators(events);
     this.evaluateBehaviorStates();
     moveCultivators(this);
@@ -627,6 +678,9 @@ export class SimulationEngine {
     this.tribulationDeaths = 0;
     this.promotionCounts.fill(0);
     this.spawned = 0;
+    this.naturalDeaths = 0;
+    this.disasterDeaths = 0;
+    this.disasterCount = 0;
     this._deadIds.length = 0;
   }
 
@@ -659,7 +713,7 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 5;
+    const SNAPSHOT_VERSION = 6;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
@@ -749,7 +803,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version < 1 || version > 5) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 6) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -852,7 +906,7 @@ export class SimulationEngine {
     let households: HouseholdSystem;
     let settlements: SettlementSystem;
     if (version >= 4) {
-      const hResult = HouseholdSystem.deserializeFrom(dv, off);
+      const hResult = HouseholdSystem.deserializeFrom(dv, off, version);
       households = hResult.system;
       off = hResult.offset;
       const sResult = SettlementSystem.deserializeFrom(dv, off, buf);
@@ -913,6 +967,9 @@ export class SimulationEngine {
     engine.tribulationDeaths = 0;
     engine.promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
     engine.spawned = 0;
+    engine.naturalDeaths = 0;
+    engine.disasterDeaths = 0;
+    engine.disasterCount = 0;
 
     // Recount settlement types
     settlements.recountTypes(households);
