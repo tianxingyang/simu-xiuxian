@@ -1639,3 +1639,58 @@ Replace fixed `spawnCultivators(1000)` with organic household-driven cultivator 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: 凡人人口平衡：自然死亡率 + 天灾系统
+
+**Date**: 2026-03-30
+**Task**: 凡人人口平衡：自然死亡率 + 天灾系统
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 变更概述
+
+为凡人人口引入双重平衡机制，解决无限指数增长问题：
+
+| 机制 | 说明 |
+|------|------|
+| 密度死亡率 | `deaths = pop × baseDeathRate × (1 + densityPressure × max(0, ratio-1))`，低密度 0.5%/年，超载时加速 |
+| 天灾事件 | 5 类：瘟疫/饥荒/洪水/兽潮/灵气紊乱，密度触发 + 随机散发 |
+| 两层承载力 | 单格硬上限 1500 + 聚落层面密度压力 |
+| 事件记录 | 聚落损失 ≥10% 时生成 RichDisasterEvent |
+
+**新增文件**: `src/engine/disaster.ts`
+
+**修改文件**:
+- `src/sim-tuning.ts` — MortalDeathTuning + DisasterTuning 类型及默认参数
+- `src/types.ts` — Household.deathAccum, RichDisasterEvent, YearSummary 计数器
+- `src/engine/household.ts` — tickAll() 密度死亡率 + 序列化 v6
+- `src/engine/simulation.ts` — tickYear() 天灾处理 + 快照版本 v6
+- `server/events.ts` — toDisplayEvent 天灾分支
+- `server/runner.ts` — getNamedCultivatorIds 天灾分支
+
+**调参记录**: baseDeathRate 0.02→0.005, carryingCapacityPerCell 500→1500
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `895e8df` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
