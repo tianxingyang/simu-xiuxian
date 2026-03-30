@@ -132,7 +132,7 @@ export type RelationshipTuning = {
   mentorLevelGap: number;
   mentorFormChance: number;
   allyFormChance: number;
-  allyLevelGapMax: number;
+  allyCultivationRatioMin: number;
   rivalCombatThreshold: number;
   fellowDiscipleCombatReduction: number;
   closeAllyThreshold: number;
@@ -335,7 +335,7 @@ export const DEFAULT_SIM_TUNING: Readonly<SimTuning> = Object.freeze({
     mentorLevelGap: 2,
     mentorFormChance: 0.15,
     allyFormChance: 0.1,
-    allyLevelGapMax: 2,
+    allyCultivationRatioMin: 0.3,
     rivalCombatThreshold: 3,
     fellowDiscipleCombatReduction: 0.5,
     closeAllyThreshold: 0.6,
@@ -634,7 +634,7 @@ function mergeSimTuning(overrides: SimTuningInput = {}): SimTuning {
       mentorLevelGap: overrides.relationship?.mentorLevelGap ?? DEFAULT_SIM_TUNING.relationship.mentorLevelGap,
       mentorFormChance: overrides.relationship?.mentorFormChance ?? DEFAULT_SIM_TUNING.relationship.mentorFormChance,
       allyFormChance: overrides.relationship?.allyFormChance ?? DEFAULT_SIM_TUNING.relationship.allyFormChance,
-      allyLevelGapMax: overrides.relationship?.allyLevelGapMax ?? DEFAULT_SIM_TUNING.relationship.allyLevelGapMax,
+      allyCultivationRatioMin: overrides.relationship?.allyCultivationRatioMin ?? DEFAULT_SIM_TUNING.relationship.allyCultivationRatioMin,
       rivalCombatThreshold: overrides.relationship?.rivalCombatThreshold ?? DEFAULT_SIM_TUNING.relationship.rivalCombatThreshold,
       fellowDiscipleCombatReduction: overrides.relationship?.fellowDiscipleCombatReduction ?? DEFAULT_SIM_TUNING.relationship.fellowDiscipleCombatReduction,
       closeAllyThreshold: overrides.relationship?.closeAllyThreshold ?? DEFAULT_SIM_TUNING.relationship.closeAllyThreshold,

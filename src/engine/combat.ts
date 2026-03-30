@@ -591,7 +591,9 @@ function processRelationshipFormation(engine: SimulationEngine, events: EventBuf
     if (nearbyId < 0) continue;
     const nearby = engine.cultivators[nearbyId];
     if (!nearby.alive) continue;
-    if (Math.abs(nearby.level - c.level) > rlt.allyLevelGapMax) continue;
+    const minCult = Math.min(c.cultivation, nearby.cultivation);
+    const maxCult = Math.max(c.cultivation, nearby.cultivation);
+    if (maxCult > 0 && minCult / maxCult < rlt.allyCultivationRatioMin) continue;
     const nRel = engine.relationships[nearbyId];
     if (hasVendettaAgainst(rel, nearbyId) || hasVendettaAgainst(nRel, c.id)) continue;
     if (isRival(rel, nearbyId)) continue;
