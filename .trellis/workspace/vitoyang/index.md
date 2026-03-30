@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 30
-- **Last Active**: 2026-03-20
+- **Total Sessions**: 31
+- **Last Active**: 2026-03-30
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1502 | Active |
+| `journal-1.md` | ~1574 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -27,8 +27,9 @@
 ## Session History
 
 <!-- @@@auto:session-history -->
-| # | Date | Title | Commits |
-|---|------|-------|---------|
+| # | Date | Title | Commits | Branch |
+|---|------|-------|---------|--------|
+| 31 | 2026-03-30 | RL-based character AI decision system | `fb8686e` | `main` |
 | 30 | 2026-03-20 | feat: mortal settlement simulation system | `4164eb5` |
 | 29 | 2026-03-20 | fix: protect cultivators from premature forgotten marking | `94966fc` |
 | 28 | 2026-03-19 | refactor(bot): centralize command routing in gateway | `d7c8b82` |

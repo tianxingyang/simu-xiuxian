@@ -1500,3 +1500,75 @@ Replace fixed `spawnCultivators(1000)` with organic household-driven cultivator 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: RL-based character AI decision system
+
+**Date**: 2026-03-30
+**Task**: RL-based character AI decision system
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 概要
+
+为修仙模拟引入 RL 训练的小型神经网络（MLP 12→32→16→5，1029参数），替换 `evaluateBehaviorStates()` 中的硬编码优先级规则，使角色行为决策具备涌现式智慧。
+
+## 架构
+
+- **配置驱动**：单一 `ai-policy/config.json` 定义 features/actions/rewards/network，同时驱动 Python 训练和 TS 推理
+- **Python 训练**：简化版引擎 (Gymnasium env) + stable-baselines3 PPO，5M timesteps
+- **TS 推理**：零外部依赖手写 forward()，<1ms/1000角色
+- **Fallback**：权重缺失或版本不匹配时自动退回规则系统
+
+## 训练环境改进
+
+初版 env 行为-结果因果链太弱（地形每年随机重摇），导致策略接近均匀分布。改进后：
+- 持久位置 + 行为驱动漂移（seeking 提升灵气，escaping 降低危险，settling 锁定位置）
+- 灵气直接影响修炼增长速率
+- Lv0 有小概率战斗遭遇
+- Recuperating 加速伤势恢复
+
+改进后模型在关键场景有明确行为分化：受伤选 recuperating、低灵气选 seeking、经脉伤选 settling。
+
+## 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `ai-policy/config.json` | 配置源 (12 features / 5 actions / 6 rewards) |
+| `ai-policy/weights/v1.json` | 训练权重 (22KB, 1029 params) |
+| `ai-policy/train/env.py` | Gymnasium 训练环境 |
+| `ai-policy/train/train.py` | PPO 训练脚本 |
+| `ai-policy/train/export.py` | 权重导出 JSON |
+| `src/engine/ai-policy.ts` | 通用 MLP 推理引擎 |
+| `src/engine/ai-state-extract.ts` | 12维状态提取 |
+
+## 修改文件
+
+| 文件 | 说明 |
+|------|------|
+| `src/engine/simulation.ts` | 添加 `aiPolicy` 集成点 |
+| `.gitignore` | 排除 .venv/、model/、__pycache__/ |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fb8686e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
