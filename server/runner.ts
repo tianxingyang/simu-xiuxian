@@ -1,6 +1,6 @@
 import type { EngineHooks, RichEvent, SimEvent, YearSummary } from '../src/types.js';
 import { SimulationEngine } from '../src/engine/simulation.js';
-import { clearSimData, getDB, getSimState, insertEvents, setSimState } from './db.js';
+import { clearSimData, getDB, getSimState, insertEvents, insertWorldSnapshot, setSimState } from './db.js';
 import { resetDisplayEventId, toDisplayEvent } from './events.js';
 import { runEviction } from './eviction.js';
 import { IdentityManager } from './identity.js';
@@ -11,6 +11,7 @@ const log = getLogger('runner');
 const BATCH_SIZES: Record<number, number> = { 1: 1, 2: 3, 3: 5 };
 const TARGET_INTERVAL = 1000;
 const ACK_TIMEOUT = TARGET_INTERVAL;
+const SNAPSHOT_INTERVAL = 50;
 
 export type BroadcastMsg =
   | { type: 'tick'; tickId: number; summaries: YearSummary[]; events: SimEvent[] }
@@ -49,6 +50,7 @@ export class Runner {
   private speed = 1;
   private running = false;
   private extinct = false;
+  private lastSnapshotYear = 0;
 
   private awaitingAck = false;
   private currentTickId = 0;
@@ -76,6 +78,14 @@ export class Runner {
   getWorldContext(): import('./ipc.js').WorldContext | null {
     if (!this.engine) return null;
     return this.engine.getWorldContext();
+  }
+
+  getEngine(): SimulationEngine | null {
+    return this.engine;
+  }
+
+  getIdentity(): IdentityManager | null {
+    return this.identity;
   }
 
   restore(): boolean {
@@ -108,6 +118,7 @@ export class Runner {
       this.running = false;
       this.awaitingAck = false;
       this.lastSummary = this.engine.getSummary();
+      this.lastSnapshotYear = Math.floor(this.engine.year / SNAPSHOT_INTERVAL) * SNAPSHOT_INTERVAL;
       resetDisplayEventId();
       if (!saved.snapshot) this.saveState();
       return true;
@@ -211,6 +222,23 @@ export class Runner {
       onTribulation(c, outcome, y) { id.onTribulation(c, outcome, y); },
       getName(cid) { return id.getActive(cid)?.name; },
       getSettlementName(sid) { return engine.settlements.getSettlement(sid)?.name; },
+      getMemorySnapshot(cid) {
+        const mem = engine.memories[cid];
+        if (!mem) return undefined;
+        return {
+          confidence: mem.confidence, caution: mem.caution,
+          ambition: mem.ambition, bloodlust: mem.bloodlust,
+          rootedness: mem.rootedness, breakthroughFear: mem.breakthroughFear,
+          combatWins: mem.combatWins, combatLosses: mem.combatLosses,
+          kills: mem.kills, breakthroughAttempts: mem.breakthroughAttempts,
+          breakthroughSuccesses: mem.breakthroughSuccesses, heavyInjuries: mem.heavyInjuries,
+          firstCombatYear: mem.milestones.firstCombatYear,
+          firstBreakthroughYear: mem.milestones.firstBreakthroughYear,
+          firstKillYear: mem.milestones.firstKillYear,
+          worstDefeatOpponentId: mem.milestones.worstDefeatOpponentId,
+          greatestVictoryOpponentId: mem.milestones.greatestVictoryOpponentId,
+        };
+      },
     };
     this.engine.hooks = hooks;
   }
@@ -309,6 +337,8 @@ export class Runner {
 
     try {
       const snapshot = engine.serialize();
+      const snapshotYear = Math.floor(engine.year / SNAPSHOT_INTERVAL) * SNAPSHOT_INTERVAL;
+      const needWorldSnapshot = snapshotYear > this.lastSnapshotYear && engine.year >= SNAPSHOT_INTERVAL;
       getDB().transaction(() => {
         this.identity?.flushToDB();
         insertEvents(rows);
@@ -320,6 +350,11 @@ export class Runner {
           highestLevelsEver: JSON.stringify(engine.milestones.levelEverPopulated),
           snapshot,
         });
+        if (needWorldSnapshot) {
+          const ctx = engine.getWorldContext();
+          insertWorldSnapshot(snapshotYear, JSON.stringify(ctx));
+          this.lastSnapshotYear = snapshotYear;
+        }
       })();
       runEviction(engine.year);
     } catch (err) {

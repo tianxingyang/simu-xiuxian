@@ -11,6 +11,13 @@ import { HouseholdSystem } from './household.js';
 import { SettlementSystem } from './settlement.js';
 import type { PolicyEngine } from './ai-policy.js';
 import { extractState } from './ai-state-extract.js';
+import {
+  type CharacterMemory, createEmptyMemory, resetMemory,
+  serializeMemory, deserializeMemory, MEMORY_SERIALIZE_BYTES,
+  tickEmotionalDecay, tickRootedness,
+  onCombatWin, onCombatLoss, onKinKilled,
+  onBreakthroughSuccess, onBreakthroughFail,
+} from './memory.js';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -80,6 +87,7 @@ export class MilestoneTracker {
 
 export class SimulationEngine {
   cultivators: Cultivator[] = [];
+  memories: CharacterMemory[] = [];
   levelGroups: Set<number>[];
   aliveLevelIds: Set<number>[];
   nextId = 0;
@@ -167,6 +175,7 @@ export class SimulationEngine {
       c.settlingUntil = 0;
       c.originSettlementId = originSettlementId;
       c.originHouseholdId = originHouseholdId;
+      resetMemory(this.memories[id], c);
     } else {
       id = this.nextId++;
       const nc = this.cultivators[id] = {
@@ -178,6 +187,7 @@ export class SimulationEngine {
         originSettlementId, originHouseholdId,
       };
       nc.cachedCourage = effectiveCourage(nc);
+      this.memories[id] = createEmptyMemory(nc);
     }
     this.aliveCount++;
     this.levelGroups[0].add(id);
@@ -209,6 +219,13 @@ export class SimulationEngine {
         growthRate = tuning.combat.lightInjuryGrowthRate;
       }
       c.cultivation += growthRate;
+
+      // Memory: emotional decay + rootedness
+      if (tuning.memory.enabled) {
+        const mem = this.memories[i];
+        tickEmotionalDecay(mem, c, tuning.memory);
+        tickRootedness(mem, c.behaviorState === 'settling', tuning.memory);
+      }
 
       const target = sustainableMaxAge(c.level);
       if (c.maxAge > target) {
@@ -428,11 +445,13 @@ export class SimulationEngine {
 
       if (policy) {
         const nextThreshold = c.level < MAX_LEVEL ? threshold(c.level + 1) : c.cultivation;
+        const mem = tuning.memory.enabled ? this.memories[i] : null;
         const state = extractState(
           c, year,
           this.areaTags.getSpiritualEnergy(c.x, c.y),
           this.areaTags.getTerrainDanger(c.x, c.y),
           nextThreshold,
+          mem,
         );
         const actionIdx = policy.selectAction(state, this.prng);
         const action = policy.actionName(actionIdx);
@@ -444,9 +463,16 @@ export class SimulationEngine {
       }
 
       // --- Fallback: rule-based behavior ---
+      const mem = tuning.memory.enabled ? this.memories[i] : null;
 
       // Priority 1: heavy injury -> escaping
       if (c.injuredUntil > year) {
+        c.behaviorState = 'escaping';
+        continue;
+      }
+
+      // Priority 1b: high caution → enter escaping even without active injury
+      if (mem && mem.caution > 0.7 && c.behaviorState !== 'settling') {
         c.behaviorState = 'escaping';
         continue;
       }
@@ -465,7 +491,12 @@ export class SimulationEngine {
       if (year % evalInterval !== 0 && c.behaviorState !== 'escaping' && c.behaviorState !== 'recuperating') {
         // Keep current state if not at evaluation tick (but settling expiry still checked)
         if (c.behaviorState === 'settling' && c.settlingUntil <= year) {
-          c.behaviorState = 'wandering';
+          // High rootedness extends settling duration
+          if (mem && mem.rootedness > 0.5) {
+            c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * tuning.behavior.settlingFraction * (1 + mem.rootedness)));
+          } else {
+            c.behaviorState = 'wandering';
+          }
         }
         continue;
       }
@@ -481,9 +512,16 @@ export class SimulationEngine {
           const expectedAttempts = btChance > 0 ? 1 / btChance : Infinity;
           const totalExpectedYears = yearsToThreshold + expectedAttempts * tuning.breakthroughFailure.cooldown;
 
-          if (totalExpectedYears > remainingYears) {
-            c.behaviorState = 'seeking_breakthrough';
-            continue;
+          // Ambition modulates urgency threshold: high ambition → seek breakthrough earlier
+          const urgencyMul = mem ? (1 + (mem.ambition - 0.5) * 0.6) : 1; // 0.7x ~ 1.3x
+          if (totalExpectedYears * urgencyMul > remainingYears) {
+            // Breakthrough fear: chance to delay even when urgent ("心魔")
+            if (mem && mem.breakthroughFear > 0.3 && this.prng() < mem.breakthroughFear * tuning.memory.breakthroughFearDelayProb) {
+              // Fear overrides — stay in current state instead of seeking
+            } else {
+              c.behaviorState = 'seeking_breakthrough';
+              continue;
+            }
           }
 
           // Was seeking and current cell now sufficient -> settle here
@@ -616,19 +654,20 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 4;
+    const SNAPSHOT_VERSION = 5;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
-    // Per cultivator: v3 fields (67) + originSettlementId(i32) + originHouseholdId(i32) = 75 bytes
+    // Per cultivator: v4 fields (75) bytes
     const CULTIVATOR_SIZE = 75;
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
+    const memoriesSize = this.nextId * MEMORY_SERIALIZE_BYTES;
     // Milestones: highestLevelEverReached(i32) + levelEverPopulated(u8 * LEVEL_COUNT)
     const milestonesSize = 4 + LEVEL_COUNT;
     const areaTagsSize = this.areaTags.serializeSize();
     const householdsSize = this.households.serializeSize();
     const settlementsSize = this.settlements.serializeSize();
-    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize;
+    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + memoriesSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize;
 
     const buf = Buffer.alloc(totalSize);
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -671,6 +710,11 @@ export class SimulationEngine {
       dv.setInt32(off, c.originHouseholdId, true); off += 4;
     }
 
+    // Memories (v5)
+    for (let i = 0; i < this.nextId; i++) {
+      off = serializeMemory(dv, off, this.memories[i]);
+    }
+
     // Milestones
     dv.setInt32(off, this.milestones.highestLevelEverReached, true); off += 4;
     for (let i = 0; i < LEVEL_COUNT; i++) {
@@ -700,7 +744,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version < 1 || version > 4) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 5) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -767,6 +811,20 @@ export class SimulationEngine {
       }
     }
 
+    // Memories (v5+)
+    const memories: CharacterMemory[] = new Array(nextId);
+    if (version >= 5) {
+      for (let i = 0; i < nextId; i++) {
+        const result = deserializeMemory(dv, off);
+        memories[i] = result.mem;
+        off = result.offset;
+      }
+    } else {
+      for (let i = 0; i < nextId; i++) {
+        memories[i] = createEmptyMemory(cultivators[i]);
+      }
+    }
+
     // Milestones
     const milestones = new MilestoneTracker();
     milestones.highestLevelEverReached = dv.getInt32(off, true); off += 4;
@@ -812,6 +870,7 @@ export class SimulationEngine {
     engine.aliveCount = verifiedAlive;
     engine.yearlySpawn = yearlySpawn;
     engine.cultivators = cultivators;
+    engine.memories = memories;
     engine.freeSlots = freeSlots;
     engine.levelGroups = levelGroups;
     engine.aliveLevelIds = levelGroups;
@@ -947,6 +1006,10 @@ export function tryBreakthrough(
     if (c.level === MAX_LEVEL) c.reachedMaxLevelAt = engine.year;
     breakthroughMove(engine, c);
 
+    if (tuning.memory.enabled) {
+      onBreakthroughSuccess(engine.memories[c.id], c.y * MAP_SIZE + c.x, year, tuning.memory);
+    }
+
     engine.hooks?.onPromotion(c, c.level, year);
 
     if (c.level >= 2) {
@@ -990,6 +1053,10 @@ export function tryBreakthrough(
       penalty = 'injury';
       c.injuredUntil = year + tuning.combat.injuryDuration;
     }
+  }
+
+  if (tuning.memory.enabled) {
+    onBreakthroughFail(engine.memories[c.id], c.courage, penalty === 'injury', year, tuning.memory);
   }
 
   if (events && c.level >= 2) {

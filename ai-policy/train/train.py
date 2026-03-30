@@ -13,7 +13,7 @@ from pathlib import Path
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 
-from env import XiuxianEnv
+from env import XiuxianEnv, load_config
 
 
 def main() -> None:
@@ -27,7 +27,11 @@ def main() -> None:
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
 
+    cfg = load_config()
+    net_arch = cfg["network"]["hidden"]
+    n_features = len(cfg["features"])
     print(f"Training PPO for {args.timesteps} timesteps (seed={args.seed}, n_envs={args.n_envs})")
+    print(f"Config v{cfg['version']}: {n_features} features, net_arch={net_arch}")
 
     env = make_vec_env(
         XiuxianEnv,
@@ -49,7 +53,7 @@ def main() -> None:
         clip_range=0.2,
         ent_coef=0.01,
         policy_kwargs={
-            "net_arch": [32, 16],
+            "net_arch": net_arch,
         },
     )
 

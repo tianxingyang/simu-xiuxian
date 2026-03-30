@@ -2,6 +2,7 @@
 
 Simulates a single cultivator from age 10 until death.
 Each step = 1 year. State/action/reward definitions driven by config.json.
+Now includes memory/emotional state simulation (v2).
 """
 
 from __future__ import annotations
@@ -94,6 +95,24 @@ _TUNING = {
     "courage_trough": 0.3,
     "courage_youngAmp": 0.1,
     "courage_oldAmp": 0.3,
+}
+
+# Memory tuning defaults (from DEFAULT_SIM_TUNING.memory)
+_MEMORY = {
+    "emotionalDecayRate": 0.95,
+    "confidenceWinDelta": 0.12,
+    "confidenceLossDelta": 0.15,
+    "cautionHeavyInjuryDelta": 0.3,
+    "cautionLightInjuryDelta": 0.1,
+    "ambitionSuccessDelta": 0.2,
+    "ambitionFailHighCourageDelta": 0.08,
+    "ambitionFailLowCourageDelta": 0.12,
+    "ambitionCourageThreshold": 0.5,
+    "bloodlustKillDelta": 0.2,
+    "bloodlustWinDelta": 0.05,
+    "rootednessSettlingDelta": 0.02,
+    "rootednessDisplaceDelta": 0.15,
+    "breakthroughFearDelta": 0.15,
 }
 
 LEVEL_COUNT = 8
@@ -222,13 +241,6 @@ def _effective_courage(base_courage: float, age: int, max_age: int) -> float:
 
 
 def _base_encounter_prob(level: int, danger: int) -> float:
-    """Rough encounter probability for a cultivator at *level* on terrain *danger*.
-
-    In the full engine this is density-driven (same-level neighbors / total in
-    radius).  For single-cultivator training we approximate with a level-scaled
-    base probability modulated by terrain danger.
-    """
-    # Level 0 has rare encounters (bandits, beasts); higher levels sparser
     if level == 0:
         base = 0.03
     else:
@@ -243,11 +255,19 @@ def _base_encounter_prob(level: int, danger: int) -> float:
 # ---------------------------------------------------------------------------
 
 
-class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
-    """Single-cultivator xiuxian lifecycle environment.
+def _clamp01(v: float) -> float:
+    return max(0.0, min(1.0, v))
 
-    Observation: 12-dim float32 vector (see config.json features).
-    Action: Discrete(5) behavior state index (see config.json actions).
+
+def _decay(value: float, baseline: float, rate: float) -> float:
+    return baseline + (value - baseline) * rate
+
+
+class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
+    """Single-cultivator xiuxian lifecycle environment with memory.
+
+    Observation: 18-dim float32 vector (12 base + 6 memory features).
+    Action: Discrete(5) behavior state index.
     """
 
     metadata = {"render_modes": []}
@@ -269,7 +289,7 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
 
         self._rng = np.random.default_rng(seed)
 
-        # Cultivator state (set on reset)
+        # Cultivator state
         self._age: int = 0
         self._cultivation: float = 0.0
         self._level: int = 0
@@ -282,9 +302,17 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         self._year: int = 0
         self._alive: bool = False
 
-        # Cell terrain (simplified: two scalars)
+        # Cell terrain
         self._spiritual_energy: int = 3
         self._danger: int = 3
+
+        # Memory / emotional state
+        self._confidence: float = 0.0
+        self._caution: float = 0.0
+        self._ambition: float = 0.5
+        self._bloodlust: float = 0.0
+        self._rootedness: float = 0.0
+        self._breakthrough_fear: float = 0.0
 
     # ------------------------------------------------------------------
     # Gym API
@@ -312,9 +340,16 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         self._bt_cooldown_until = 0
         self._alive = True
 
-        # Random terrain for this life
         self._spiritual_energy = int(self._rng.integers(1, 6))
         self._danger = int(self._rng.integers(1, 6))
+
+        # Reset memory
+        self._confidence = self._courage
+        self._caution = 0.0
+        self._ambition = 0.5
+        self._bloodlust = 0.0
+        self._rootedness = 0.0
+        self._breakthrough_fear = 0.0
 
         return self._obs(), {}
 
@@ -329,14 +364,26 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         action_name = self.cfg["actions"][action]
         self._apply_behavior_terrain(action_name)
 
-        # --- Cultivation growth (spiritual energy boosts growth) ---
+        # --- Emotional decay ---
+        dr = _MEMORY["emotionalDecayRate"]
+        self._confidence = _decay(self._confidence, self._courage, dr)
+        self._caution = _decay(self._caution, 0.0, dr)
+        self._ambition = _decay(self._ambition, 0.5, dr)
+        self._bloodlust = _decay(self._bloodlust, 0.0, dr)
+        self._rootedness = _decay(self._rootedness, 0.0, dr)
+        self._breakthrough_fear = _decay(self._breakthrough_fear, 0.0, dr)
+
+        # Rootedness: settling increases it
+        if action_name == "settling":
+            self._rootedness = _clamp01(self._rootedness + _MEMORY["rootednessSettlingDelta"])
+
+        # --- Cultivation growth ---
         cult_before = self._cultivation
         growth = 1.0
         if self._injured_until > self._year:
             growth = _TUNING["injuryGrowthRate"]
         elif self._light_injury_until > self._year:
             growth = _TUNING["lightInjuryGrowthRate"]
-        # SE factor: 0→0.6, 1→0.7, 2→0.85, 3→1.0, 4→1.2, 5→1.5
         se_growth_factor = _TUNING["spiritualEnergyBreakthroughFactor"]
         se_idx = max(0, min(self._spiritual_energy, len(se_growth_factor) - 1))
         growth *= se_growth_factor[se_idx]
@@ -398,28 +445,21 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
     # ------------------------------------------------------------------
 
     def _apply_behavior_terrain(self, action: str) -> None:
-        """Adjust terrain via persistent drift (position has inertia)."""
         if action == "seeking_breakthrough":
-            # Drift toward high spiritual energy, danger unchanged
             self._spiritual_energy = min(5, self._spiritual_energy + int(self._rng.choice([0, 1])))
             self._danger = max(0, min(5, self._danger + int(self._rng.choice([-1, 0, 1]))))
         elif action == "escaping":
-            # Deterministically reduce danger, SE drifts down
             self._danger = max(0, self._danger - 1)
             self._spiritual_energy = max(0, min(5, self._spiritual_energy + int(self._rng.choice([-1, 0]))))
         elif action == "settling":
-            # Stay put -- no terrain change (reward for prior positioning)
             pass
         elif action == "recuperating":
-            # Slight safety drift, SE unchanged
             self._danger = max(0, min(5, self._danger + int(self._rng.choice([-1, 0]))))
         else:
-            # wandering: both dimensions random walk
             self._spiritual_energy = max(0, min(5, self._spiritual_energy + int(self._rng.choice([-1, 0, 1]))))
             self._danger = max(0, min(5, self._danger + int(self._rng.choice([-1, 0, 1]))))
 
     def _try_breakthrough(self) -> tuple[bool, float]:
-        """Attempt breakthrough. Returns (success, reward_delta)."""
         se_factor_table = _TUNING["spiritualEnergyBreakthroughFactor"]
         se_idx = max(1, min(self._spiritual_energy, len(se_factor_table) - 1))
         se_factor = se_factor_table[se_idx]
@@ -429,10 +469,20 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
             self._level += 1
             bonus = lifespan_bonus(self._level)
             self._max_age = min(_sustainable_max_age(MAX_LEVEL), self._max_age + bonus)
+            # Memory: success
+            self._ambition = _clamp01(self._ambition + _MEMORY["ambitionSuccessDelta"])
+            self._breakthrough_fear = 0.0
             return True, 0.0
 
         # Failure
         self._bt_cooldown_until = self._year + _TUNING["breakthroughCooldown"]
+
+        # Memory: fear increases
+        self._breakthrough_fear = _clamp01(self._breakthrough_fear + _MEMORY["breakthroughFearDelta"])
+        if self._courage >= _MEMORY["ambitionCourageThreshold"]:
+            self._ambition = _clamp01(self._ambition + _MEMORY["ambitionFailHighCourageDelta"])
+        else:
+            self._ambition = _clamp01(self._ambition - _MEMORY["ambitionFailLowCourageDelta"])
 
         total_w = (
             _TUNING["breakthroughNothingWeight"]
@@ -452,14 +502,13 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
                 )
             else:
                 self._injured_until = self._year + _TUNING["injuryDuration"]
+                self._caution = _clamp01(self._caution + _MEMORY["cautionHeavyInjuryDelta"])
                 return False, self._reward("heavy_injury")
         return False, 0.0
 
     def _resolve_combat(self) -> float:
-        """Simplified combat against a synthetic opponent. Returns reward delta."""
         reward = 0.0
 
-        # Generate opponent: same level +-1
         opp_level = max(0, min(MAX_LEVEL, self._level + int(self._rng.integers(-1, 2))))
         opp_cult = float(THRESHOLDS[opp_level]) + self._rng.random() * max(1.0, float(THRESHOLDS[min(opp_level + 1, MAX_LEVEL)] - THRESHOLDS[opp_level]) * 0.5)
 
@@ -472,7 +521,6 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         if total <= 0:
             return 0.0
 
-        # Courage-based fight-or-flee (simplified: we always fight if action chose to)
         win_prob = my_power / total
         if self._rng.random() < win_prob:
             # Win
@@ -481,8 +529,15 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
             loot_penalty = math.exp(-_sigmoid(opp_level, _BALANCE["combat"]["lootPenalty"]))
             self._cultivation += loot * loot_penalty
             reward += self._reward("combat_win")
+            # Memory: win
+            self._confidence = _clamp01(self._confidence + _MEMORY["confidenceWinDelta"])
+            killed = self._rng.random() < 0.3  # simplified kill chance
+            self._bloodlust = _clamp01(self._bloodlust + (_MEMORY["bloodlustKillDelta"] if killed else _MEMORY["bloodlustWinDelta"]))
         else:
-            # Lose: determine outcome
+            # Lose
+            self._confidence = _clamp01(self._confidence - _MEMORY["confidenceLossDelta"])
+            self._rootedness = _clamp01(self._rootedness - _MEMORY["rootednessDisplaceDelta"])
+
             gap = (opp_power - my_power) / (opp_power + my_power) if (opp_power + my_power) > 0 else 0
             death_boost = math.exp(_gaussian(self._level, _BALANCE["combat"]["deathBoost"]))
             death_chance = min(
@@ -503,6 +558,7 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
                     self._cultivation = float(THRESHOLDS[self._level]) if self._level >= 1 else 0.0
                 elif outcome == "heavy_injury":
                     self._injured_until = self._year + _TUNING["injuryDuration"]
+                    self._caution = _clamp01(self._caution + _MEMORY["cautionHeavyInjuryDelta"])
                     reward += self._reward("heavy_injury")
                 elif outcome == "cult_loss":
                     base = float(THRESHOLDS[self._level])
@@ -511,6 +567,7 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
                     self._meridian_damaged_until = self._year + _TUNING["meridianDamageDuration"]
                 elif outcome == "light_injury":
                     self._light_injury_until = self._year + _TUNING["lightInjuryDuration"]
+                    self._caution = _clamp01(self._caution + _MEMORY["cautionLightInjuryDelta"])
 
         return reward
 
@@ -542,7 +599,6 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
     # ------------------------------------------------------------------
 
     def _obs(self) -> NDArray[np.float32]:
-        """Build observation vector from config feature definitions."""
         features = self.cfg["features"]
         obs = np.zeros(len(features), dtype=np.float32)
         for i, feat in enumerate(features):
@@ -585,6 +641,19 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
             return min(1.0, remaining / _TUNING["breakthroughCooldown"])
         if name == "age_ratio":
             return self._age / self._max_age if self._max_age > 0 else 1.0
+        # Memory features
+        if name == "confidence":
+            return self._confidence
+        if name == "caution":
+            return self._caution
+        if name == "ambition":
+            return self._ambition
+        if name == "bloodlust":
+            return self._bloodlust
+        if name == "rootedness":
+            return self._rootedness
+        if name == "breakthrough_fear":
+            return self._breakthrough_fear
         return 0.0
 
     def _reward(self, event: str, scale_value: float = 0.0) -> float:

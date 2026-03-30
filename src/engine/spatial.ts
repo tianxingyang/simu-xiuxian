@@ -1,19 +1,13 @@
-import type { Cultivator } from '../types';
+import type { Cultivator } from '../types.js';
+import { getSimTuning } from '../sim-tuning.js';
 import {
-  BREAKTHROUGH_MOVE,
-  ENCOUNTER_RADIUS,
-  ESCAPING_MOVE_PROB,
   LEVEL_COUNT,
   MAP_MASK,
   MAP_SIZE,
-  RECUPERATING_MOVE_PROB,
-  SEEKING_BREAKTHROUGH_MOVE_PROB,
-  WANDER_BASE_PROB,
-  WANDER_LEVEL_BONUS,
-} from '../constants';
-import type { SimulationEngine } from './simulation';
-import { profiler } from './profiler';
-import { TERRAIN_DANGER_ENCOUNTER_FACTOR } from '../constants';
+} from '../constants/index.js';
+import type { SimulationEngine } from './simulation.js';
+import { profiler } from './profiler.js';
+import { findPlaceByType, PLACE_DANGER, PLACE_BREAKTHROUGH, type CharacterMemory } from './memory.js';
 
 type CellSet = Set<number>;
 
@@ -155,10 +149,31 @@ function moveWeightedBy(
   engine.spatialIndex.add(c.id, c.level, c.x, c.y);
 }
 
+// Manhattan distance on toroidal grid
+function toroidalDist(ax: number, ay: number, bx: number, by: number): number {
+  const dx = Math.abs(ax - bx);
+  const dy = Math.abs(ay - by);
+  return Math.min(dx, MAP_SIZE - dx) + Math.min(dy, MAP_SIZE - dy);
+}
+
+// Direction bias toward a target cell (higher weight for directions that reduce distance)
+function homingWeight(cx: number, cy: number, tx: number, ty: number, dirIdx: number, strength: number): number {
+  const nx = wrapCoord(cx + DX[dirIdx]);
+  const ny = wrapCoord(cy + DY[dirIdx]);
+  const curDist = toroidalDist(cx, cy, tx, ty);
+  const newDist = toroidalDist(nx, ny, tx, ty);
+  if (newDist < curDist) return 1 + strength;
+  if (newDist > curDist) return Math.max(0.1, 1 - strength * 0.5);
+  return 1;
+}
+
 export function moveCultivators(engine: SimulationEngine): void {
   profiler.start('moveCultivators');
   const prng = engine.prng;
   const tags = engine.areaTags;
+  const tuning = getSimTuning();
+  const mt = tuning.memory;
+  const memEnabled = mt.enabled;
 
   for (let i = 0; i < engine.nextId; i++) {
     const c = engine.cultivators[i];
@@ -166,41 +181,106 @@ export function moveCultivators(engine: SimulationEngine): void {
     if (c.reachedMaxLevelAt > 0) continue;
 
     const state = c.behaviorState;
-
     if (state === 'settling') continue;
 
-    if (state === 'escaping') {
-      if (prng() >= ESCAPING_MOVE_PROB) continue;
-      moveWeightedBy(engine, c, (nx, ny) => {
-        const danger = tags.getTerrainDanger(nx, ny);
-        return 6 - danger; // invert: low danger = high weight
-      });
-      continue;
-    }
+    const mem: CharacterMemory | null = memEnabled ? engine.memories[i] : null;
 
-    if (state === 'recuperating') {
-      if (prng() >= RECUPERATING_MOVE_PROB) continue;
-      moveToRandomDir(engine, c);
+    if (state === 'escaping' || state === 'recuperating') {
+      if (state === 'escaping' && prng() >= tuning.behavior.escapingMoveProb) continue;
+      if (state === 'recuperating' && prng() >= tuning.behavior.recuperatingMoveProb) continue;
+
+      if (mem) {
+        // Homing toward origin settlement when escaping/recuperating
+        const originSid = c.originSettlementId;
+        const settlement = originSid >= 0 ? engine.settlements.getSettlement(originSid) : null;
+        if (settlement && settlement.cells.length > 0) {
+          const homeCell = settlement.cells[0];
+          const hx = homeCell % MAP_SIZE;
+          const hy = (homeCell - hx) / MAP_SIZE;
+          moveWeightedBy(engine, c, (nx, ny) => {
+            let w = 6 - tags.getTerrainDanger(nx, ny); // base: avoid danger
+            // Bias toward home
+            const homeDist = toroidalDist(nx, ny, hx, hy);
+            const curDist = toroidalDist(c.x, c.y, hx, hy);
+            if (homeDist < curDist) w *= (1 + mt.homingStrength);
+            // Avoid remembered danger spots
+            const dangerPlace = findPlaceByType(mem, PLACE_DANGER);
+            if (dangerPlace && dangerPlace.cellIdx !== -1) {
+              const dpx = dangerPlace.cellIdx % MAP_SIZE;
+              const dpy = (dangerPlace.cellIdx - dpx) / MAP_SIZE;
+              if (toroidalDist(nx, ny, dpx, dpy) <= 2) w *= Math.max(0.1, 1 / mt.dangerPlaceAvoidance);
+            }
+            return w;
+          });
+        } else if (state === 'escaping') {
+          // No home — just flee danger, avoid remembered danger spots
+          moveWeightedBy(engine, c, (nx, ny) => {
+            let w = 6 - tags.getTerrainDanger(nx, ny);
+            const dangerPlace = findPlaceByType(mem, PLACE_DANGER);
+            if (dangerPlace && dangerPlace.cellIdx !== -1) {
+              const dpx = dangerPlace.cellIdx % MAP_SIZE;
+              const dpy = (dangerPlace.cellIdx - dpx) / MAP_SIZE;
+              if (toroidalDist(nx, ny, dpx, dpy) <= 2) w *= Math.max(0.1, 1 / mt.dangerPlaceAvoidance);
+            }
+            return w;
+          });
+        } else {
+          moveToRandomDir(engine, c);
+        }
+      } else {
+        // No memory: original behavior
+        if (state === 'escaping') {
+          moveWeightedBy(engine, c, (nx, ny) => 6 - tags.getTerrainDanger(nx, ny));
+        } else {
+          moveToRandomDir(engine, c);
+        }
+      }
       continue;
     }
 
     if (state === 'seeking_breakthrough') {
-      if (prng() >= SEEKING_BREAKTHROUGH_MOVE_PROB) continue;
-      moveWeightedBy(engine, c, (nx, ny) => tags.getSpiritualEnergy(nx, ny));
+      if (prng() >= tuning.behavior.seekingBreakthroughMoveProb) continue;
+      if (mem) {
+        const powerSpot = findPlaceByType(mem, PLACE_BREAKTHROUGH);
+        moveWeightedBy(engine, c, (nx, ny) => {
+          let w = tags.getSpiritualEnergy(nx, ny);
+          // Bias toward remembered breakthrough location (power spot attraction)
+          if (powerSpot && powerSpot.cellIdx !== -1) {
+            const psx = powerSpot.cellIdx % MAP_SIZE;
+            const psy = (powerSpot.cellIdx - psx) / MAP_SIZE;
+            const spotDist = toroidalDist(nx, ny, psx, psy);
+            const curDist = toroidalDist(c.x, c.y, psx, psy);
+            if (spotDist < curDist) w *= (1 + mt.powerSpotAttraction);
+          }
+          return w;
+        });
+      } else {
+        moveWeightedBy(engine, c, (nx, ny) => tags.getSpiritualEnergy(nx, ny));
+      }
       continue;
     }
 
-    // wandering: original probability formula, pure random direction
-    const prob = WANDER_BASE_PROB + c.level * WANDER_LEVEL_BONUS;
+    // wandering
+    const prob = tuning.spatial.wanderBaseProb + c.level * tuning.spatial.wanderLevelBonus;
     if (prng() >= prob) continue;
-    moveToRandomDir(engine, c);
+
+    if (mem && mem.bloodlust > 0.3) {
+      // High bloodlust: wander toward danger
+      moveWeightedBy(engine, c, (nx, ny) => {
+        const danger = tags.getTerrainDanger(nx, ny);
+        return 1 + danger * mt.bloodlustDangerAttraction * mem.bloodlust;
+      });
+    } else {
+      moveToRandomDir(engine, c);
+    }
   }
   profiler.end('moveCultivators');
 }
 
 export function breakthroughMove(engine: SimulationEngine, c: Cultivator): void {
   const prng = engine.prng;
-  const dist = BREAKTHROUGH_MOVE[0] + Math.floor(prng() * (BREAKTHROUGH_MOVE[1] - BREAKTHROUGH_MOVE[0] + 1));
+  const { breakthroughMove } = getSimTuning().spatial;
+  const dist = breakthroughMove[0] + Math.floor(prng() * (breakthroughMove[1] - breakthroughMove[0] + 1));
   const dir = Math.floor(prng() * 8);
   const nx = wrapCoord(c.x + DX[dir] * dist);
   const ny = wrapCoord(c.y + DY[dir] * dist);
@@ -214,7 +294,7 @@ export function breakthroughMove(engine: SimulationEngine, c: Cultivator): void 
 export function findSpatialOpponent(
   engine: SimulationEngine, c: Cultivator,
 ): Cultivator | null {
-  const radius = ENCOUNTER_RADIUS[c.level];
+  const radius = getSimTuning().spatial.encounterRadius[c.level];
   const arr = engine.levelArrayCache[c.level];
   if (arr.length < 2) return null;
 
@@ -241,8 +321,9 @@ export function buildEncounterProbCache(engine: SimulationEngine): void {
 
   const si = engine.spatialIndex;
   const tags = engine.areaTags;
+  const tuning = getSimTuning();
   for (let level = 1; level < LEVEL_COUNT; level++) {
-    const radius = ENCOUNTER_RADIUS[level];
+    const radius = tuning.spatial.encounterRadius[level];
     const base = level * CELLS;
     const plane = si.grid[level];
     for (let cellIdx = 0; cellIdx < CELLS; cellIdx++) {
@@ -253,7 +334,7 @@ export function buildEncounterProbCache(engine: SimulationEngine): void {
       if (sameLevelCount <= 1) continue;
       const totalCount = si.queryAllInRadius(cx, cy, radius);
       if (totalCount === 0) continue;
-      const dangerFactor = TERRAIN_DANGER_ENCOUNTER_FACTOR[tags.getTerrainDanger(cx, cy)];
+      const dangerFactor = tuning.terrain.terrainDangerEncounterFactor[tags.getTerrainDanger(cx, cy)];
       _encounterProbCache[base + cellIdx] = (sameLevelCount / totalCount) * dangerFactor;
     }
   }

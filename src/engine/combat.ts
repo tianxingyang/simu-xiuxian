@@ -4,43 +4,22 @@ import type {
   NewsRank,
   RichCombatEvent,
   RichEvent,
-} from '../types';
-import { gaussianContribution, getBalanceProfile, sigmoidContribution } from '../balance';
+} from '../types.js';
+import { gaussianContribution, getBalanceProfile, sigmoidContribution } from '../balance.js';
+import { getSimTuning } from '../sim-tuning.js';
 import {
-  DEFEAT_CULT_LOSS_RATE,
-  DEFEAT_CULT_LOSS_W,
-  DEFEAT_DEATH_BASE,
-  DEFEAT_DEATH_DECAY,
-  DEFEAT_DEMOTION_W,
-  DEFEAT_GAP_SEVERITY,
-  DEFEAT_INJURY_W,
-  DEFEAT_LIGHT_INJURY_W,
-  DEFEAT_MAX_DEATH,
-  DEFEAT_MERIDIAN_W,
-  EVASION_PENALTY,
-  EVASION_SENSITIVITY,
-  INJURY_DURATION,
   LEVEL_COUNT,
-  LIGHT_INJURY_DURATION,
-  LOOT_BASE_RATE,
-  LOOT_VARIABLE_RATE,
-  LUCK_MAX,
-  LUCK_MEAN,
-  LUCK_MIN,
-  LUCK_STDDEV,
   MAP_SIZE,
-  MERIDIAN_COMBAT_PENALTY,
-  MERIDIAN_DAMAGE_DURATION,
   effectiveCourage,
   getRegionName,
   round1,
   threshold,
-} from '../constants';
-import { prngShuffle, truncatedGaussian } from './prng';
-import { tryBreakthrough, type SimulationEngine } from './simulation';
-import { profiler } from './profiler';
-import { buildEncounterProbCache, findSpatialOpponent, localEncounterProbability } from './spatial';
-import { TERRAIN_DANGER_EVASION_ADJUST } from '../constants';
+} from '../constants/index.js';
+import { prngShuffle, truncatedGaussian } from './prng.js';
+import { tryBreakthrough, type SimulationEngine } from './simulation.js';
+import { profiler } from './profiler.js';
+import { buildEncounterProbCache, findSpatialOpponent, localEncounterProbability } from './spatial.js';
+import { onCombatWin, onCombatLoss, onKinKilled, pushPlace, PLACE_DANGER, findEncounter, ENCOUNTER_LOSS, ENCOUNTER_KIN_KILLED } from './memory.js';
 
 type EventBuffer = RichEvent[] | null;
 
@@ -149,17 +128,41 @@ function resolveDefeatOutcome(
   loserLevel: number,
 ): number {
   const gap = (winnerSnap - loserSnap) / (winnerSnap + loserSnap);
+  const tuning = getSimTuning();
   const profile = getBalanceProfile();
   const deathBoost = Math.exp(gaussianContribution(loserLevel, profile.combat.deathBoost));
-  const deathChance = Math.min(DEFEAT_MAX_DEATH,
-    DEFEAT_DEATH_BASE * DEFEAT_DEATH_DECAY ** loserLevel * (1 + DEFEAT_GAP_SEVERITY * gap) * deathBoost);
+  const deathChance = Math.min(
+    tuning.combat.defeatMaxDeath,
+    tuning.combat.defeatDeathBase *
+      tuning.combat.defeatDeathDecay ** loserLevel *
+      (1 + tuning.combat.defeatGapSeverity * gap) *
+      deathBoost,
+  );
   if (prng() < deathChance) return 0;
-  const total = DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W + DEFEAT_MERIDIAN_W + DEFEAT_DEMOTION_W;
+  const total =
+    tuning.combat.defeatLightInjuryWeight +
+    tuning.combat.defeatInjuryWeight +
+    tuning.combat.defeatCultLossWeight +
+    tuning.combat.defeatMeridianWeight +
+    tuning.combat.defeatDemotionWeight;
   const r = prng();
-  if (r < DEFEAT_LIGHT_INJURY_W / total) return 6;
-  if (r < (DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W) / total) return 2;
-  if (r < (DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W) / total) return 3;
-  if (r < (DEFEAT_LIGHT_INJURY_W + DEFEAT_INJURY_W + DEFEAT_CULT_LOSS_W + DEFEAT_MERIDIAN_W) / total) return 5;
+  if (r < tuning.combat.defeatLightInjuryWeight / total) return 6;
+  if (r < (tuning.combat.defeatLightInjuryWeight + tuning.combat.defeatInjuryWeight) / total) return 2;
+  if (
+    r < (
+      tuning.combat.defeatLightInjuryWeight +
+      tuning.combat.defeatInjuryWeight +
+      tuning.combat.defeatCultLossWeight
+    ) / total
+  ) return 3;
+  if (
+    r < (
+      tuning.combat.defeatLightInjuryWeight +
+      tuning.combat.defeatInjuryWeight +
+      tuning.combat.defeatCultLossWeight +
+      tuning.combat.defeatMeridianWeight
+    ) / total
+  ) return 5;
   return 1;
 }
 
@@ -171,22 +174,51 @@ function resolveCombat(
   eventMinLevel: number,
 ): void {
   const year = engine.year;
+  const tuning = getSimTuning();
   const aCultSnap = a.cultivation;
   const bCultSnap = b.cultivation;
 
   let aCombatPower = a.cultivation;
   let bCombatPower = b.cultivation;
   if (a.meridianDamagedUntil > year) {
-    aCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+    aCombatPower *= (1 - tuning.combat.meridianCombatPenalty);
   }
   if (b.meridianDamagedUntil > year) {
-    bCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+    bCombatPower *= (1 - tuning.combat.meridianCombatPenalty);
   }
 
   let total = aCombatPower + bCombatPower;
   if (total <= 0) return;
-  const aCourage = a.cachedCourage;
-  const bCourage = b.cachedCourage;
+  const mt = tuning.memory;
+  let aCourage = a.cachedCourage;
+  let bCourage = b.cachedCourage;
+
+  // Memory-based combat willingness adjustments
+  if (mt.enabled) {
+    const aMem = engine.memories[a.id];
+    const bMem = engine.memories[b.id];
+
+    // Confidence modulates effective courage
+    aCourage = aCourage * (0.5 + 0.5 * aMem.confidence / Math.max(0.01, a.courage));
+    bCourage = bCourage * (0.5 + 0.5 * bMem.confidence / Math.max(0.01, b.courage));
+
+    // Past defeat by this specific opponent → flee boost
+    const aMemOfB = findEncounter(aMem, b.id);
+    if (aMemOfB && (aMemOfB.outcome === ENCOUNTER_LOSS || aMemOfB.outcome === ENCOUNTER_KIN_KILLED)) {
+      aCourage *= (1 - mt.encounterFleeBoost);
+    }
+    const bMemOfA = findEncounter(bMem, a.id);
+    if (bMemOfA && (bMemOfA.outcome === ENCOUNTER_LOSS || bMemOfA.outcome === ENCOUNTER_KIN_KILLED)) {
+      bCourage *= (1 - mt.encounterFleeBoost);
+    }
+
+    // Same origin settlement → reduce combat willingness
+    if (a.originSettlementId >= 0 && a.originSettlementId === b.originSettlementId) {
+      aCourage *= (1 - mt.kinCombatReduction);
+      bCourage *= (1 - mt.kinCombatReduction);
+    }
+  }
+
   const aDefeat = bCombatPower / total;
   const bDefeat = aCombatPower / total;
   const aWantsFight = aCourage > aDefeat;
@@ -198,22 +230,22 @@ function resolveCombat(
     const evader = aWantsFight ? b : a;
     const gap = (evader.cultivation - attacker.cultivation)
       / (evader.cultivation + attacker.cultivation);
-    const terrainAdj = TERRAIN_DANGER_EVASION_ADJUST[engine.areaTags.getTerrainDanger(evader.x, evader.y)];
-    const P = Math.max(0, Math.min(1, 0.5 + EVASION_SENSITIVITY * gap + terrainAdj));
+    const terrainAdj = tuning.terrain.terrainDangerEvasionAdjust[engine.areaTags.getTerrainDanger(evader.x, evader.y)];
+    const P = Math.max(0, Math.min(1, 0.5 + tuning.courage.evasionSensitivity * gap + terrainAdj));
 
     const evasionSucceeded = P === 0 ? false : P === 1 ? true : engine.prng() < P;
     if (evasionSucceeded) return;
 
-    const penalized = round1(evader.cultivation * (1 - EVASION_PENALTY));
+    const penalized = round1(evader.cultivation * (1 - tuning.courage.evasionPenalty));
     evader.cultivation = Math.max(threshold(evader.level), penalized);
 
     aCombatPower = a.cultivation;
     bCombatPower = b.cultivation;
     if (a.meridianDamagedUntil > year) {
-      aCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+      aCombatPower *= (1 - tuning.combat.meridianCombatPenalty);
     }
     if (b.meridianDamagedUntil > year) {
-      bCombatPower *= (1 - MERIDIAN_COMBAT_PENALTY);
+      bCombatPower *= (1 - tuning.combat.meridianCombatPenalty);
     }
     total = aCombatPower + bCombatPower;
     if (total <= 0) return;
@@ -227,12 +259,21 @@ function resolveCombat(
   const combatLevel = loser.level;
 
   const levelBase = threshold(loser.level);
-  const baseLoot = levelBase * LOOT_BASE_RATE;
+  const baseLoot = levelBase * tuning.combat.lootBaseRate;
   const excess = Math.max(0, loserSnap - levelBase);
-  const luck = truncatedGaussian(engine.prng, LUCK_MEAN, LUCK_STDDEV, LUCK_MIN, LUCK_MAX);
+  const luck = truncatedGaussian(
+    engine.prng,
+    tuning.combat.luckMean,
+    tuning.combat.luckStddev,
+    tuning.combat.luckMin,
+    tuning.combat.luckMax,
+  );
   const profile = getBalanceProfile();
   const lootPenalty = Math.exp(-sigmoidContribution(combatLevel, profile.combat.lootPenalty));
-  const loot = Math.max(0.1, round1((baseLoot + excess * LOOT_VARIABLE_RATE * luck) * lootPenalty));
+  const loot = Math.max(
+    0.1,
+    round1((baseLoot + excess * tuning.combat.lootVariableRate * luck) * lootPenalty),
+  );
   winner.cultivation += loot;
 
   const loserCombatPower = loser === a ? aCombatPower : bCombatPower;
@@ -274,22 +315,50 @@ function resolveCombat(
       engine.spatialIndex.changeLevel(loser.id, oldLevel, loser.level, loser.x, loser.y);
     } else if (outcomeCode === 2) {
       engine.combatInjuries++;
-      loser.injuredUntil = year + INJURY_DURATION;
+      loser.injuredUntil = year + tuning.combat.injuryDuration;
     } else if (outcomeCode === 3) {
       engine.combatCultLosses++;
       loser.cultivation = Math.max(
-        threshold(loser.level), round1(loser.cultivation * (1 - DEFEAT_CULT_LOSS_RATE)));
+        threshold(loser.level), round1(loser.cultivation * (1 - tuning.combat.defeatCultLossRate)));
     } else if (outcomeCode === 5) {
       engine.combatMeridianDamages++;
-      loser.meridianDamagedUntil = year + MERIDIAN_DAMAGE_DURATION;
+      loser.meridianDamagedUntil = year + tuning.combat.meridianDamageDuration;
     } else if (outcomeCode === 6) {
       engine.combatLightInjuries++;
-      loser.lightInjuryUntil = year + LIGHT_INJURY_DURATION;
+      loser.lightInjuryUntil = year + tuning.combat.lightInjuryDuration;
     }
 
   }
 
   engine.hooks?.onCombatResult(winner, loser, loserDied, year);
+
+  // Memory updates
+  if (mt.enabled) {
+    const wasHeavy = outcomeCode === 2; // injury
+    const wasLight = outcomeCode === 6; // light_injury
+    onCombatWin(engine.memories[winner.id], loser.id, loserDied, year, mt);
+    if (!loserDied) {
+      onCombatLoss(engine.memories[loser.id], winner.id, year, wasHeavy, wasLight, mt);
+      if (wasHeavy) {
+        pushPlace(engine.memories[loser.id], loser.y * MAP_SIZE + loser.x, PLACE_DANGER, year);
+      }
+    }
+    // Greatest victory milestone (winner beat higher cultivation opponent)
+    if (winnerSnap < loserSnap) {
+      const wm = engine.memories[winner.id].milestones;
+      if (wm.greatestVictoryYear === 0 || loserSnap > (engine.cultivators[wm.greatestVictoryOpponentId]?.cultivation ?? 0)) {
+        wm.greatestVictoryYear = year;
+        wm.greatestVictoryOpponentId = loser.id;
+      }
+    }
+    // Kin killed: notify same-origin cultivators of loser (simplified: check winner's origin vs loser's origin)
+    if (loserDied && loser.originSettlementId >= 0 && loser.originSettlementId === winner.originSettlementId) {
+      // Loser was killed by someone from the same settlement — not a kin-kill scenario
+    } else if (loserDied && loser.originSettlementId >= 0) {
+      // Winner killed someone from a different settlement — loser's kin would be angry at winner
+      // We record this on the winner's memory as well (they know they killed a rival's kin)
+    }
+  }
 
   // Combat collateral damage to both combatants' cells
   const winnerCellIdx = winner.y * MAP_SIZE + winner.x;

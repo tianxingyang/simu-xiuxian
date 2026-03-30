@@ -201,6 +201,27 @@ export interface EngineHooks {
   onTribulation(c: Cultivator, outcome: 'ascension' | 'death', year: number): void;
   getName(id: number): string | undefined;
   getSettlementName(settlementId: number): string | undefined;
+  getMemorySnapshot?(id: number): CharacterMemorySnapshot | undefined;
+}
+
+export interface CharacterMemorySnapshot {
+  confidence: number;
+  caution: number;
+  ambition: number;
+  bloodlust: number;
+  rootedness: number;
+  breakthroughFear: number;
+  combatWins: number;
+  combatLosses: number;
+  kills: number;
+  breakthroughAttempts: number;
+  breakthroughSuccesses: number;
+  heavyInjuries: number;
+  firstCombatYear: number;
+  firstBreakthroughYear: number;
+  firstKillYear: number;
+  worstDefeatOpponentId: number;
+  greatestVictoryOpponentId: number;
 }
 
 export type ToServer =

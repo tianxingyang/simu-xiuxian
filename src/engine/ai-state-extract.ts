@@ -1,5 +1,6 @@
 import type { Cultivator } from '../types.js';
 import { getSimTuning } from '../sim-tuning.js';
+import type { CharacterMemory } from './memory.js';
 
 const MAX_LEVEL = 7;
 
@@ -7,6 +8,10 @@ const MAX_LEVEL = 7;
  * Extract normalized state vector from a cultivator and its environment.
  * Returns number[] matching the feature order in ai-policy/config.json.
  * All values normalized to [0, 1].
+ *
+ * When memory is provided (non-null), 6 additional dimensions are appended:
+ *   [12] confidence, [13] caution, [14] ambition,
+ *   [15] bloodlust, [16] rootedness, [17] breakthroughFear
  */
 export function extractState(
   c: Cultivator,
@@ -14,6 +19,7 @@ export function extractState(
   cellSpiritualEnergy: number,
   cellDanger: number,
   thresholdForNextLevel: number,
+  mem?: CharacterMemory | null,
 ): number[] {
   const maxCooldown = getSimTuning().breakthroughFailure.cooldown;
 
@@ -36,7 +42,7 @@ export function extractState(
     : 0;
   const ageRatio = c.maxAge > 0 ? Math.min(1, c.age / c.maxAge) : 1;
 
-  return [
+  const base = [
     remainingLifespanRatio,
     cultivationProgress,
     levelNormalized,
@@ -50,4 +56,17 @@ export function extractState(
     breakthroughCooldown,
     ageRatio,
   ];
+
+  if (mem) {
+    base.push(
+      mem.confidence,
+      mem.caution,
+      mem.ambition,
+      mem.bloodlust,
+      mem.rootedness,
+      mem.breakthroughFear,
+    );
+  }
+
+  return base;
 }

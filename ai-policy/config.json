@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "features": [
     { "name": "remaining_lifespan_ratio", "source": "derived", "range": [0, 1] },
     { "name": "cultivation_progress",     "source": "derived", "range": [0, 1] },
@@ -12,7 +12,13 @@
     { "name": "spiritual_energy",         "source": "cell",    "range": [0, 1] },
     { "name": "danger_level",             "source": "cell",    "range": [0, 1] },
     { "name": "breakthrough_cooldown",    "source": "derived", "range": [0, 1] },
-    { "name": "age_ratio",                "source": "derived", "range": [0, 1] }
+    { "name": "age_ratio",                "source": "derived", "range": [0, 1] },
+    { "name": "confidence",               "source": "memory",  "range": [0, 1] },
+    { "name": "caution",                  "source": "memory",  "range": [0, 1] },
+    { "name": "ambition",                 "source": "memory",  "range": [0, 1] },
+    { "name": "bloodlust",               "source": "memory",  "range": [0, 1] },
+    { "name": "rootedness",              "source": "memory",  "range": [0, 1] },
+    { "name": "breakthrough_fear",        "source": "memory",  "range": [0, 1] }
   ],
   "actions": [
     "wandering",
@@ -30,7 +36,7 @@
     { "event": "death",            "weight": -50.0 }
   ],
   "network": {
-    "hidden": [32, 16],
+    "hidden": [64, 32],
     "activation": "relu"
   }
 }
