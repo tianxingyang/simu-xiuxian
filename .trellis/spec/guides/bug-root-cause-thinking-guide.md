@@ -375,6 +375,39 @@ After analyzing a bug, add lessons to the appropriate guide:
 
 ---
 
+### Pattern 6: Function Return Type Assumption from Name
+
+**Symptom**: Calling array methods on a non-array return value, or assuming singular return is plural
+
+**Example**:
+
+```typescript
+// findNearbyAny returns number | -1 (single ID, first match)
+// Developer assumed it returns number[] (all matches) based on name
+this.spatialIndex.findNearbyAny(cx, cy, r, id).some(...)
+// Runtime error: .some is not a function
+```
+
+**Why TypeScript didn't catch it**: `number` type has no `.some()` at compile time, but TypeScript doesn't error on accessing `.some` on `number` — it's `undefined` at runtime, only crashing when called.
+
+**Prevention Rule**:
+
+> Never infer a function's return type from its name alone.
+> Always check the function signature before using its return value, especially for spatial/query functions that might return single vs. multiple results.
+
+**Naming convention to adopt**:
+- `findOne*` / `findFirst*` → returns single item or sentinel (-1/null)
+- `findAll*` / `collect*` / `gather*` → returns array
+- `find*` (ambiguous) → always check signature
+
+**Checklist**:
+
+- [ ] Did I verify the return type of the function I'm calling?
+- [ ] Am I calling array methods (.some/.map/.filter) — is the value actually an array?
+- [ ] For spatial queries: does this return one result or many?
+
+---
+
 ## Summary
 
 | Category                  | Preventable? | Prevention Method                                        |
