@@ -18,6 +18,9 @@ export interface RelationshipContext {
   canSpar: boolean;
   canTeach: boolean;
   canBeTaught: boolean;
+  allyBreakthroughNearby: boolean;
+  canGuard: boolean;
+  guardAvailable: boolean;
 }
 
 export function extractState(
@@ -92,6 +95,9 @@ export function extractState(
       relCtx.canTeach ? 1 : 0,
       relCtx.canBeTaught ? 1 : 0,
       c.teachingBoostUntil > year ? 1 : 0,
+      relCtx.allyBreakthroughNearby ? 1 : 0,
+      relCtx.canGuard ? 1 : 0,
+      relCtx.guardAvailable ? 1 : 0,
     );
   }
 

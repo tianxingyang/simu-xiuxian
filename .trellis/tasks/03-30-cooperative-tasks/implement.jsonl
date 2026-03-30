@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "no ! assertions, no any"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "interface/type patterns"}
+{"file": "src/engine/relationship.ts", "reason": "relationship checks for guardian eligibility"}
+{"file": "src/engine/simulation.ts", "reason": "breakthrough logic in tickCultivators, tick loop"}
+{"file": "src/types.ts", "reason": "RichEvent union, Cultivator, RichBreakthroughEvent, RichPromotionEvent"}
+{"file": "src/engine/ai-state-extract.ts", "reason": "feature extraction to extend"}
+{"file": "src/sim-tuning.ts", "reason": "tuning pattern"}
+{"file": "src/engine/spatial.ts", "reason": "findNearbyAny for guardian search"}
+{"file": "server/events.ts", "reason": "toDisplayEvent for Chinese text"}
+{"file": "src/balance.ts", "reason": "breakthrough success rate calculation"}

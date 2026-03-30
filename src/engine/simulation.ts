@@ -1,4 +1,4 @@
-import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichRelationshipEvent, RichTribulationEvent, YearSummary } from '../types.js';
+import type { BehaviorState, Cultivator, EngineHooks, GuardianInfo, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichRelationshipEvent, RichTribulationEvent, YearSummary } from '../types.js';
 import { getSimTuning } from '../sim-tuning.js';
 import { LEVEL_COUNT, MAP_SIZE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, sustainableMaxAge, threshold, tribulationChance } from '../constants/index.js';
 import { getBalanceProfile } from '../balance.js';
@@ -23,6 +23,7 @@ import {
   serializeRelationships, deserializeRelationships, RELATIONSHIP_SERIALIZE_BYTES,
   tickRelationshipDecay, purgeDeadFromRelationships,
   addAlly, removeDisciple, clearMentor,
+  findAlly, isFellowDisciple, ALLY_BUFFER_SIZE, MAX_DISCIPLES,
 } from './relationship.js';
 import { processNonCombatEncounters } from './interaction.js';
 
@@ -1153,6 +1154,92 @@ function initLevelArrayCache(): number[][] {
   return a;
 }
 
+interface GuardianResult {
+  guardians: GuardianInfo[];
+  bonus: number;
+}
+
+function findEligibleGuardians(
+  engine: SimulationEngine, c: Cultivator,
+): GuardianResult {
+  const tuning = getSimTuning();
+  const rt = tuning.relationship;
+  const gt = tuning.guardian;
+
+  if (!rt.enabled) return { guardians: [], bonus: 0 };
+
+  const rel = engine.relationships[c.id];
+  const radius = tuning.spatial.encounterRadius[c.level];
+  const guardians: GuardianInfo[] = [];
+  let totalBonus = 0;
+
+  // Collect candidate IDs from relationships: mentor, allies, fellow disciples' mentor's other disciples
+  const candidateIds = new Set<number>();
+
+  // Mentor
+  if (rel.mentor >= 0) candidateIds.add(rel.mentor);
+
+  // Allies
+  for (let i = 0; i < ALLY_BUFFER_SIZE; i++) {
+    if (rel.allies[i].id >= 0) candidateIds.add(rel.allies[i].id);
+  }
+
+  // Disciples (they can also guard)
+  for (let d = 0; d < MAX_DISCIPLES; d++) {
+    if (rel.disciples[d] >= 0) candidateIds.add(rel.disciples[d]);
+  }
+
+  // Fellow disciples (share same mentor)
+  if (rel.mentor >= 0) {
+    const mentorRel = engine.relationships[rel.mentor];
+    for (let d = 0; d < MAX_DISCIPLES; d++) {
+      const did = mentorRel.disciples[d];
+      if (did >= 0 && did !== c.id) candidateIds.add(did);
+    }
+  }
+
+  for (const gId of candidateIds) {
+    const g = engine.cultivators[gId];
+    if (!g.alive) continue;
+    if (g.level < c.level) continue;
+    if (g.injuredUntil > engine.year) continue;
+    if (g.behaviorState === 'escaping') continue;
+
+    // Check proximity
+    const dx = Math.abs(c.x - g.x);
+    const dy = Math.abs(c.y - g.y);
+    if (Math.min(dx, MAP_SIZE - dx) > radius || Math.min(dy, MAP_SIZE - dy) > radius) continue;
+
+    // Determine relationship type and bonus
+    const gRel = engine.relationships[gId];
+    const isMentor = rel.mentor === gId;
+    const isFellow = isFellowDisciple(rel, gRel);
+    const allyEntry = findAlly(rel, gId);
+    const isStrongAlly = allyEntry !== null && allyEntry.strength >= 0.5;
+
+    let bonus = 0;
+    if (isMentor) {
+      bonus = gt.mentorGuardianBonus;
+    } else if (isStrongAlly || isFellow) {
+      bonus = gt.allyGuardianBonus;
+    } else {
+      continue; // not a qualifying relationship
+    }
+
+    // Diminishing returns: each additional guardian contributes less
+    const diminish = 1 / (1 + guardians.length);
+    totalBonus += bonus * diminish;
+    guardians.push({ id: gId, level: g.level });
+
+    if (totalBonus >= gt.maxGuardianBonus) {
+      totalBonus = gt.maxGuardianBonus;
+      break;
+    }
+  }
+
+  return { guardians, bonus: Math.min(totalBonus, gt.maxGuardianBonus) };
+}
+
 export function tryBreakthrough(
   engine: SimulationEngine, c: Cultivator,
   events: EventBuffer, cause: 'natural' | 'combat',
@@ -1173,8 +1260,12 @@ export function tryBreakthrough(
 
   engine.breakthroughAttempts++;
 
+  // Find eligible guardians nearby
+  const { guardians, bonus: guardianBonus } = findEligibleGuardians(engine, c);
+
   const seFactor = tuning.terrain.spiritualEnergyBreakthroughFactor[engine.areaTags.getSpiritualEnergy(c.x, c.y)];
-  if (engine.prng() < breakthroughChance(c.level) * seFactor) {
+  const baseChance = breakthroughChance(c.level) * seFactor;
+  if (engine.prng() < baseChance + guardianBonus) {
     const prevLevel = c.level;
     c.level++;
     c.maxAge = Math.min(sustainableMaxAge(MAX_LEVEL), c.maxAge + lifespanBonus(c.level));
@@ -1207,7 +1298,12 @@ export function tryBreakthrough(
         spiritualEnergy: engine.areaTags.getSpiritualEnergy(c.x, c.y),
         terrainDanger: engine.areaTags.getTerrainDanger(c.x, c.y),
       };
+      if (guardians.length > 0) pe.guardians = guardians;
       pe.newsRank = scoreNewsRank(pe);
+      // Guarded breakthrough promotion gets +1 rank tier
+      if (guardians.length > 0 && pe.newsRank !== 'S') {
+        pe.newsRank = pe.newsRank === 'C' ? 'B' : pe.newsRank === 'B' ? 'A' : 'S';
+      }
       events.push(pe);
 
       const ms = engine.milestones.checkPromotion(c.level, c.id, name ?? '', year);
@@ -1219,19 +1315,34 @@ export function tryBreakthrough(
   c.breakthroughCooldownUntil = year + tuning.breakthroughFailure.cooldown;
   engine.breakthroughFailures++;
 
+  const hasGuardian = guardians.length > 0;
+  const penaltyReduction = hasGuardian ? tuning.guardian.failurePenaltyReduction : 1;
+
   const r = engine.prng();
   let penalty: RichBreakthroughEvent['penalty'] = 'cooldown_only';
   if (r >= btNothingThreshold) {
     if (r < btCultLossThreshold) {
       penalty = 'cultivation_loss';
       const base = threshold(c.level);
+      const lossRate = tuning.breakthroughFailure.cultLossRate * penaltyReduction;
       c.cultivation = Math.max(
         base,
-        round1(c.cultivation - (c.cultivation - base) * tuning.breakthroughFailure.cultLossRate),
+        round1(c.cultivation - (c.cultivation - base) * lossRate),
       );
     } else {
-      penalty = 'injury';
-      c.injuredUntil = year + tuning.combat.injuryDuration;
+      if (hasGuardian) {
+        // Guardian prevents heavy injury, downgrade to light injury
+        penalty = 'cultivation_loss';
+        const base = threshold(c.level);
+        const lossRate = tuning.breakthroughFailure.cultLossRate * penaltyReduction;
+        c.cultivation = Math.max(
+          base,
+          round1(c.cultivation - (c.cultivation - base) * lossRate),
+        );
+      } else {
+        penalty = 'injury';
+        c.injuredUntil = year + tuning.combat.injuryDuration;
+      }
     }
   }
 
@@ -1250,6 +1361,7 @@ export function tryBreakthrough(
       spiritualEnergy: engine.areaTags.getSpiritualEnergy(c.x, c.y),
       terrainDanger: engine.areaTags.getTerrainDanger(c.x, c.y),
     };
+    if (hasGuardian) be.guardians = guardians;
     events.push(be);
   }
 

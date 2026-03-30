@@ -185,6 +185,13 @@ export type InteractionTuning = {
   teachingProbability: number;
 };
 
+export type GuardianTuning = {
+  mentorGuardianBonus: number;
+  allyGuardianBonus: number;
+  maxGuardianBonus: number;
+  failurePenaltyReduction: number;
+};
+
 export type SimTuning = {
   breakthroughFailure: BreakthroughFailureTuning;
   combat: CombatTuning;
@@ -200,6 +207,7 @@ export type SimTuning = {
   memory: MemoryTuning;
   relationship: RelationshipTuning;
   interaction: InteractionTuning;
+  guardian: GuardianTuning;
 };
 
 type DeepPartial<T> =
@@ -345,6 +353,12 @@ export const DEFAULT_SIM_TUNING: Readonly<SimTuning> = Object.freeze({
     teachingBoostRateMax: 0.8,
     teachingProbability: 0.12,
   }),
+  guardian: Object.freeze({
+    mentorGuardianBonus: 0.18,
+    allyGuardianBonus: 0.08,
+    maxGuardianBonus: 0.25,
+    failurePenaltyReduction: 0.5,
+  }),
   memory: Object.freeze({
     enabled: true,
     emotionalDecayRate: 0.95,
@@ -433,6 +447,7 @@ export function cloneSimTuning(tuning: Readonly<SimTuning>): SimTuning {
     memory: { ...tuning.memory },
     relationship: { ...tuning.relationship },
     interaction: { ...tuning.interaction },
+    guardian: { ...tuning.guardian },
   };
 }
 
@@ -636,6 +651,12 @@ function mergeSimTuning(overrides: SimTuningInput = {}): SimTuning {
       teacherCultivationGain: overrides.interaction?.teacherCultivationGain ?? DEFAULT_SIM_TUNING.interaction.teacherCultivationGain,
       teachingBoostRateMax: overrides.interaction?.teachingBoostRateMax ?? DEFAULT_SIM_TUNING.interaction.teachingBoostRateMax,
       teachingProbability: overrides.interaction?.teachingProbability ?? DEFAULT_SIM_TUNING.interaction.teachingProbability,
+    },
+    guardian: {
+      mentorGuardianBonus: overrides.guardian?.mentorGuardianBonus ?? DEFAULT_SIM_TUNING.guardian.mentorGuardianBonus,
+      allyGuardianBonus: overrides.guardian?.allyGuardianBonus ?? DEFAULT_SIM_TUNING.guardian.allyGuardianBonus,
+      maxGuardianBonus: overrides.guardian?.maxGuardianBonus ?? DEFAULT_SIM_TUNING.guardian.maxGuardianBonus,
+      failurePenaltyReduction: overrides.guardian?.failurePenaltyReduction ?? DEFAULT_SIM_TUNING.guardian.failurePenaltyReduction,
     },
   };
 }

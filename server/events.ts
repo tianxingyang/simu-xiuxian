@@ -41,9 +41,13 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
     case 'promotion': {
       const cause = e.cause === 'natural' ? '自然' : '战斗';
       const prefix = e.subject.name ? `${e.subject.name} ` : '';
+      let guardianText = '';
+      if (e.guardians && e.guardians.length > 0) {
+        guardianText = '，护法协助';
+      }
       return {
         id, year: e.year, type: 'promotion', actorLevel: e.toLevel,
-        detail: `${rp}${prefix}${LEVEL_NAMES[e.fromLevel]}→${LEVEL_NAMES[e.toLevel]}（${cause}晋升）`,
+        detail: `${rp}${prefix}${LEVEL_NAMES[e.fromLevel]}→${LEVEL_NAMES[e.toLevel]}（${cause}晋升${guardianText}）`,
       };
     }
     case 'expiry':
@@ -64,9 +68,13 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
     case 'breakthrough_fail': {
       const penaltyText = e.penalty === 'injury' ? '受伤' : e.penalty === 'cultivation_loss' ? '修为受损' : '冷却';
       const prefix = e.subject.name ? `${e.subject.name} ` : '';
+      let guardianText = '';
+      if (e.guardians && e.guardians.length > 0) {
+        guardianText = '，护法减轻损伤';
+      }
       return {
         id, year: e.year, type: 'breakthrough_fail', actorLevel: e.subject.level,
-        detail: `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}破境失败（${penaltyText}）`,
+        detail: `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}破境失败（${penaltyText}${guardianText}）`,
       };
     }
     case 'tribulation': {

@@ -130,6 +130,11 @@ export interface RichCombatEvent {
   terrainDanger?: number;
 }
 
+export interface GuardianInfo {
+  id: number;
+  level: number;
+}
+
 export interface RichPromotionEvent {
   type: 'promotion';
   year: number;
@@ -138,6 +143,7 @@ export interface RichPromotionEvent {
   fromLevel: number;
   toLevel: number;
   cause: 'natural' | 'combat';
+  guardians?: GuardianInfo[];
   region?: string;
   spiritualEnergy?: number;
   terrainDanger?: number;
@@ -176,6 +182,7 @@ export interface RichBreakthroughEvent {
   subject: { id: number; name?: string; level: number; age?: number; behaviorState?: BehaviorState };
   penalty: 'cooldown_only' | 'cultivation_loss' | 'injury';
   cause: 'natural' | 'combat';
+  guardians?: GuardianInfo[];
   region?: string;
   spiritualEnergy?: number;
   terrainDanger?: number;
