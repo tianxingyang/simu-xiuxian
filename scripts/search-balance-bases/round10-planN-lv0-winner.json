@@ -1,0 +1,153 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.49,
+      "b": 0.077,
+      "tailPenalty": {
+        "amplitude": 1,
+        "center": 4.9,
+        "steepness": 2.2
+      },
+      "gatePenalty": {
+        "amplitude": 0.85,
+        "center": 2.05,
+        "width": 0.72
+      }
+    },
+    "threshold": {
+      "tailBoost": {
+        "amplitude": 1.25,
+        "center": 6.6,
+        "steepness": 1.74
+      },
+      "gateBoost": {
+        "amplitude": 0.733,
+        "center": 1.029,
+        "width": 1.079
+      },
+      "peakBoost": {
+        "amplitude": 1.55,
+        "center": 5.75,
+        "width": 0.39
+      },
+      "reliefBoost": {
+        "amplitude": -1.1,
+        "center": 5.2,
+        "width": 0.9
+      },
+      "finalRelief": {
+        "amplitude": -1.35,
+        "center": 6.45,
+        "width": 0.28
+      }
+    },
+    "combat": {
+      "deathBoost": {
+        "amplitude": 0,
+        "center": 5.5,
+        "width": 0.7
+      },
+      "lootPenalty": {
+        "amplitude": 0.37,
+        "center": 5.22,
+        "steepness": 2
+      }
+    },
+    "tribulation": {
+      "chance": {
+        "amplitude": 0.02,
+        "center": 5000,
+        "steepness": 0.001
+      },
+      "successRate": 0.12
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": {
+      "cooldown": 3,
+      "cultLossRate": 0.2,
+      "nothingWeight": 5,
+      "cultLossWeight": 2,
+      "injuryWeight": 2
+    },
+    "combat": {
+      "defeatDeathBase": 0.4,
+      "defeatDeathDecay": 0.8,
+      "defeatGapSeverity": 0.3,
+      "defeatMaxDeath": 0.95,
+      "defeatDemotionWeight": 0.4,
+      "defeatInjuryWeight": 2.9,
+      "defeatCultLossWeight": 2,
+      "defeatLightInjuryWeight": 4,
+      "defeatMeridianWeight": 1,
+      "defeatCultLossRate": 0.3,
+      "lootBaseRate": 0.28,
+      "lootVariableRate": 0.24,
+      "luckMean": 1,
+      "luckStddev": 0.3,
+      "luckMin": 0,
+      "luckMax": 2.5,
+      "injuryDuration": 5,
+      "injuryGrowthRate": 0.5,
+      "lightInjuryDuration": 2,
+      "lightInjuryGrowthRate": 0.7,
+      "meridianDamageDuration": 10,
+      "meridianCombatPenalty": 0.3
+    },
+    "courage": {
+      "trough": 0.3,
+      "youngAmp": 0.1,
+      "oldAmp": 0.3,
+      "mean": 0.5,
+      "stddev": 0.15,
+      "evasionSensitivity": 0.5,
+      "evasionPenalty": 0.05,
+      "behaviorFactors": {
+        "escaping": 0.3,
+        "recuperating": 0.6,
+        "seeking_breakthrough": 1,
+        "settling": 1,
+        "wandering": 1
+      }
+    },
+    "behavior": {
+      "escapingMoveProb": 1,
+      "recuperatingMoveProb": 0.05,
+      "seekingBreakthroughMoveProb": 0.75,
+      "settlingFraction": 0.117,
+      "evalBaseInterval": 5
+    },
+    "household": {
+      "householdBaseGrowthRate": 0.04,
+      "householdSplitThreshold": 164,
+      "householdSplitCount": 5,
+      "householdSplitPopulation": 10,
+      "baseAwakeningRate": 0.008,
+      "initialHouseholdPop": 5,
+      "combatCollateralPopLoss": 3
+    },
+    "lifespan": {
+      "mortalMaxAge": 64,
+      "lv7MaxAge": 100000,
+      "lifespanDecayRate": 0.2,
+      "earlySustainableMaxAge": [64, 150, 1070, 11070],
+      "legacyLifespanBonus": [0, 100, 1000, 10000]
+    },
+    "spatial": {
+      "encounterRadius": [2, 3, 4, 5, 6, 7, 8, 16],
+      "wanderBaseProb": 0.15,
+      "wanderLevelBonus": 0.03,
+      "breakthroughMove": [2, 4]
+    },
+    "terrain": {
+      "terrainSafetyFactor": [0, 0.342, 1.979, 2.111, 1.567, 1.414],
+      "spiritualEnergyAwakeningFactor": [0, 3.84, 1.08, 3.688, 0.838, 1.045],
+      "spiritualEnergyBreakthroughFactor": [0, 0.56, 0.69, 0.86, 1.12, 1.38],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.95, 1.18, 1.32, 1.42],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.03, 0.02, -0.01, -0.03]
+    },
+    "settlement": {
+      "expandThreshold": 1000
+    }
+  }
+}

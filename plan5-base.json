@@ -1,0 +1,18 @@
+{
+  "tuning": {
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.45,
+      "settlingFraction": 0.1
+    },
+    "spatial": {
+      "wanderBaseProb": 0.35,
+      "wanderLevelBonus": 0.04,
+      "breakthroughMove": [3, 6]
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.6, 0.7, 0.85, 1.0, 1.2],
+      "terrainDangerEncounterFactor": [0, 0.7, 1.0, 1.2, 1.5, 1.9],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.025, 0.0, -0.05, -0.15]
+    }
+  }
+}

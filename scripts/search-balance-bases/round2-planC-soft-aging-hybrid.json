@@ -1,0 +1,38 @@
+{
+  "balance": {
+    "threshold": {
+      "finalRelief": {
+        "amplitude": -0.45,
+        "center": 6.75,
+        "width": 0.22
+      }
+    }
+  },
+  "tuning": {
+    "household": {
+      "householdBaseGrowthRate": 0.02,
+      "householdSplitThreshold": 120,
+      "baseAwakeningRate": 0.00035
+    },
+    "lifespan": {
+      "lv7MaxAge": 80000,
+      "lifespanDecayRate": 0.28,
+      "earlySustainableMaxAge": [55, 130, 900, 9000],
+      "legacyLifespanBonus": [0, 90, 900, 7000]
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.8,
+      "settlingFraction": 0.03
+    },
+    "spatial": {
+      "wanderBaseProb": 0.3,
+      "wanderLevelBonus": 0.04,
+      "breakthroughMove": [4, 8]
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.6, 0.75, 0.9, 1.02, 1.14],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.95, 1.2, 1.55, 1.95],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.025, 0, -0.08, -0.15]
+    }
+  }
+}

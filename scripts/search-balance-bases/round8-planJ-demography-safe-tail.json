@@ -1,0 +1,46 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.5,
+      "b": 0.058,
+      "gatePenalty": {
+        "amplitude": 0.95,
+        "center": 2.1,
+        "width": 0.85
+      }
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 0.58,
+        "center": 1.15,
+        "width": 0.42
+      },
+      "reliefBoost": {
+        "amplitude": -1.7,
+        "center": 5.5,
+        "width": 1.35
+      },
+      "finalRelief": {
+        "amplitude": -2.0,
+        "center": 6.4,
+        "width": 0.36
+      }
+    }
+  },
+  "tuning": {
+    "household": {
+      "householdBaseGrowthRate": 0.042,
+      "householdSplitThreshold": 38,
+      "baseAwakeningRate": 0.001
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.8,
+      "settlingFraction": 0.04
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.58, 0.72, 0.92, 1.38, 1.9],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.92, 1.06, 1.1, 1.15],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.03, 0.04, 0.07, 0.1]
+    }
+  }
+}

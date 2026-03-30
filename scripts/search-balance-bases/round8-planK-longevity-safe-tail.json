@@ -1,0 +1,46 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.495,
+      "b": 0.055,
+      "gatePenalty": {
+        "amplitude": 1.15,
+        "center": 2.0,
+        "width": 0.8
+      }
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 0.62,
+        "center": 1.18,
+        "width": 0.43
+      },
+      "reliefBoost": {
+        "amplitude": -1.9,
+        "center": 5.4,
+        "width": 1.5
+      },
+      "finalRelief": {
+        "amplitude": -2.3,
+        "center": 6.35,
+        "width": 0.4
+      }
+    }
+  },
+  "tuning": {
+    "lifespan": {
+      "lv7MaxAge": 140000,
+      "earlySustainableMaxAge": [55, 135, 1200, 18000],
+      "legacyLifespanBonus": [0, 120, 1800, 18000]
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.78,
+      "settlingFraction": 0.04
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.6, 0.72, 0.92, 1.45, 2.0],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.9, 1.0, 1.05, 1.1],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.03, 0.05, 0.08, 0.12]
+    }
+  }
+}

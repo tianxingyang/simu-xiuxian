@@ -1,0 +1,43 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.5,
+      "b": 0.085
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 1.0,
+        "center": 1.25,
+        "width": 0.45
+      },
+      "reliefBoost": {
+        "amplitude": -0.9,
+        "center": 6.1,
+        "width": 1.0
+      },
+      "finalRelief": {
+        "amplitude": -1.2,
+        "center": 6.8,
+        "width": 0.2
+      }
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": {
+      "cooldown": 5,
+      "cultLossRate": 0.38,
+      "nothingWeight": 6.2,
+      "cultLossWeight": 3.2,
+      "injuryWeight": 3.6
+    },
+    "combat": {
+      "defeatDeathBase": 0.45,
+      "defeatDemotionWeight": 1.1,
+      "defeatCultLossWeight": 3.8
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.78,
+      "settlingFraction": 0.035
+    }
+  }
+}

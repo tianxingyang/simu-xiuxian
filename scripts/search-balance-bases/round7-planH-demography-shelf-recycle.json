@@ -1,0 +1,56 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.48,
+      "b": 0.07,
+      "gatePenalty": {
+        "amplitude": 1.0,
+        "center": 2.0,
+        "width": 0.8
+      }
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 0.52,
+        "center": 1.2,
+        "width": 0.45
+      },
+      "reliefBoost": {
+        "amplitude": -1.25,
+        "center": 5.9,
+        "width": 1.0
+      },
+      "finalRelief": {
+        "amplitude": -1.7,
+        "center": 6.7,
+        "width": 0.25
+      }
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": {
+      "cooldown": 4,
+      "cultLossRate": 0.32,
+      "nothingWeight": 5.8,
+      "cultLossWeight": 2.8,
+      "injuryWeight": 3.0
+    },
+    "household": {
+      "householdBaseGrowthRate": 0.04,
+      "householdSplitThreshold": 40,
+      "baseAwakeningRate": 0.0009
+    },
+    "lifespan": {
+      "lifespanDecayRate": 0.3,
+      "earlySustainableMaxAge": [55, 125, 950, 11000],
+      "legacyLifespanBonus": [0, 95, 1100, 10000]
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.78,
+      "settlingFraction": 0.04
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.58, 0.72, 0.9, 1.3, 1.72]
+    }
+  }
+}

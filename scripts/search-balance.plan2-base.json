@@ -1,0 +1,15 @@
+{
+  "tuning": {
+    "household": {
+      "householdBaseGrowthRate": 0.015,
+      "householdSplitThreshold": 150,
+      "baseAwakeningRate": 0.0002
+    },
+    "lifespan": {
+      "lv7MaxAge": 60000,
+      "lifespanDecayRate": 0.35,
+      "earlySustainableMaxAge": [50, 120, 800, 7000],
+      "legacyLifespanBonus": [0, 80, 800, 5000]
+    }
+  }
+}

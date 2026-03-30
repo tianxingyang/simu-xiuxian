@@ -1,0 +1,48 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.49,
+      "b": 0.075
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 1.05,
+        "center": 4.0,
+        "width": 0.8
+      },
+      "reliefBoost": {
+        "amplitude": -0.6,
+        "center": 6.25,
+        "width": 0.85
+      },
+      "finalRelief": {
+        "amplitude": -0.8,
+        "center": 6.85,
+        "width": 0.23
+      }
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": {
+      "cooldown": 4,
+      "cultLossRate": 0.3,
+      "nothingWeight": 5.8,
+      "cultLossWeight": 2.8,
+      "injuryWeight": 3.2
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.82,
+      "settlingFraction": 0.03
+    },
+    "spatial": {
+      "wanderBaseProb": 0.3,
+      "wanderLevelBonus": 0.04,
+      "breakthroughMove": [5, 9]
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.6, 0.75, 0.9, 1.14, 1.36],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.95, 1.2, 1.5, 1.82],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.025, 0, -0.06, -0.12]
+    }
+  }
+}

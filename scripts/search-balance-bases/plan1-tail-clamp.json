@@ -1,0 +1,44 @@
+{
+  "balance": {
+    "breakthrough": {
+      "b": 0.15,
+      "tailPenalty": {
+        "amplitude": 2.5,
+        "center": 5.2,
+        "steepness": 3.0
+      },
+      "gatePenalty": {
+        "amplitude": 2.1,
+        "center": 5.1,
+        "width": 1.0
+      }
+    },
+    "threshold": {
+      "peakBoost": {
+        "amplitude": 1.8,
+        "center": 6.1,
+        "width": 0.5
+      },
+      "gateBoost": {
+        "amplitude": 1.6,
+        "center": 5.1,
+        "width": 0.35
+      }
+    },
+    "combat": {
+      "deathBoost": {
+        "amplitude": 0.5,
+        "center": 5.8,
+        "width": 0.8
+      }
+    },
+    "tribulation": {
+      "chance": {
+        "amplitude": 0.04,
+        "center": 3500,
+        "steepness": 0.002
+      },
+      "successRate": 0.08
+    }
+  }
+}

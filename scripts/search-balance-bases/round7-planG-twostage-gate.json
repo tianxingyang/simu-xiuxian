@@ -1,0 +1,53 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.45,
+      "b": 0.064,
+      "gatePenalty": {
+        "amplitude": 1.45,
+        "center": 2.25,
+        "width": 0.95
+      }
+    },
+    "threshold": {
+      "tailBoost": {
+        "amplitude": 0.15,
+        "center": 3.0,
+        "steepness": 1.2
+      },
+      "gateBoost": {
+        "amplitude": 0.45,
+        "center": 1.05,
+        "width": 0.35
+      },
+      "reliefBoost": {
+        "amplitude": -1.55,
+        "center": 5.55,
+        "width": 1.25
+      },
+      "finalRelief": {
+        "amplitude": -1.85,
+        "center": 6.55,
+        "width": 0.3
+      }
+    }
+  },
+  "tuning": {
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.82,
+      "settlingFraction": 0.03
+    },
+    "combat": {
+      "lootBaseRate": 0.22,
+      "lootVariableRate": 0.16
+    },
+    "spatial": {
+      "wanderBaseProb": 0.31,
+      "wanderLevelBonus": 0.045,
+      "breakthroughMove": [5, 10]
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.6, 0.74, 0.92, 1.35, 1.85]
+    }
+  }
+}

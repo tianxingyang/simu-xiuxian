@@ -1,0 +1,26 @@
+{
+  "tuning": {
+    "combat": {
+      "defeatDeathBase": 0.8,
+      "defeatGapSeverity": 1.2,
+      "defeatDemotionWeight": 1.5,
+      "defeatCultLossWeight": 4.5,
+      "lootBaseRate": 0.15,
+      "lootVariableRate": 0.1
+    }
+  },
+  "balance": {
+    "combat": {
+      "deathBoost": {
+        "amplitude": 1.8,
+        "center": 5.5,
+        "width": 1.4
+      },
+      "lootPenalty": {
+        "amplitude": 2.5,
+        "center": 5.2,
+        "steepness": 2.5
+      }
+    }
+  }
+}

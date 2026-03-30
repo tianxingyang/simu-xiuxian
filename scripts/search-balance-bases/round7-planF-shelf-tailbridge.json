@@ -1,0 +1,51 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.46,
+      "b": 0.068,
+      "tailPenalty": {
+        "amplitude": 0.6,
+        "center": 5.6,
+        "steepness": 1.8
+      },
+      "gatePenalty": {
+        "amplitude": 1.1,
+        "center": 1.95,
+        "width": 0.75
+      }
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 0.58,
+        "center": 1.15,
+        "width": 0.42
+      },
+      "reliefBoost": {
+        "amplitude": -1.35,
+        "center": 5.8,
+        "width": 1.15
+      },
+      "finalRelief": {
+        "amplitude": -1.6,
+        "center": 6.72,
+        "width": 0.24
+      }
+    }
+  },
+  "tuning": {
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.78,
+      "settlingFraction": 0.04
+    },
+    "lifespan": {
+      "earlySustainableMaxAge": [55, 130, 1000, 12000],
+      "legacyLifespanBonus": [0, 100, 1200, 12000]
+    },
+    "spatial": {
+      "breakthroughMove": [4, 9]
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.58, 0.7, 0.88, 1.28, 1.7]
+    }
+  }
+}

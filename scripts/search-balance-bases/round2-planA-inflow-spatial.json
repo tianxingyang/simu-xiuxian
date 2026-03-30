@@ -1,0 +1,23 @@
+{
+  "tuning": {
+    "household": {
+      "householdBaseGrowthRate": 0.04,
+      "householdSplitThreshold": 40,
+      "baseAwakeningRate": 0.0008
+    },
+    "behavior": {
+      "seekingBreakthroughMoveProb": 0.75,
+      "settlingFraction": 0.04
+    },
+    "spatial": {
+      "wanderBaseProb": 0.28,
+      "wanderLevelBonus": 0.035,
+      "breakthroughMove": [3, 7]
+    },
+    "terrain": {
+      "spiritualEnergyBreakthroughFactor": [0, 0.58, 0.72, 0.88, 0.98, 1.08],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.95, 1.2, 1.55, 1.95],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.025, 0, -0.08, -0.15]
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.49,
+      "b": 0.077,
+      "tailPenalty": { "amplitude": 1, "center": 4.9, "steepness": 2.2 },
+      "gatePenalty": { "amplitude": 0.85, "center": 2.05, "width": 0.72 }
+    },
+    "threshold": {
+      "tailBoost": { "amplitude": 1.25, "center": 6.6, "steepness": 1.74 },
+      "gateBoost": { "amplitude": 0.733, "center": 1.029, "width": 1.079 },
+      "peakBoost": { "amplitude": 1.55, "center": 5.75, "width": 0.39 },
+      "reliefBoost": { "amplitude": -1.1, "center": 5.2, "width": 0.9 },
+      "finalRelief": { "amplitude": -1.35, "center": 6.45, "width": 0.28 }
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": { "cooldown": 3, "cultLossRate": 0.2, "nothingWeight": 5, "cultLossWeight": 2, "injuryWeight": 2 },
+    "behavior": { "seekingBreakthroughMoveProb": 0.75, "settlingFraction": 0.117 },
+    "household": { "householdBaseGrowthRate": 0.04, "householdSplitThreshold": 164, "baseAwakeningRate": 0.008 },
+    "lifespan": { "mortalMaxAge": 64, "earlySustainableMaxAge": [64, 150, 1070, 11070], "legacyLifespanBonus": [0, 100, 1000, 10000] },
+    "terrain": {
+      "terrainSafetyFactor": [0, 0.342, 1.979, 2.111, 1.567, 1.414],
+      "spiritualEnergyAwakeningFactor": [0, 3.84, 1.08, 3.688, 0.838, 1.045],
+      "spiritualEnergyBreakthroughFactor": [0, 0.56, 0.69, 0.86, 1.12, 1.38],
+      "terrainDangerEncounterFactor": [0, 0.7, 0.95, 1.18, 1.32, 1.42],
+      "terrainDangerEvasionAdjust": [0, 0.05, 0.03, 0.02, -0.01, -0.03]
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 0.42,
+      "b": 0.105,
+      "tailPenalty": {
+        "amplitude": 0.8,
+        "center": 4.6,
+        "steepness": 2.0
+      },
+      "gatePenalty": {
+        "amplitude": 0.9,
+        "center": 5.0,
+        "width": 1.1
+      }
+    },
+    "threshold": {
+      "gateBoost": {
+        "amplitude": 1.8,
+        "center": 5.35,
+        "width": 0.42
+      },
+      "peakBoost": {
+        "amplitude": 2.2,
+        "center": 5.95,
+        "width": 0.55
+      }
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": {
+      "cooldown": 2,
+      "cultLossRate": 0.25,
+      "nothingWeight": 6,
+      "cultLossWeight": 2.4,
+      "injuryWeight": 3
+    }
+  }
+}
