@@ -587,6 +587,11 @@ export class SimulationEngine {
       this.settlements.tryExpand(s.id, this.prng, this.households);
     }
 
+    // Try settlement shrinkage
+    for (const s of this.settlements.allSettlements()) {
+      while (this.settlements.tryShrink(s.id, this.households)) { /* release cells until stable */ }
+    }
+
     // Prune dead settlements
     this.settlements.pruneDestroyed(this.households);
     this.settlements.recountTypes(this.households);

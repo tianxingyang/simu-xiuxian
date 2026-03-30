@@ -151,6 +151,38 @@ export class SettlementSystem {
     return true;
   }
 
+  /** Shrink settlement by releasing edge cells when population density drops */
+  tryShrink(settlementId: number, households: HouseholdSystem): boolean {
+    const tuning = getSimTuning();
+    const s = this.settlements.get(settlementId);
+    if (!s || s.cells.length <= 1) return false;
+
+    const pop = households.settlementPopulation(settlementId);
+    if (pop >= s.cells.length * tuning.settlement.shrinkThreshold) return false;
+
+    // Release the last cell (farthest from origin)
+    const released = s.cells.pop();
+    if (released === undefined) return false;
+    const cs = this.cellToSettlement.get(released);
+    if (cs) {
+      cs.delete(settlementId);
+      if (cs.size === 0) this.cellToSettlement.delete(released);
+    }
+
+    // Unaffiliate households on the released cell
+    const cellHouseholds = households.getHouseholdsAtCell(released);
+    if (cellHouseholds) {
+      for (const hid of cellHouseholds) {
+        const h = households.getHousehold(hid);
+        if (h && h.settlementId === settlementId) {
+          households.updateSettlementAffiliation(hid, -1);
+        }
+      }
+    }
+
+    return true;
+  }
+
   /** Check if any settlements should be removed (all households gone) */
   pruneDestroyed(households: HouseholdSystem): void {
     const toRemove: number[] = [];

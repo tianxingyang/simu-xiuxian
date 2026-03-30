@@ -93,6 +93,7 @@ export type TerrainTuning = {
 
 export type SettlementTuning = {
   expandThreshold: number;
+  shrinkThreshold: number;
 };
 
 export type MemoryTuning = {
@@ -235,6 +236,7 @@ export const DEFAULT_SIM_TUNING: Readonly<SimTuning> = Object.freeze({
   }),
   settlement: Object.freeze({
     expandThreshold: 1000,
+    shrinkThreshold: 300,
   }),
   memory: Object.freeze({
     enabled: true,
@@ -428,6 +430,7 @@ function mergeSimTuning(overrides: SimTuningInput = {}): SimTuning {
     },
     settlement: {
       expandThreshold: overrides.settlement?.expandThreshold ?? DEFAULT_SIM_TUNING.settlement.expandThreshold,
+      shrinkThreshold: overrides.settlement?.shrinkThreshold ?? DEFAULT_SIM_TUNING.settlement.shrinkThreshold,
     },
     memory: {
       enabled: overrides.memory?.enabled ?? DEFAULT_SIM_TUNING.memory.enabled,
