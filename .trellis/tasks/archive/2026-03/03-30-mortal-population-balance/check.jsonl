@@ -1,0 +1,8 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/backend/type-safety.md", "reason": "Verify type safety"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality verification"}
+{"file": "src/engine/household.ts", "reason": "Verify death rate implementation"}
+{"file": "src/sim-tuning.ts", "reason": "Verify tuning params"}
+{"file": "src/engine/simulation.ts", "reason": "Verify disaster integration"}
+{"file": "src/types.ts", "reason": "Verify event types"}

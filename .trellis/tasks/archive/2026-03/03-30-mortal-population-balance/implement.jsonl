@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/backend/type-safety.md", "reason": "New tuning types and disaster event types"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "TS conventions for new code"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality rules"}
+{"file": "src/engine/household.ts", "reason": "Core file to modify: add death rate"}
+{"file": "src/sim-tuning.ts", "reason": "Add new tuning parameters"}
+{"file": "src/engine/simulation.ts", "reason": "Add disaster processing in tickYear"}
+{"file": "src/types.ts", "reason": "Add disaster event types"}
+{"file": "server/events.ts", "reason": "Add toDisplayEvent for disasters"}
+{"file": "server/runner.ts", "reason": "Handle disaster events in runner"}
