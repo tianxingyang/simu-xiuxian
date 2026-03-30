@@ -1741,3 +1741,48 @@ Village (200-999) and town (1000-4999) were structurally unreachable.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: 聚落地盘收缩机制
+
+**Date**: 2026-03-30
+**Task**: 聚落地盘收缩机制
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 实现内容
+
+| 变更 | 说明 |
+|------|------|
+| `SettlementTuning.shrinkThreshold` | 新增收缩阈值参数（默认 300/cell），与扩张阈值（1000/cell）形成滞后带防止振荡 |
+| `SettlementSystem.tryShrink()` | 人口密度低于阈值时释放末尾 cell，取消该 cell 上 household 的聚落归属 |
+| `SimulationEngine.tickYear` | 在扩张循环后、清理前调用 tryShrink 循环 |
+
+**修改文件**:
+- `src/sim-tuning.ts` — SettlementTuning 类型、默认值、merge 函数
+- `src/engine/settlement.ts` — 新增 tryShrink 方法
+- `src/engine/simulation.ts` — tick 循环中集成收缩逻辑
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `079796a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
