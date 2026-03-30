@@ -102,7 +102,7 @@ export default memo(function EventLog({ events }: Props) {
       <div className="event-list" ref={listRef} onScroll={handleScroll}>
         {filtered.length === 0 && <div className="event-empty">暂无事件</div>}
         {filtered.slice(0, 100).map(ev => (
-          <div key={ev.id} className="event-item">
+          <div key={ev.id} className="event-item" style={{ borderLeftColor: TYPE_COLORS[ev.type] }}>
             <span className="event-year">Y{ev.year}</span>
             <span className="event-type" style={{ color: TYPE_COLORS[ev.type] }}>
               {TYPE_LABELS[ev.type]}
