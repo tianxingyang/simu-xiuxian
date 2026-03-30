@@ -1,13 +1,16 @@
-import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types';
-import { BEHAVIOR_EVAL_BASE_INTERVAL, BREAKTHROUGH_COOLDOWN, BREAKTHROUGH_CULT_LOSS_RATE, BREAKTHROUGH_CULT_LOSS_W, BREAKTHROUGH_INJURY_W, BREAKTHROUGH_NOTHING_W, COMBAT_COLLATERAL_POP_LOSS, COURAGE_MEAN, COURAGE_STDDEV, INJURY_DURATION, INJURY_GROWTH_RATE, LEVEL_COUNT, LIGHT_INJURY_GROWTH_RATE, LIFESPAN_DECAY_RATE, MAP_SIZE, MORTAL_MAX_AGE, SETTLING_FRACTION, SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR, SUSTAINABLE_MAX_AGE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, threshold, tribulationChance } from '../constants';
-import { getBalanceProfile } from '../balance';
-import { processEncounters, scoreNewsRank } from './combat';
-import { type PRNG, createPRNG, truncatedGaussian } from './prng';
-import { profiler } from './profiler';
-import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial';
-import { AreaTagSystem } from './area-tag';
-import { HouseholdSystem } from './household';
-import { SettlementSystem } from './settlement';
+import type { BehaviorState, Cultivator, EngineHooks, LevelStat, RichBreakthroughEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichTribulationEvent, YearSummary } from '../types.js';
+import { getSimTuning } from '../sim-tuning.js';
+import { LEVEL_COUNT, MAP_SIZE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, sustainableMaxAge, threshold, tribulationChance } from '../constants/index.js';
+import { getBalanceProfile } from '../balance.js';
+import { processEncounters, scoreNewsRank } from './combat.js';
+import { type PRNG, createPRNG, truncatedGaussian } from './prng.js';
+import { profiler } from './profiler.js';
+import { SpatialIndex, breakthroughMove, moveCultivators } from './spatial.js';
+import { AreaTagSystem } from './area-tag.js';
+import { HouseholdSystem } from './household.js';
+import { SettlementSystem } from './settlement.js';
+import type { PolicyEngine } from './ai-policy.js';
+import { extractState } from './ai-state-extract.js';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -86,6 +89,7 @@ export class SimulationEngine {
   yearlySpawn: number;
 
   hooks?: EngineHooks;
+  aiPolicy: PolicyEngine | null = null;
   milestones = new MilestoneTracker();
   spatialIndex = new SpatialIndex();
   areaTags = new AreaTagSystem();
@@ -137,7 +141,8 @@ export class SimulationEngine {
   }
 
   spawnCultivator(x: number, y: number, originSettlementId: number, originHouseholdId: number): void {
-    const courage = round2(truncatedGaussian(this.prng, COURAGE_MEAN, COURAGE_STDDEV, 0.01, 1.00));
+    const tuning = getSimTuning();
+    const courage = round2(truncatedGaussian(this.prng, tuning.courage.mean, tuning.courage.stddev, 0.01, 1.00));
     let id: number;
     if (this.freeSlots.length > 0) {
       id = this.freeSlots[this.freeSlots.length - 1];
@@ -148,7 +153,7 @@ export class SimulationEngine {
       c.cultivation = 0;
       c.level = 0;
       (c as { courage: number }).courage = courage;
-      c.maxAge = MORTAL_MAX_AGE;
+      c.maxAge = tuning.lifespan.mortalMaxAge;
       c.injuredUntil = 0;
       c.lightInjuryUntil = 0;
       c.meridianDamagedUntil = 0;
@@ -165,7 +170,7 @@ export class SimulationEngine {
     } else {
       id = this.nextId++;
       const nc = this.cultivators[id] = {
-        id, age: 10, cultivation: 0, level: 0, courage, maxAge: MORTAL_MAX_AGE,
+        id, age: 10, cultivation: 0, level: 0, courage, maxAge: tuning.lifespan.mortalMaxAge,
         injuredUntil: 0, lightInjuryUntil: 0, meridianDamagedUntil: 0,
         breakthroughCooldownUntil: 0, alive: true, cachedCourage: 0,
         reachedMaxLevelAt: 0, x, y,
@@ -191,6 +196,7 @@ export class SimulationEngine {
 
   tickCultivators(events: EventBuffer = null): void {
     profiler.start('tickCultivators');
+    const tuning = getSimTuning();
     for (let i = 0; i < this.nextId; i++) {
       const c = this.cultivators[i];
       if (!c.alive) continue;
@@ -198,15 +204,18 @@ export class SimulationEngine {
       c.age += 1;
       let growthRate = 1;
       if (c.injuredUntil > this.year) {
-        growthRate = INJURY_GROWTH_RATE;
+        growthRate = tuning.combat.injuryGrowthRate;
       } else if (c.lightInjuryUntil > this.year) {
-        growthRate = LIGHT_INJURY_GROWTH_RATE;
+        growthRate = tuning.combat.lightInjuryGrowthRate;
       }
       c.cultivation += growthRate;
 
-      const target = SUSTAINABLE_MAX_AGE[c.level];
+      const target = sustainableMaxAge(c.level);
       if (c.maxAge > target) {
-        c.maxAge = Math.max(MORTAL_MAX_AGE, Math.round(c.maxAge - (c.maxAge - target) * LIFESPAN_DECAY_RATE));
+        c.maxAge = Math.max(
+          tuning.lifespan.mortalMaxAge,
+          Math.round(c.maxAge - (c.maxAge - target) * tuning.lifespan.lifespanDecayRate),
+        );
 
       }
 
@@ -409,11 +418,32 @@ export class SimulationEngine {
   evaluateBehaviorStates(): void {
     profiler.start('evaluateBehaviorStates');
     const year = this.year;
+    const tuning = getSimTuning();
+    const policy = this.aiPolicy !== null && !this.aiPolicy.fallback ? this.aiPolicy : null;
 
     for (let i = 0; i < this.nextId; i++) {
       const c = this.cultivators[i];
       if (!c.alive) continue;
       if (c.reachedMaxLevelAt > 0) continue;
+
+      if (policy) {
+        const nextThreshold = c.level < MAX_LEVEL ? threshold(c.level + 1) : c.cultivation;
+        const state = extractState(
+          c, year,
+          this.areaTags.getSpiritualEnergy(c.x, c.y),
+          this.areaTags.getTerrainDanger(c.x, c.y),
+          nextThreshold,
+        );
+        const actionIdx = policy.selectAction(state, this.prng);
+        const action = policy.actionName(actionIdx);
+        c.behaviorState = action;
+        if (action === 'settling') {
+          c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * tuning.behavior.settlingFraction));
+        }
+        continue;
+      }
+
+      // --- Fallback: rule-based behavior ---
 
       // Priority 1: heavy injury -> escaping
       if (c.injuredUntil > year) {
@@ -428,7 +458,10 @@ export class SimulationEngine {
       }
 
       // Non-condition-driven states: re-evaluate at interval scaled by lifespan
-      const evalInterval = Math.max(1, Math.floor(c.maxAge / MORTAL_MAX_AGE) * BEHAVIOR_EVAL_BASE_INTERVAL);
+      const evalInterval = Math.max(
+        1,
+        Math.floor(c.maxAge / tuning.lifespan.mortalMaxAge) * tuning.behavior.evalBaseInterval,
+      );
       if (year % evalInterval !== 0 && c.behaviorState !== 'escaping' && c.behaviorState !== 'recuperating') {
         // Keep current state if not at evaluation tick (but settling expiry still checked)
         if (c.behaviorState === 'settling' && c.settlingUntil <= year) {
@@ -442,11 +475,11 @@ export class SimulationEngine {
         const remainingYears = c.maxAge - c.age;
         const cultNeeded = threshold(c.level + 1) - c.cultivation;
         if (cultNeeded > 0 && remainingYears > 0) {
-          const yearsToThreshold = cultNeeded; // growth rate = 1.0 per year
-          const seFactor = SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR[this.areaTags.getSpiritualEnergy(c.x, c.y)];
+          const yearsToThreshold = cultNeeded; // base growth rate = 1.0 per year
+          const seFactor = tuning.terrain.spiritualEnergyBreakthroughFactor[this.areaTags.getSpiritualEnergy(c.x, c.y)];
           const btChance = breakthroughChance(c.level) * seFactor;
           const expectedAttempts = btChance > 0 ? 1 / btChance : Infinity;
-          const totalExpectedYears = yearsToThreshold + expectedAttempts * BREAKTHROUGH_COOLDOWN;
+          const totalExpectedYears = yearsToThreshold + expectedAttempts * tuning.breakthroughFailure.cooldown;
 
           if (totalExpectedYears > remainingYears) {
             c.behaviorState = 'seeking_breakthrough';
@@ -456,7 +489,7 @@ export class SimulationEngine {
           // Was seeking and current cell now sufficient -> settle here
           if (c.behaviorState === 'seeking_breakthrough') {
             c.behaviorState = 'settling';
-            c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * SETTLING_FRACTION));
+            c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * tuning.behavior.settlingFraction));
             continue;
           }
         }
@@ -468,10 +501,10 @@ export class SimulationEngine {
       }
 
       // Random chance to enter settling (frequency inversely proportional to maxAge)
-      const settlingChance = MORTAL_MAX_AGE / c.maxAge;
+      const settlingChance = tuning.lifespan.mortalMaxAge / c.maxAge;
       if (this.prng() < settlingChance) {
         c.behaviorState = 'settling';
-        c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * SETTLING_FRACTION));
+        c.settlingUntil = year + Math.max(1, Math.floor(c.maxAge * tuning.behavior.settlingFraction));
         continue;
       }
 
@@ -658,7 +691,7 @@ export class SimulationEngine {
 
   /** Apply combat collateral damage to households at a cell */
   applyCombatCollateral(cellIdx: number): void {
-    this.households.applyCombatDamage(cellIdx, COMBAT_COLLATERAL_POP_LOSS);
+    this.households.applyCombatDamage(cellIdx, getSimTuning().household.combatCollateralPopLoss);
   }
 
   static deserialize(buf: Buffer): SimulationEngine {
@@ -798,6 +831,7 @@ export class SimulationEngine {
     engine._levelArrayIndex = new Int32Array(nextId);
     engine._deadIds = [];
     engine.hooks = undefined;
+    engine.aiPolicy = null;
 
     // Reset yearly counters
     engine.combatDeaths = 0;
@@ -880,15 +914,19 @@ function initLevelArrayCache(): number[][] {
   return a;
 }
 
-const BT_TOTAL_W = BREAKTHROUGH_NOTHING_W + BREAKTHROUGH_CULT_LOSS_W + BREAKTHROUGH_INJURY_W;
-const BT_NOTHING_THRESHOLD = BREAKTHROUGH_NOTHING_W / BT_TOTAL_W;
-const BT_CULT_LOSS_THRESHOLD = (BREAKTHROUGH_NOTHING_W + BREAKTHROUGH_CULT_LOSS_W) / BT_TOTAL_W;
-
 export function tryBreakthrough(
   engine: SimulationEngine, c: Cultivator,
   events: EventBuffer, cause: 'natural' | 'combat',
 ): boolean {
   const year = engine.year;
+  const tuning = getSimTuning();
+  const btTotalWeight =
+    tuning.breakthroughFailure.nothingWeight +
+    tuning.breakthroughFailure.cultLossWeight +
+    tuning.breakthroughFailure.injuryWeight;
+  const btNothingThreshold = tuning.breakthroughFailure.nothingWeight / btTotalWeight;
+  const btCultLossThreshold =
+    (tuning.breakthroughFailure.nothingWeight + tuning.breakthroughFailure.cultLossWeight) / btTotalWeight;
   if (c.level >= MAX_LEVEL) return false;
   if (c.cultivation < threshold(c.level + 1)) return false;
   if (c.breakthroughCooldownUntil > year) return false;
@@ -896,11 +934,11 @@ export function tryBreakthrough(
 
   engine.breakthroughAttempts++;
 
-  const seFactor = SPIRITUAL_ENERGY_BREAKTHROUGH_FACTOR[engine.areaTags.getSpiritualEnergy(c.x, c.y)];
+  const seFactor = tuning.terrain.spiritualEnergyBreakthroughFactor[engine.areaTags.getSpiritualEnergy(c.x, c.y)];
   if (engine.prng() < breakthroughChance(c.level) * seFactor) {
     const prevLevel = c.level;
     c.level++;
-    c.maxAge = Math.min(SUSTAINABLE_MAX_AGE[MAX_LEVEL], c.maxAge + lifespanBonus(c.level));
+    c.maxAge = Math.min(sustainableMaxAge(MAX_LEVEL), c.maxAge + lifespanBonus(c.level));
     engine.levelGroups[prevLevel].delete(c.id);
     engine.levelGroups[c.level].add(c.id);
     engine.spatialIndex.changeLevel(c.id, prevLevel, c.level, c.x, c.y);
@@ -935,19 +973,22 @@ export function tryBreakthrough(
     return true;
   }
 
-  c.breakthroughCooldownUntil = year + BREAKTHROUGH_COOLDOWN;
+  c.breakthroughCooldownUntil = year + tuning.breakthroughFailure.cooldown;
   engine.breakthroughFailures++;
 
   const r = engine.prng();
   let penalty: RichBreakthroughEvent['penalty'] = 'cooldown_only';
-  if (r >= BT_NOTHING_THRESHOLD) {
-    if (r < BT_CULT_LOSS_THRESHOLD) {
+  if (r >= btNothingThreshold) {
+    if (r < btCultLossThreshold) {
       penalty = 'cultivation_loss';
       const base = threshold(c.level);
-      c.cultivation = Math.max(base, round1(c.cultivation - (c.cultivation - base) * BREAKTHROUGH_CULT_LOSS_RATE));
+      c.cultivation = Math.max(
+        base,
+        round1(c.cultivation - (c.cultivation - base) * tuning.breakthroughFailure.cultLossRate),
+      );
     } else {
       penalty = 'injury';
-      c.injuredUntil = year + INJURY_DURATION;
+      c.injuredUntil = year + tuning.combat.injuryDuration;
     }
   }
 

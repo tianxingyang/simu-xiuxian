@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "features": [
+    { "name": "remaining_lifespan_ratio", "source": "derived", "range": [0, 1] },
+    { "name": "cultivation_progress",     "source": "derived", "range": [0, 1] },
+    { "name": "level_normalized",         "source": "derived", "range": [0, 1] },
+    { "name": "courage",                  "source": "field",   "range": [0, 1] },
+    { "name": "is_heavy_injured",         "source": "derived", "range": [0, 1] },
+    { "name": "is_light_injured",         "source": "derived", "range": [0, 1] },
+    { "name": "is_meridian_damaged",      "source": "derived", "range": [0, 1] },
+    { "name": "breakthrough_ready",       "source": "derived", "range": [0, 1] },
+    { "name": "spiritual_energy",         "source": "cell",    "range": [0, 1] },
+    { "name": "danger_level",             "source": "cell",    "range": [0, 1] },
+    { "name": "breakthrough_cooldown",    "source": "derived", "range": [0, 1] },
+    { "name": "age_ratio",                "source": "derived", "range": [0, 1] }
+  ],
+  "actions": [
+    "wandering",
+    "seeking_breakthrough",
+    "settling",
+    "escaping",
+    "recuperating"
+  ],
+  "rewards": [
+    { "event": "survive_year",     "weight": 1.0 },
+    { "event": "cultivation_gain", "weight": 2.0 },
+    { "event": "breakthrough",     "weight": 100.0, "scale_by": "level" },
+    { "event": "combat_win",       "weight": 10.0 },
+    { "event": "heavy_injury",     "weight": -5.0 },
+    { "event": "death",            "weight": -50.0 }
+  ],
+  "network": {
+    "hidden": [32, 16],
+    "activation": "relu"
+  }
+}

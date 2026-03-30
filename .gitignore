@@ -8,3 +8,6 @@ data/
 .logs/
 napcat/config/
 napcat/qq_data/
+ai-policy/.venv/
+ai-policy/train/model/
+__pycache__/
