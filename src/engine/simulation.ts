@@ -536,14 +536,14 @@ export class SimulationEngine {
         const nextThreshold = c.level < MAX_LEVEL ? threshold(c.level + 1) : c.cultivation;
         const mem = tuning.memory.enabled ? this.memories[i] : null;
         const rel = this.relationships[i];
+        const nearbyId = this.spatialIndex.findNearbyAny(c.x, c.y, 3, i);
+        const hasNearby = nearbyId >= 0;
         const relCtx: RelationshipContext = {
           rel,
-          allyNearby: this.spatialIndex.findNearbyAny(c.x, c.y, 3, i, this.cultivators).some(
-            nid => findAlly(rel, nid) >= 0,
-          ),
+          allyNearby: hasNearby && findAlly(rel, nearbyId) >= 0,
           rivalNearby: rel.rivals.some(r => r.id >= 0 && this.cultivators[r.id]?.alive),
           vendettaTargetNearby: rel.vendettas.some(v => v.targetId >= 0 && this.cultivators[v.targetId]?.alive),
-          isFellowDisciple: false,
+          isFellowDisciple: hasNearby && isFellowDisciple(rel, this.relationships[nearbyId]),
           canSpar: false,
           canTeach: false,
           canBeTaught: rel.mentor >= 0,
