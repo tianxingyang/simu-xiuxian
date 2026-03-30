@@ -3,7 +3,8 @@ export type BehaviorState =
   | 'recuperating'
   | 'seeking_breakthrough'
   | 'settling'
-  | 'wandering';
+  | 'wandering'
+  | 'guarding';
 
 export interface Cultivator {
   id: number;

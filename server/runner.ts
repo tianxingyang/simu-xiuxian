@@ -1,10 +1,17 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { EngineHooks, RichEvent, SimEvent, YearSummary } from '../src/types.js';
 import { SimulationEngine } from '../src/engine/simulation.js';
+import { createPolicyEngine } from '../src/engine/ai-policy.js';
+import type { PolicyEngine } from '../src/engine/ai-policy.js';
 import { clearSimData, getDB, getSimState, insertEvents, insertWorldSnapshot, setSimState } from './db.js';
 import { resetDisplayEventId, toDisplayEvent } from './events.js';
 import { runEviction } from './eviction.js';
 import { IdentityManager } from './identity.js';
 import { getLogger } from './logger.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const log = getLogger('runner');
 
@@ -42,10 +49,34 @@ function clampSpeed(s: number): number {
   return s === 2 || s === 3 ? s : 1;
 }
 
+function loadAiPolicy(): PolicyEngine | null {
+  const policyDir = path.resolve(__dirname, '..', 'ai-policy');
+  const configPath = path.join(policyDir, 'config.json');
+  const configJson = tryReadFile(configPath);
+  if (!configJson) return null;
+
+  const config = JSON.parse(configJson) as { version: number };
+  const weightsPath = path.join(policyDir, 'weights', `v${config.version}.json`);
+  const weightsJson = tryReadFile(weightsPath);
+
+  const policy = createPolicyEngine(configJson, weightsJson);
+  if (policy.fallback) {
+    log.warn(`ai-policy: fallback mode (weights v${config.version} not loaded)`);
+  } else {
+    log.info(`ai-policy: loaded v${config.version}`);
+  }
+  return policy;
+}
+
+function tryReadFile(p: string): string | null {
+  try { return fs.readFileSync(p, 'utf-8'); } catch { return null; }
+}
+
 export class Runner {
   private io: RunnerIO;
   private engine: SimulationEngine | null = null;
   private identity: IdentityManager | null = null;
+  private policy: PolicyEngine | null = null;
 
   private speed = 1;
   private running = false;
@@ -63,6 +94,7 @@ export class Runner {
 
   constructor(io: RunnerIO) {
     this.io = io;
+    this.policy = loadAiPolicy();
   }
 
   getState(): StateSnapshot {
@@ -214,6 +246,7 @@ export class Runner {
     if (!this.engine || !this.identity) return;
     const id = this.identity;
     const engine = this.engine;
+    engine.aiPolicy = this.policy;
     id.settlementNameResolver = (sid) => engine.settlements.getSettlement(sid)?.name;
     const hooks: EngineHooks = {
       onPromotion(c, lv, y) { id.onPromotion(c, lv, y); },

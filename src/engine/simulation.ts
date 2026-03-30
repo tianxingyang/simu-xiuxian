@@ -12,6 +12,7 @@ import { SettlementSystem } from './settlement.js';
 import { type DisasterResult, processDisasters } from './disaster.js';
 import type { PolicyEngine } from './ai-policy.js';
 import { extractState } from './ai-state-extract.js';
+import type { RelationshipContext } from './ai-state-extract.js';
 import {
   type CharacterMemory, createEmptyMemory, resetMemory,
   serializeMemory, deserializeMemory, deserializeMemoryLegacy, MEMORY_SERIALIZE_BYTES,
@@ -24,6 +25,7 @@ import {
   tickRelationshipDecay, purgeDeadFromRelationships,
   addAlly, removeDisciple, clearMentor,
   findAlly, isFellowDisciple, ALLY_BUFFER_SIZE, MAX_DISCIPLES,
+  strongestAllyStrength, maxRivalIntensity, hasAnyVendetta,
 } from './relationship.js';
 import { processNonCombatEncounters } from './interaction.js';
 
@@ -533,12 +535,29 @@ export class SimulationEngine {
       if (policy) {
         const nextThreshold = c.level < MAX_LEVEL ? threshold(c.level + 1) : c.cultivation;
         const mem = tuning.memory.enabled ? this.memories[i] : null;
+        const rel = this.relationships[i];
+        const relCtx: RelationshipContext = {
+          rel,
+          allyNearby: this.spatialIndex.findNearbyAny(c.x, c.y, 3, i, this.cultivators).some(
+            nid => findAlly(rel, nid) >= 0,
+          ),
+          rivalNearby: rel.rivals.some(r => r.id >= 0 && this.cultivators[r.id]?.alive),
+          vendettaTargetNearby: rel.vendettas.some(v => v.targetId >= 0 && this.cultivators[v.targetId]?.alive),
+          isFellowDisciple: false,
+          canSpar: false,
+          canTeach: false,
+          canBeTaught: rel.mentor >= 0,
+          allyBreakthroughNearby: false,
+          canGuard: c.injuredUntil <= year && c.behaviorState !== 'escaping',
+          guardAvailable: false,
+        };
         const state = extractState(
           c, year,
           this.areaTags.getSpiritualEnergy(c.x, c.y),
           this.areaTags.getTerrainDanger(c.x, c.y),
           nextThreshold,
           mem,
+          relCtx,
         );
         const actionIdx = policy.selectAction(state, this.prng);
         const action = policy.actionName(actionIdx);

@@ -264,10 +264,10 @@ def _decay(value: float, baseline: float, rate: float) -> float:
 
 
 class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
-    """Single-cultivator xiuxian lifecycle environment with memory.
+    """Single-cultivator xiuxian lifecycle environment with memory and relationships.
 
-    Observation: 18-dim float32 vector (12 base + 6 memory features).
-    Action: Discrete(5) behavior state index.
+    Observation: 34-dim float32 vector (12 base + 6 memory + 9 relationship + 4 interaction + 3 cooperative).
+    Action: Discrete(6) behavior state index.
     """
 
     metadata = {"render_modes": []}
@@ -314,6 +314,19 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         self._rootedness: float = 0.0
         self._breakthrough_fear: float = 0.0
 
+        # Relationship state (stochastic simulation of nearby cultivators)
+        self._has_mentor: bool = False
+        self._disciple_count: int = 0
+        self._ally_strength: float = 0.0  # strongest ally
+        self._rival_intensity: float = 0.0  # strongest rival
+        self._has_vendetta: bool = False
+        self._ally_nearby: bool = False
+        self._rival_nearby: bool = False
+        self._vendetta_target_nearby: bool = False
+        self._is_fellow_disciple: bool = False
+        self._teaching_boost_until: int = 0
+        self._teaching_boost_rate: float = 0.0
+
     # ------------------------------------------------------------------
     # Gym API
     # ------------------------------------------------------------------
@@ -351,6 +364,19 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         self._rootedness = 0.0
         self._breakthrough_fear = 0.0
 
+        # Reset relationships (stochastic init)
+        self._has_mentor = self._rng.random() < 0.15
+        self._disciple_count = 0
+        self._ally_strength = 0.0
+        self._rival_intensity = 0.0
+        self._has_vendetta = False
+        self._ally_nearby = False
+        self._rival_nearby = False
+        self._vendetta_target_nearby = False
+        self._is_fellow_disciple = False
+        self._teaching_boost_until = 0
+        self._teaching_boost_rate = 0.0
+
         return self._obs(), {}
 
     def step(
@@ -363,6 +389,9 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
 
         action_name = self.cfg["actions"][action]
         self._apply_behavior_terrain(action_name)
+
+        # --- Relationship dynamics (stochastic) ---
+        self._tick_relationships(action_name)
 
         # --- Emotional decay ---
         dr = _MEMORY["emotionalDecayRate"]
@@ -387,6 +416,12 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         se_growth_factor = _TUNING["spiritualEnergyBreakthroughFactor"]
         se_idx = max(0, min(self._spiritual_energy, len(se_growth_factor) - 1))
         growth *= se_growth_factor[se_idx]
+        # Teaching boost
+        if self._teaching_boost_until > self._year:
+            growth += self._teaching_boost_rate
+        # Mentor bonus
+        if self._has_mentor:
+            growth += 0.3
         self._cultivation += growth
 
         # --- Recuperating accelerates injury recovery ---
@@ -403,6 +438,22 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
                 _TUNING["mortalMaxAge"],
                 round(self._max_age - (self._max_age - target) * _TUNING["lifespanDecayRate"]),
             )
+
+        # --- Sparring (if settling/wandering and ally nearby) ---
+        if action_name in ("settling", "wandering") and self._ally_nearby and self._ally_strength > 0.3:
+            if self._rng.random() < 0.15:
+                spar_gain = 0.3 + self._rng.random() * 0.5
+                self._cultivation += spar_gain
+                self._ally_strength = min(1.0, self._ally_strength + 0.05)
+                reward += self._reward("sparring")
+
+        # --- Teaching (if ally/mentor nearby and level gap simulated) ---
+        if action_name == "settling" and (self._has_mentor or self._ally_strength > 0.3):
+            if self._rng.random() < 0.10:
+                boost_rate = 0.5 if self._has_mentor else 0.3
+                self._teaching_boost_rate = min(0.8, self._teaching_boost_rate + boost_rate)
+                self._teaching_boost_until = self._year + 10
+                reward += self._reward("teaching")
 
         # --- Breakthrough attempt ---
         if (
@@ -453,6 +504,9 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
             self._spiritual_energy = max(0, min(5, self._spiritual_energy + int(self._rng.choice([-1, 0]))))
         elif action == "settling":
             pass
+        elif action == "guarding":
+            # Guarding: stay in place, similar to settling but occupies the tick
+            pass
         elif action == "recuperating":
             self._danger = max(0, min(5, self._danger + int(self._rng.choice([-1, 0]))))
         else:
@@ -464,7 +518,16 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         se_idx = max(1, min(self._spiritual_energy, len(se_factor_table) - 1))
         se_factor = se_factor_table[se_idx]
 
-        chance = breakthrough_chance(self._level) * se_factor
+        # Guardian bonus (guarding action or ally nearby)
+        guardian_bonus = 0.0
+        has_guardian = self._ally_nearby or self._has_mentor
+        if has_guardian:
+            if self._has_mentor:
+                guardian_bonus = 0.18
+            elif self._ally_strength >= 0.5:
+                guardian_bonus = 0.08
+
+        chance = breakthrough_chance(self._level) * se_factor + guardian_bonus
         if self._rng.random() < chance:
             self._level += 1
             bonus = lifespan_bonus(self._level)
@@ -472,7 +535,8 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
             # Memory: success
             self._ambition = _clamp01(self._ambition + _MEMORY["ambitionSuccessDelta"])
             self._breakthrough_fear = 0.0
-            return True, 0.0
+            guarding_reward = self._reward("guarding_success", scale_value=self._level) if has_guardian else 0.0
+            return True, guarding_reward
 
         # Failure
         self._bt_cooldown_until = self._year + _TUNING["breakthroughCooldown"]
@@ -492,18 +556,27 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
         nothing_t = _TUNING["breakthroughNothingWeight"] / total_w
         cult_loss_t = nothing_t + _TUNING["breakthroughCultLossWeight"] / total_w
 
+        penalty_reduction = 0.5 if has_guardian else 1.0
         r = self._rng.random()
         if r >= nothing_t:
             if r < cult_loss_t:
                 base = THRESHOLDS[self._level]
                 self._cultivation = max(
                     base,
-                    self._cultivation - (self._cultivation - base) * _TUNING["breakthroughCultLossRate"],
+                    self._cultivation - (self._cultivation - base) * _TUNING["breakthroughCultLossRate"] * penalty_reduction,
                 )
             else:
-                self._injured_until = self._year + _TUNING["injuryDuration"]
-                self._caution = _clamp01(self._caution + _MEMORY["cautionHeavyInjuryDelta"])
-                return False, self._reward("heavy_injury")
+                if has_guardian:
+                    # Guardian downgrades injury to cultivation loss
+                    base = THRESHOLDS[self._level]
+                    self._cultivation = max(
+                        base,
+                        self._cultivation - (self._cultivation - base) * _TUNING["breakthroughCultLossRate"] * penalty_reduction,
+                    )
+                else:
+                    self._injured_until = self._year + _TUNING["injuryDuration"]
+                    self._caution = _clamp01(self._caution + _MEMORY["cautionHeavyInjuryDelta"])
+                    return False, self._reward("heavy_injury")
         return False, 0.0
 
     def _resolve_combat(self) -> float:
@@ -570,6 +643,42 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
                     self._caution = _clamp01(self._caution + _MEMORY["cautionLightInjuryDelta"])
 
         return reward
+
+    def _tick_relationships(self, action: str) -> None:
+        """Stochastic simulation of relationship dynamics for single-agent env."""
+        # Mentor: may gain one early, lose it later
+        if not self._has_mentor and self._level < 3 and self._rng.random() < 0.02:
+            self._has_mentor = True
+        if self._has_mentor and self._level >= 4 and self._rng.random() < 0.1:
+            self._has_mentor = False  # graduated
+
+        # Disciples: higher level cultivators attract disciples
+        if self._level >= 3 and self._disciple_count < 3 and action == "settling":
+            if self._rng.random() < 0.03:
+                self._disciple_count += 1
+
+        # Ally strength: grows with settling, decays otherwise
+        if action in ("settling", "wandering") and self._rng.random() < 0.08:
+            self._ally_strength = min(1.0, self._ally_strength + 0.1)
+        self._ally_strength = max(0.0, self._ally_strength - 0.02)
+
+        # Rival: forms from combat history (simplified)
+        if self._rng.random() < 0.03:
+            self._rival_intensity = min(1.0, self._rival_intensity + 0.2)
+        self._rival_intensity = max(0.0, self._rival_intensity - 0.01)
+
+        # Vendetta: rare, triggered by simulated ally/mentor death
+        if not self._has_vendetta and (self._ally_strength > 0.7 or self._has_mentor):
+            if self._rng.random() < 0.005:
+                self._has_vendetta = True
+        if self._has_vendetta and self._rng.random() < 0.02:
+            self._has_vendetta = False  # target died
+
+        # Nearby presence (stochastic per tick)
+        self._ally_nearby = self._ally_strength > 0 and self._rng.random() < 0.3
+        self._rival_nearby = self._rival_intensity > 0 and self._rng.random() < 0.2
+        self._vendetta_target_nearby = self._has_vendetta and self._rng.random() < 0.1
+        self._is_fellow_disciple = self._has_mentor and self._rng.random() < 0.2
 
     def _roll_defeat_outcome(self) -> str:
         total = (
@@ -654,6 +763,46 @@ class XiuxianEnv(gym.Env[NDArray[np.float32], int]):
             return self._rootedness
         if name == "breakthrough_fear":
             return self._breakthrough_fear
+        # Relationship features
+        if name == "has_mentor":
+            return 1.0 if self._has_mentor else 0.0
+        if name == "disciple_count":
+            return self._disciple_count / 3.0
+        if name == "ally_nearby":
+            return 1.0 if self._ally_nearby else 0.0
+        if name == "strongest_ally_strength":
+            return self._ally_strength
+        if name == "rival_nearby":
+            return 1.0 if self._rival_nearby else 0.0
+        if name == "max_rival_intensity":
+            return self._rival_intensity
+        if name == "has_vendetta":
+            return 1.0 if self._has_vendetta else 0.0
+        if name == "vendetta_target_nearby":
+            return 1.0 if self._vendetta_target_nearby else 0.0
+        if name == "is_fellow_disciple":
+            return 1.0 if self._is_fellow_disciple else 0.0
+        # Interaction features
+        if name == "can_spar":
+            return 1.0 if self._ally_nearby and self._ally_strength > 0.3 else 0.0
+        if name == "can_teach":
+            return 1.0 if self._disciple_count > 0 else 0.0
+        if name == "can_be_taught":
+            return 1.0 if self._has_mentor or (self._ally_nearby and self._ally_strength > 0.3) else 0.0
+        if name == "teaching_boost_active":
+            return 1.0 if self._teaching_boost_until > self._year else 0.0
+        # Cooperative features
+        if name == "ally_breakthrough_nearby":
+            return 1.0 if self._ally_nearby and self._rng.random() < 0.05 else 0.0
+        if name == "can_guard":
+            return 1.0 if self._ally_nearby and self._injured_until <= self._year else 0.0
+        if name == "guard_available":
+            bt_ready = (
+                self._level < MAX_LEVEL
+                and self._cultivation >= THRESHOLDS[min(self._level + 1, MAX_LEVEL)]
+                and self._ally_nearby
+            )
+            return 1.0 if bt_ready else 0.0
         return 0.0
 
     def _reward(self, event: str, scale_value: float = 0.0) -> float:
