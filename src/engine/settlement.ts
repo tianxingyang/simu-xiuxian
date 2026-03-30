@@ -1,13 +1,13 @@
-import type { Settlement, SettlementType } from '../types';
-import type { PRNG } from './prng';
-import type { HouseholdSystem } from './household';
+import type { Settlement, SettlementType } from '../types.js';
+import { getSimTuning } from '../sim-tuning.js';
+import type { PRNG } from './prng.js';
+import type { HouseholdSystem } from './household.js';
 import {
   MAP_SIZE,
   SETTLEMENT_CITY_MIN,
-  SETTLEMENT_EXPAND_THRESHOLD,
   SETTLEMENT_TOWN_MIN,
   SETTLEMENT_VILLAGE_MIN,
-} from '../constants';
+} from '../constants/index.js';
 
 // Settlement name generation pools
 const SETTLEMENT_PREFIX = [
@@ -100,12 +100,13 @@ export class SettlementSystem {
   }
 
   tryExpand(settlementId: number, prng: PRNG, households: HouseholdSystem): boolean {
+    const tuning = getSimTuning();
     const s = this.settlements.get(settlementId);
     if (!s) return false;
 
     const pop = households.settlementPopulation(settlementId);
     // Expand when population exceeds threshold per cell
-    if (pop < s.cells.length * SETTLEMENT_EXPAND_THRESHOLD) return false;
+    if (pop < s.cells.length * tuning.settlement.expandThreshold) return false;
 
     // Find adjacent cells not already claimed
     const candidateCells = new Set<number>();
@@ -285,5 +286,6 @@ export function getSettlementTypeName(type: SettlementType): string {
     case 'village': return '村庄';
     case 'town': return '镇';
     case 'city': return '城';
+    default: return type satisfies never;
   }
 }

@@ -1,28 +1,30 @@
-import type { BehaviorState, Cultivator } from '../types';
-import { round2 } from './utils';
+import type { BehaviorState, Cultivator } from '../types.js';
+import { DEFAULT_SIM_TUNING, getSimTuning } from '../sim-tuning.js';
+import { round2 } from './utils.js';
 
-export const COURAGE_TROUGH = 0.3;
-export const COURAGE_YOUNG_AMP = 0.1;
-export const COURAGE_OLD_AMP = 0.3;
-export const COURAGE_MEAN = 0.5;
-export const COURAGE_STDDEV = 0.15;
-export const EVASION_SENSITIVITY = 0.5;
-export const EVASION_PENALTY = 0.05;
+export const COURAGE_TROUGH = DEFAULT_SIM_TUNING.courage.trough;
+export const COURAGE_YOUNG_AMP = DEFAULT_SIM_TUNING.courage.youngAmp;
+export const COURAGE_OLD_AMP = DEFAULT_SIM_TUNING.courage.oldAmp;
+export const COURAGE_MEAN = DEFAULT_SIM_TUNING.courage.mean;
+export const COURAGE_STDDEV = DEFAULT_SIM_TUNING.courage.stddev;
+export const EVASION_SENSITIVITY = DEFAULT_SIM_TUNING.courage.evasionSensitivity;
+export const EVASION_PENALTY = DEFAULT_SIM_TUNING.courage.evasionPenalty;
 
 export const BEHAVIOR_COURAGE_FACTOR: Readonly<Record<BehaviorState, number>> = {
-  escaping: 0.3,
-  recuperating: 0.6,
-  seeking_breakthrough: 1.0,
-  settling: 1.0,
-  wandering: 1.0,
+  escaping: DEFAULT_SIM_TUNING.courage.behaviorFactors.escaping,
+  recuperating: DEFAULT_SIM_TUNING.courage.behaviorFactors.recuperating,
+  seeking_breakthrough: DEFAULT_SIM_TUNING.courage.behaviorFactors.seeking_breakthrough,
+  settling: DEFAULT_SIM_TUNING.courage.behaviorFactors.settling,
+  wandering: DEFAULT_SIM_TUNING.courage.behaviorFactors.wandering,
 };
 
 export function effectiveCourage(c: Cultivator): number {
+  const tuning = getSimTuning().courage;
   const t = c.age / c.maxAge;
-  const boost = t < COURAGE_TROUGH
-    ? COURAGE_YOUNG_AMP * (1 - t / COURAGE_TROUGH) ** 2
-    : COURAGE_OLD_AMP * ((t - COURAGE_TROUGH) / (1 - COURAGE_TROUGH)) ** 2;
+  const boost = t < tuning.trough
+    ? tuning.youngAmp * (1 - t / tuning.trough) ** 2
+    : tuning.oldAmp * ((t - tuning.trough) / (1 - tuning.trough)) ** 2;
   const base = round2(Math.min(1, c.courage + boost));
-  const factor = BEHAVIOR_COURAGE_FACTOR[c.behaviorState];
+  const factor = tuning.behaviorFactors[c.behaviorState];
   return round2(base * factor);
 }

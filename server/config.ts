@@ -28,7 +28,9 @@ export const config = {
   dbPath: envVal('DB_PATH', './data/simu-xiuxian.db'),
   onebotWsUrl: envVal('ONEBOT_WS_URL', ''),
   onebotToken: envVal('ONEBOT_TOKEN', ''),
-  qqGroupId: Number(envVal('QQ_GROUP_ID', '0')),
+  qqGroupIds: new Set(
+    envVal('QQ_GROUP_ID', '').split(',').map(s => Number(s.trim())).filter(n => n > 0),
+  ),
 } as const;
 
 export const llmConfig = {

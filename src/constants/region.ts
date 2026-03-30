@@ -1,4 +1,4 @@
-import { MAP_SIZE } from './spatial';
+import { MAP_SIZE } from './spatial.js';
 
 export type RegionCode = 'N' | 'G' | 'P' | 'M' | 'C' | 'F' | 'H' | 'S' | 'D' | 'I' | '~';
 

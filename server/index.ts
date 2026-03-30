@@ -1,11 +1,14 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { fork, type ChildProcess } from 'node:child_process';
+import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { config, llmConfig } from './config.js';
 import { startBot, stopBot, sendGroupMessage, type BotGroupMessage } from './bot.js';
-import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext } from './ipc.js';
+import type { SimCommand, SimWorkerEvent, LlmCommand, LlmWorkerEvent, WorldContext, ChatMessage } from './ipc.js';
 import type { StateSnapshot } from './runner.js';
+import type { ChatResult } from './chat.js';
 import { LEVEL_NAMES } from '../src/constants/index.js';
 import { initLogger, getLogger } from './logger.js';
 
@@ -70,6 +73,28 @@ function requestWorldContext(): Promise<WorldContext | null> {
     };
     simWorker!.send({ type: 'sim:getWorldContext' } as SimCommand);
   });
+}
+
+// ---------------------------------------------------------------------------
+// mem_query IPC bridge (LLM worker -> gateway -> sim worker -> back)
+// ---------------------------------------------------------------------------
+
+const pendingMemQueries = new Map<string, { jobId: string }>();
+
+function handleMemQueryFromLlm(jobId: string, queryId: string, expression: string): void {
+  if (!simWorker?.connected || !simReady) {
+    sendToLlm({ type: 'tool:memQueryResult', jobId, queryId, error: 'Sim worker not ready' });
+    return;
+  }
+  pendingMemQueries.set(queryId, { jobId });
+  simWorker.send({ type: 'sim:evalQuery', queryId, expression } as SimCommand);
+}
+
+function handleQueryResultFromSim(queryId: string, result?: unknown, error?: string): void {
+  const pending = pendingMemQueries.get(queryId);
+  if (!pending) return;
+  pendingMemQueries.delete(queryId);
+  sendToLlm({ type: 'tool:memQueryResult', jobId: pending.jobId, queryId, result, error });
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +197,9 @@ function spawnSim(): ChildProcess {
       case 'sim:worldContext':
         if (pendingWorldContextCb) pendingWorldContextCb(msg.context);
         break;
+      case 'sim:queryResult':
+        handleQueryResultFromSim(msg.queryId, msg.result, msg.error);
+        break;
     }
   });
 
@@ -179,6 +207,11 @@ function spawnSim(): ChildProcess {
     log.error(`sim worker exited (code=${code}), restarting...`);
     simReady = false;
     simWorker = null;
+    // Fail-fast pending mem queries
+    for (const [qid, pending] of pendingMemQueries) {
+      sendToLlm({ type: 'tool:memQueryResult', jobId: pending.jobId, queryId: qid, error: 'Sim worker crashed' });
+      pendingMemQueries.delete(qid);
+    }
     setTimeout(() => { simWorker = spawnSim(); }, 1000);
   });
 
@@ -214,6 +247,9 @@ function spawnLlm(): ChildProcess {
         // Bot jobs also live in pendingJobs — no separate routing needed
         break;
       }
+      case 'tool:memQuery':
+        handleMemQueryFromLlm(msg.jobId, msg.queryId, msg.expression);
+        break;
     }
   });
 
@@ -396,25 +432,100 @@ wss.on('connection', (ws) => {
 // Bot Command Routing
 // ---------------------------------------------------------------------------
 
-function parseCommand(raw: string, selfId?: number): { cmd: string; arg: string } | null {
+function parseCommand(raw: string, selfId?: number): { cmd: string; arg: string; atBot: boolean } | null {
   let text = raw;
+  let atBot = false;
   if (selfId) {
-    text = text.replace(new RegExp(`\\[CQ:at,qq=${selfId}\\]`, 'g'), '');
+    const atRegex = new RegExp(`\\[CQ:at,qq=${selfId}[^\\]]*\\]`, 'g');
+    if (atRegex.test(text)) {
+      atBot = true;
+      text = text.replace(atRegex, '');
+    }
   }
   text = text.replace(/^\s*\//, '').trim();
+  if (!text && atBot) return { cmd: 'help', arg: '', atBot };
   if (!text) return null;
-  if (text === '日报') return { cmd: 'report', arg: '' };
-  if (text === '状态') return { cmd: 'status', arg: '' };
-  if (text === 'help' || text === '帮助') return { cmd: 'help', arg: '' };
-  if (text === 'about') return { cmd: 'about', arg: '' };
+  if (text === '日报') return { cmd: 'report', arg: '', atBot };
+  if (text === '状态') return { cmd: 'status', arg: '', atBot };
+  if (text === 'help' || text === '帮助') return { cmd: 'help', arg: '', atBot };
+  if (text === 'clear' || text === '清空') return { cmd: 'clear', arg: '', atBot };
+  if (text === 'about') return { cmd: 'about', arg: '', atBot };
   const aboutMatch = text.match(/^about\s+(.+)$/);
-  if (aboutMatch) return { cmd: 'about', arg: aboutMatch[1].trim() };
+  if (aboutMatch) return { cmd: 'about', arg: aboutMatch[1].trim(), atBot };
   const bioMatch = text.match(/^传记\s+(.+)$/);
-  if (bioMatch) return { cmd: 'biography', arg: bioMatch[1].trim() };
+  if (bioMatch) return { cmd: 'biography', arg: bioMatch[1].trim(), atBot };
+  // If @bot but no matching command, treat as chat question
+  if (atBot) return { cmd: 'chat', arg: text, atBot };
   return null;
 }
 
 const _busyGroups = new Set<number>();
+
+// ---------------------------------------------------------------------------
+// Conversation Session Store
+// ---------------------------------------------------------------------------
+
+interface ConversationSession {
+  messages: ChatMessage[];
+  lastActiveTs: number;
+}
+
+const SESSION_EXPIRY_MS = 30 * 60 * 1000;
+const SESSION_FILE = join(dirname(config.dbPath), 'sessions.json');
+const sessionStore = new Map<string, ConversationSession>();
+
+function saveSessions(): void {
+  try {
+    const data: Record<string, ConversationSession> = {};
+    for (const [k, v] of sessionStore) data[k] = v;
+    writeFileSync(SESSION_FILE, JSON.stringify(data));
+  } catch { /* best-effort */ }
+}
+
+function restoreSessions(): void {
+  try {
+    if (!existsSync(SESSION_FILE)) return;
+    const raw = JSON.parse(readFileSync(SESSION_FILE, 'utf-8')) as Record<string, ConversationSession>;
+    const now = Date.now();
+    for (const [k, v] of Object.entries(raw)) {
+      if (now - v.lastActiveTs < SESSION_EXPIRY_MS) sessionStore.set(k, v);
+    }
+    log.info(`restored ${sessionStore.size} session(s)`);
+  } catch { /* ignore corrupt file */ }
+}
+
+function getSession(groupId: number, userId: number): ConversationSession {
+  const key = `${groupId}:${userId}`;
+  const now = Date.now();
+  const existing = sessionStore.get(key);
+  if (existing && (now - existing.lastActiveTs) < SESSION_EXPIRY_MS) {
+    existing.lastActiveTs = now;
+    return existing;
+  }
+  const fresh: ConversationSession = { messages: [], lastActiveTs: now };
+  sessionStore.set(key, fresh);
+  return fresh;
+}
+
+function updateSession(groupId: number, userId: number, messages: ChatMessage[]): void {
+  const key = `${groupId}:${userId}`;
+  sessionStore.set(key, { messages, lastActiveTs: Date.now() });
+}
+
+// Periodic cleanup of expired sessions + persist
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, session] of sessionStore) {
+    if (now - session.lastActiveTs >= SESSION_EXPIRY_MS) {
+      sessionStore.delete(key);
+    }
+  }
+  saveSessions();
+}, 5 * 60 * 1000);
+
+// ---------------------------------------------------------------------------
+// Bot handlers
+// ---------------------------------------------------------------------------
 
 async function handleBotReport(groupId: number): Promise<void> {
   const worldContext = await requestWorldContext() ?? undefined;
@@ -438,6 +549,32 @@ async function handleBotBiography(groupId: number, name: string): Promise<void> 
   const result = await promise as { status: string; biography?: string; error?: string };
   const text = result.biography ?? result.error ?? '传记生成失败。';
   sendGroupMessage(groupId, text);
+}
+
+async function handleBotChat(groupId: number, userId: number, question: string): Promise<void> {
+  const session = getSession(groupId, userId);
+  const worldContext = await requestWorldContext() ?? undefined;
+  const yearSummary = cachedState.summary ?? undefined;
+
+  const jobId = nextJobId();
+  log.info(`dispatching bot chat job ${jobId} for group ${groupId} user ${userId}: "${question.slice(0, 60)}"`);
+
+  const { promise } = submitLlmJob({
+    type: 'job:chat',
+    jobId,
+    question,
+    history: session.messages,
+    worldContext,
+    yearSummary,
+  });
+
+  const result = await promise as ChatResult;
+  if (result.reply) {
+    sendGroupMessage(groupId, result.reply);
+  } else {
+    sendGroupMessage(groupId, '暂时无法回答，请稍后再试。');
+  }
+  updateSession(groupId, userId, result.updatedHistory);
 }
 
 function formatStatus(): string {
@@ -499,24 +636,36 @@ function formatAbout(arg: string): string {
 function handleBotMessage(msg: BotGroupMessage): void {
   const parsed = parseCommand(msg.content, msg.selfId);
   if (!parsed) return;
+  // Require @bot for all interactions
+  if (!parsed.atBot) return;
 
-  const { groupId } = msg;
-  log.info(`bot command: ${parsed.cmd}${parsed.arg ? ` arg="${parsed.arg}"` : ''} from group ${groupId}`);
+  const { groupId, userId } = msg;
+  log.info(`bot command: ${parsed.cmd}${parsed.arg ? ` arg="${parsed.arg}"` : ''} from group ${groupId} user ${userId}`);
 
   if (parsed.cmd === 'help') {
     sendGroupMessage(groupId, [
-      '【可用命令】',
-      '/状态 — 查看当前模拟世界状态',
-      '/日报 — 生成今日修仙界日报',
-      '/传记 <名字> — 生成指定修仙者的传记',
-      '/about [模块] — 系统简介或模块详情',
-      '/help — 显示本帮助信息',
+      '【可用命令】（@我 后发送）',
+      '状态 — 查看当前模拟世界状态',
+      '日报 — 生成今日修仙界日报',
+      '传记 <名字> — 生成指定修仙者的传记',
+      'about [模块] — 系统简介或模块详情',
+      'clear — 清空对话上下文',
+      'help — 显示本帮助信息',
+      '',
+      '也可以直接 @我 用自然语言提问任何关于修仙世界的问题。',
     ].join('\n'));
     return;
   }
 
   if (parsed.cmd === 'about') {
     sendGroupMessage(groupId, formatAbout(parsed.arg));
+    return;
+  }
+
+  if (parsed.cmd === 'clear') {
+    const key = `${groupId}:${userId}`;
+    sessionStore.delete(key);
+    sendGroupMessage(groupId, '对话上下文已清空。');
     return;
   }
 
@@ -531,15 +680,25 @@ function handleBotMessage(msg: BotGroupMessage): void {
   }
 
   _busyGroups.add(groupId);
-  sendGroupMessage(groupId, '生成中...');
 
   let task: Promise<void>;
   switch (parsed.cmd) {
     case 'report':
+      sendGroupMessage(groupId, '生成中...');
       task = handleBotReport(groupId);
       break;
     case 'biography':
+      sendGroupMessage(groupId, '生成中...');
       task = handleBotBiography(groupId, parsed.arg);
+      break;
+    case 'chat':
+      if (!llmReady) {
+        sendGroupMessage(groupId, 'LLM 服务未就绪，请稍后再试。');
+        _busyGroups.delete(groupId);
+        return;
+      }
+      sendGroupMessage(groupId, '思考中...');
+      task = handleBotChat(groupId, userId, parsed.arg);
       break;
     default:
       _busyGroups.delete(groupId);
@@ -549,7 +708,8 @@ function handleBotMessage(msg: BotGroupMessage): void {
   task
     .catch(err => {
       log.error(`bot ${parsed.cmd} failed:`, err);
-      sendGroupMessage(groupId, `${parsed.cmd === 'report' ? '日报' : '传记'}生成失败，请稍后再试。`);
+      const label = parsed.cmd === 'report' ? '日报' : parsed.cmd === 'biography' ? '传记' : '回答';
+      sendGroupMessage(groupId, `${label}生成失败，请稍后再试。`);
     })
     .finally(() => _busyGroups.delete(groupId));
 }
@@ -558,6 +718,7 @@ function handleBotMessage(msg: BotGroupMessage): void {
 // Startup
 // ---------------------------------------------------------------------------
 
+restoreSessions();
 spawnSim();
 spawnLlm();
 
@@ -572,6 +733,7 @@ server.listen(config.port, config.host, () => {
 
 function shutdown(): void {
   log.info('shutting down...');
+  saveSessions();
   stopBot();
 
   // Cancel all pending jobs (HTTP + bot)

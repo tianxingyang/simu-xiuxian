@@ -25,8 +25,9 @@ const ENV_SCHEMA: EnvEntry[] = [
   { key: 'LLM_API_KEY', default: '', desc: 'LLM API key', sensitive: true },
   { key: 'LLM_MODEL', default: 'deepseek/deepseek-chat', desc: 'LLM model' },
   { key: 'LOG_LEVEL', default: 'info', desc: 'Log level (debug/info/warn/error)' },
-  { key: 'QQ_BOT_APP_ID', default: '', desc: 'QQ Bot AppID' },
-  { key: 'QQ_BOT_APP_SECRET', default: '', desc: 'QQ Bot AppSecret', sensitive: true },
+  { key: 'ONEBOT_WS_URL', default: 'ws://127.0.0.1:3002', desc: 'OneBot WS URL' },
+  { key: 'ONEBOT_TOKEN', default: '', desc: 'OneBot access token', sensitive: true },
+  { key: 'QQ_GROUP_ID', default: '', desc: 'QQ group IDs (comma-separated)' },
   { key: 'VITE_WS_URL', default: '', desc: 'WS URL override' },
 ];
 
@@ -536,15 +537,95 @@ async function actionRunSim(): Promise<void> {
 
 async function actionEnvConfig(): Promise<void> {
   const env = loadEnv();
-  for (const entry of ENV_SCHEMA) {
-    const current = env[entry.key] || entry.default;
-    const display = entry.sensitive && current ? '***' : current;
-    const val = await prompt(`${entry.key} (${entry.desc})`, display);
-    if (val !== display) env[entry.key] = val;
-    else if (current) env[entry.key] = current;
-  }
-  saveEnv(env);
-  logMsg('{green-fg}Environment saved to .env{/}');
+  const edited = { ...env };
+
+  return new Promise<void>((resolve) => {
+    const panel = blessed.box({
+      top: 'center', left: 'center',
+      width: '80%', height: ENV_SCHEMA.length + 4,
+      label: ' Env Config (Enter=edit, Esc=save & close) ',
+      border: { type: 'line' },
+      tags: true,
+      style: { border: { fg: 'cyan' }, label: { fg: 'cyan', bold: true } },
+    });
+
+    let cursor = 0;
+
+    function renderList(): void {
+      const lines: string[] = [];
+      const keyWidth = Math.max(...ENV_SCHEMA.map(e => e.key.length)) + 1;
+      for (let i = 0; i < ENV_SCHEMA.length; i++) {
+        const entry = ENV_SCHEMA[i];
+        const val = edited[entry.key] || entry.default;
+        const display = entry.sensitive && val ? '{yellow-fg}***{/}' : `{white-fg}${val || '(empty)'}{/}`;
+        const key = entry.key.padEnd(keyWidth);
+        const desc = `{grey-fg}${entry.desc}{/}`;
+        if (i === cursor) {
+          lines.push(` {cyan-bg}{black-fg} ${key}{/} ${display}  ${desc}`);
+        } else {
+          lines.push(` {cyan-fg}${key}{/} ${display}  ${desc}`);
+        }
+      }
+      panel.setContent('\n' + lines.join('\n'));
+      screen.render();
+    }
+
+    function cleanup(): void {
+      panel.removeAllListeners();
+      screen.remove(panel);
+      screen.render();
+    }
+
+    panel.key(['up', 'k'], () => {
+      cursor = (cursor - 1 + ENV_SCHEMA.length) % ENV_SCHEMA.length;
+      renderList();
+    });
+
+    panel.key(['down', 'j'], () => {
+      cursor = (cursor + 1) % ENV_SCHEMA.length;
+      renderList();
+    });
+
+    panel.key(['enter'], () => {
+      const entry = ENV_SCHEMA[cursor];
+      const current = edited[entry.key] || entry.default;
+      const display = entry.sensitive && current ? '***' : current;
+      const p = blessed.prompt({
+        top: 'center', left: 'center',
+        width: 60, height: 'shrink',
+        border: { type: 'line' },
+        label: ` ${entry.key} `,
+        tags: true,
+        style: { border: { fg: 'yellow' }, label: { fg: 'yellow', bold: true }, fg: 'white' },
+      });
+      screen.append(p);
+      p.input(entry.desc, display, (_err, value) => {
+        screen.remove(p);
+        const val = value?.trim() || display;
+        if (val !== display) {
+          edited[entry.key] = val;
+        } else if (current) {
+          edited[entry.key] = current;
+        }
+        renderList();
+      });
+      screen.render();
+    });
+
+    panel.key(['escape', 'q'], () => {
+      for (const entry of ENV_SCHEMA) {
+        if (edited[entry.key]) env[entry.key] = edited[entry.key];
+      }
+      saveEnv(env);
+      cleanup();
+      logMsg('{green-fg}Environment saved to .env{/}');
+      resolve();
+    });
+
+    screen.append(panel);
+    panel.focus();
+    renderList();
+  });
 }
 
 async function actionReport(): Promise<void> {
@@ -625,7 +706,7 @@ async function actionStatus(): Promise<void> {
   logMsg(`SimWS:    ${sim.connected ? '{green-fg}connected{/}' : '{white-fg}disconnected{/}'}`);
   logMsg(`PORT=${env.PORT || '3001'}  DB=${env.DB_PATH || '(default)'}`);
   logMsg(`LLM_KEY=${env.LLM_API_KEY ? '{green-fg}set{/}' : '{white-fg}unset{/}'}  Model=${env.LLM_MODEL || 'deepseek/deepseek-chat'}`);
-  logMsg(`QQ_BOT=${env.QQ_BOT_APP_ID ? '{green-fg}configured{/}' : '{white-fg}unset{/}'}`);
+  logMsg(`OneBot=${env.ONEBOT_WS_URL ? '{green-fg}' + env.ONEBOT_WS_URL + '{/}' : '{white-fg}unset{/}'}`);
 }
 
 async function actionSwitchModel(): Promise<void> {

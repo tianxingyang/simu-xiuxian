@@ -1,4 +1,4 @@
-import { CURRENT_BALANCE_PRESET, CURRENT_BALANCE_PRESET_ID } from './balance-presets';
+import { CURRENT_BALANCE_PRESET, CURRENT_BALANCE_PRESET_ID } from './balance-presets/index.js';
 
 export type SigmoidCurve = {
   amplitude: number;

@@ -1,16 +1,11 @@
-import { LEVEL_COUNT } from './level';
+import { DEFAULT_SIM_TUNING, getSimTuning } from '../sim-tuning.js';
+import { LEVEL_COUNT } from './level.js';
 
-export const MORTAL_MAX_AGE = 60;
-export const LV7_MAX_AGE = 100_000;
-export const LIFESPAN_DECAY_RATE = 0.2;
+export const MORTAL_MAX_AGE = DEFAULT_SIM_TUNING.lifespan.mortalMaxAge;
+export const LV7_MAX_AGE = DEFAULT_SIM_TUNING.lifespan.lv7MaxAge;
+export const LIFESPAN_DECAY_RATE = DEFAULT_SIM_TUNING.lifespan.lifespanDecayRate;
 
-const EARLY_SUSTAINABLE_MAX_AGE = [
-  60, 150, 1_070, 11_070,
-] as const;
-
-const LEGACY_LIFESPAN_BONUS = [
-  0, 100, 1_000, 10_000,
-] as const;
+const EARLY_SUSTAINABLE_MAX_AGE = DEFAULT_SIM_TUNING.lifespan.earlySustainableMaxAge as readonly number[];
 
 const HIGH_LEVEL_AGE_START = EARLY_SUSTAINABLE_MAX_AGE.length - 1;
 const HIGH_LEVEL_AGE_SPAN = LEVEL_COUNT - 1 - HIGH_LEVEL_AGE_START;
@@ -20,15 +15,20 @@ function interpolateLogScale(start: number, end: number, progress: number): numb
   return Math.round(start * Math.exp(Math.log(end / start) * progress));
 }
 
-function sustainableMaxAge(level: number): number {
+function sustainableMaxAgeFromConfig(level: number, mortalMaxAge: number, lv7MaxAge: number, earlyAges: readonly number[]): number {
   const lv = Math.trunc(level);
-  if (lv <= 0) return MORTAL_MAX_AGE;
-  if (lv < EARLY_SUSTAINABLE_MAX_AGE.length) return EARLY_SUSTAINABLE_MAX_AGE[lv];
+  if (lv <= 0) return mortalMaxAge;
+  if (lv < earlyAges.length) return earlyAges[lv];
 
-  const startAge = EARLY_SUSTAINABLE_MAX_AGE[HIGH_LEVEL_AGE_START];
-  if (HIGH_LEVEL_AGE_SPAN <= 0) return LV7_MAX_AGE;
+  const startAge = earlyAges[HIGH_LEVEL_AGE_START];
+  if (HIGH_LEVEL_AGE_SPAN <= 0) return lv7MaxAge;
   const progress = (lv - HIGH_LEVEL_AGE_START) / HIGH_LEVEL_AGE_SPAN;
-  return interpolateLogScale(startAge, LV7_MAX_AGE, progress);
+  return interpolateLogScale(startAge, lv7MaxAge, progress);
+}
+
+export function sustainableMaxAge(level: number): number {
+  const tuning = getSimTuning().lifespan;
+  return sustainableMaxAgeFromConfig(level, tuning.mortalMaxAge, tuning.lv7MaxAge, tuning.earlySustainableMaxAge);
 }
 
 export const SUSTAINABLE_MAX_AGE: readonly number[] = Object.freeze(
@@ -36,8 +36,9 @@ export const SUSTAINABLE_MAX_AGE: readonly number[] = Object.freeze(
 );
 
 export function lifespanBonus(level: number): number {
+  const tuning = getSimTuning().lifespan;
   const lv = Math.trunc(level);
   if (lv <= 0) return 0;
-  if (lv < LEGACY_LIFESPAN_BONUS.length) return LEGACY_LIFESPAN_BONUS[lv];
-  return Math.max(0, SUSTAINABLE_MAX_AGE[lv] - SUSTAINABLE_MAX_AGE[lv - 1]);
+  if (lv < tuning.legacyLifespanBonus.length) return tuning.legacyLifespanBonus[lv];
+  return Math.max(0, sustainableMaxAge(lv) - sustainableMaxAge(lv - 1));
 }

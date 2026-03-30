@@ -44,7 +44,8 @@ export type SimCommand =
   | { type: 'sim:ack'; tickId: number }
   | { type: 'sim:getState' }
   | { type: 'sim:clientCount'; count: number }
-  | { type: 'sim:getWorldContext' };
+  | { type: 'sim:getWorldContext' }
+  | { type: 'sim:evalQuery'; queryId: string; expression: string };
 
 export type SimWorkerEvent =
   | { type: 'sim:state'; state: StateSnapshot }
@@ -52,18 +53,35 @@ export type SimWorkerEvent =
   | { type: 'sim:paused'; reason: 'manual' | 'extinction' }
   | { type: 'sim:resetDone' }
   | { type: 'sim:ready' }
-  | { type: 'sim:worldContext'; context: WorldContext };
+  | { type: 'sim:worldContext'; context: WorldContext }
+  | { type: 'sim:queryResult'; queryId: string; result?: unknown; error?: string };
 
 // ---------------------------------------------------------------------------
 // Gateway <-> LLM Worker
 // ---------------------------------------------------------------------------
 
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+}
+
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
 export type LlmCommand =
   | { type: 'job:report'; jobId: string; fromTs?: number; toTs?: number; groupId?: string; worldContext?: WorldContext }
   | { type: 'job:biography'; jobId: string; name: string; currentYear: number }
-  | { type: 'job:cancel'; jobId: string };
+  | { type: 'job:chat'; jobId: string; question: string; history: ChatMessage[]; worldContext?: WorldContext; yearSummary?: YearSummary }
+  | { type: 'job:cancel'; jobId: string }
+  | { type: 'tool:memQueryResult'; jobId: string; queryId: string; result?: unknown; error?: string };
 
 export type LlmWorkerEvent =
-  | { type: 'job:result'; jobId: string; kind: 'report' | 'biography'; payload: unknown }
+  | { type: 'job:result'; jobId: string; kind: 'report' | 'biography' | 'chat'; payload: unknown }
   | { type: 'job:error'; jobId: string; error: string }
-  | { type: 'job:ready' };
+  | { type: 'job:ready' }
+  | { type: 'tool:memQuery'; jobId: string; queryId: string; expression: string };

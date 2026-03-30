@@ -120,6 +120,10 @@ export function initSchema(): void {
       group_openid TEXT PRIMARY KEY,
       last_request_ts INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS world_snapshots (
+      year INTEGER PRIMARY KEY,
+      data TEXT NOT NULL
+    );
   `);
   // Migration: move daily_reports → reports
   const oldTable = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='daily_reports'").get();
@@ -432,4 +436,14 @@ export function setLastRequestTs(groupOpenid: string, ts: number): void {
        ON CONFLICT(group_openid) DO UPDATE SET last_request_ts = excluded.last_request_ts`
     )
     .run(groupOpenid, ts);
+}
+
+// --- World Snapshots ---
+
+export function insertWorldSnapshot(year: number, data: string): void {
+  getDB()
+    .prepare(
+      `INSERT OR REPLACE INTO world_snapshots (year, data) VALUES (?, ?)`
+    )
+    .run(year, data);
 }

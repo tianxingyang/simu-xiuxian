@@ -1,5 +1,5 @@
-import { MAP_SIZE } from '../constants';
-import { createPRNG } from './prng';
+import { MAP_SIZE } from '../constants/index.js';
+import { createPRNG } from './prng.js';
 
 export type AreaTagType = 'spiritualEnergy' | 'terrainDanger';
 

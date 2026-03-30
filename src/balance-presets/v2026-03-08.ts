@@ -1,4 +1,4 @@
-import type { BalanceProfile } from '../balance';
+import type { BalanceProfile } from '../balance.js';
 
 export const BALANCE_PRESET_ID_V2026_03_08 = '2026-03-08' as const;
 

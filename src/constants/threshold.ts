@@ -4,8 +4,8 @@ import {
   getBalanceProfile,
   getBalanceRevision,
   sigmoidContribution,
-} from '../balance';
-import { LEVEL_COUNT } from './level';
+} from '../balance.js';
+import { LEVEL_COUNT } from './level.js';
 
 const THRESHOLD_LOG_CORR_COEFF = [
   0.3715635564324824,

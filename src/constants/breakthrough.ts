@@ -3,7 +3,7 @@ import {
   getBalanceProfile,
   gaussianContribution,
   sigmoidContribution,
-} from '../balance';
+} from '../balance.js';
 
 export const BREAKTHROUGH_A = DEFAULT_BALANCE_PROFILE.breakthrough.a;
 export const BREAKTHROUGH_B = DEFAULT_BALANCE_PROFILE.breakthrough.b;

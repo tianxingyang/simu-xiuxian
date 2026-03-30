@@ -1,8 +1,11 @@
+import vm from 'node:vm';
 import type { SimCommand, SimWorkerEvent } from '../ipc.js';
 import type { BroadcastMsg, Command, RunnerIO } from '../runner.js';
 import { Runner } from '../runner.js';
 import { initSchema } from '../db.js';
 import { initLogger, getLogger } from '../logger.js';
+import { getSimTuning } from '../../src/sim-tuning.js';
+import { LEVEL_NAMES, LEVEL_COUNT, MAP_SIZE, REGION_NAMES } from '../../src/constants/index.js';
 
 initLogger({ tag: 'sim' });
 initSchema();
@@ -35,6 +38,20 @@ const runner = new Runner(io);
 
 if (runner.restore()) {
   log.info('sim_state restored');
+}
+
+// Read-only proxy for vm sandbox — prevents mutation of engine objects
+function makeReadonlyProxy<T extends object>(target: T): T {
+  return new Proxy(target, {
+    set() { throw new Error('Cannot modify engine state'); },
+    deleteProperty() { throw new Error('Cannot modify engine state'); },
+    get(obj, prop) {
+      const val = Reflect.get(obj, prop);
+      if (typeof val === 'function') return val.bind(obj);
+      if (val !== null && typeof val === 'object') return makeReadonlyProxy(val as object);
+      return val;
+    },
+  });
 }
 
 send({ type: 'sim:state', state: runner.getState() });
@@ -74,6 +91,48 @@ process.on('message', (raw: SimCommand) => {
       _clientCount = raw.count;
       if (raw.count === 0) runner.onClientDisconnect();
       break;
+    case 'sim:evalQuery': {
+      const { queryId, expression } = raw;
+      const engine = runner.getEngine();
+      if (!engine) {
+        send({ type: 'sim:queryResult', queryId, error: 'Engine not initialized' });
+        break;
+      }
+      try {
+        const identity = runner.getIdentity();
+        const sandbox: Record<string, unknown> = {
+          engine: makeReadonlyProxy(engine),
+          tuning: makeReadonlyProxy(getSimTuning()),
+          LEVEL_NAMES,
+          LEVEL_COUNT,
+          REGION_NAMES,
+          MAP_SIZE,
+          Array,
+          Math,
+          JSON,
+          Object,
+          String,
+          Number,
+          Boolean,
+          Map,
+          Set,
+          parseInt,
+          parseFloat,
+          isNaN,
+          isFinite,
+        };
+        if (identity) sandbox.identity = makeReadonlyProxy(identity);
+        const ctx = vm.createContext(sandbox);
+        const result = vm.runInContext(expression, ctx, { timeout: 1000 });
+        const serialized = JSON.parse(JSON.stringify(result ?? null));
+        send({ type: 'sim:queryResult', queryId, result: serialized });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn(`evalQuery failed: ${msg}`);
+        send({ type: 'sim:queryResult', queryId, error: msg });
+      }
+      break;
+    }
   }
 });
 

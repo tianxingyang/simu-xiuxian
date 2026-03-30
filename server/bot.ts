@@ -28,6 +28,7 @@ export function sendGroupMessage(groupId: number, content: string): void {
 
 export interface BotGroupMessage {
   groupId: number;
+  userId: number;
   content: string;
   selfId?: number;
 }
@@ -52,7 +53,7 @@ function handleEvent(event: OneBotEvent): void {
   const content = (event.raw_message ?? '').trim();
   if (!content) return;
 
-  _onMessage?.({ groupId: event.group_id!, content, selfId: event.self_id });
+  _onMessage?.({ groupId: event.group_id!, userId: event.user_id!, content, selfId: event.self_id });
 }
 
 // ---------------------------------------------------------------------------

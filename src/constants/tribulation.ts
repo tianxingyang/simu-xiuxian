@@ -1,4 +1,4 @@
-import { getBalanceProfile, sigmoidContribution } from '../balance';
+import { getBalanceProfile, sigmoidContribution } from '../balance.js';
 
 export function tribulationChance(yearsAtMaxLevel: number): number {
   const profile = getBalanceProfile();

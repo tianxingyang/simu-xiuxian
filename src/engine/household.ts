@@ -1,20 +1,13 @@
-import type { Household } from '../types';
-import type { PRNG } from './prng';
-import type { AreaTagSystem } from './area-tag';
-import type { SettlementSystem } from './settlement';
+import type { Household } from '../types.js';
+import { getSimTuning } from '../sim-tuning.js';
+import type { PRNG } from './prng.js';
+import type { AreaTagSystem } from './area-tag.js';
+import type { SettlementSystem } from './settlement.js';
 import {
-  BASE_AWAKENING_RATE,
   getRegionCode,
-  HOUSEHOLD_BASE_GROWTH_RATE,
-  HOUSEHOLD_SPLIT_COUNT,
-  HOUSEHOLD_SPLIT_POP,
-  HOUSEHOLD_SPLIT_THRESHOLD,
   INITIAL_HOUSEHOLD_COUNT,
-  INITIAL_HOUSEHOLD_POP,
   MAP_SIZE,
-  SPIRITUAL_ENERGY_AWAKENING_FACTOR,
-  TERRAIN_SAFETY_FACTOR,
-} from '../constants';
+} from '../constants/index.js';
 
 const CELLS = MAP_SIZE * MAP_SIZE;
 
@@ -62,6 +55,7 @@ export class HouseholdSystem {
   }
 
   generate(_seed: number, prng: PRNG, areaTags: AreaTagSystem, householdCount?: number): void {
+    const tuning = getSimTuning();
     // Build weight table: prefer low terrainDanger, exclude ocean ('~')
     const weights = new Float64Array(CELLS);
     let totalWeight = 0;
@@ -70,7 +64,7 @@ export class HouseholdSystem {
         const idx = y * MAP_SIZE + x;
         if (getRegionCode(x, y) === '~') continue;
         const td = areaTags.getTerrainDanger(x, y);
-        const w = TERRAIN_SAFETY_FACTOR[td];
+        const w = tuning.terrain.terrainSafetyFactor[td];
         weights[idx] = w;
         totalWeight += w;
       }
@@ -97,7 +91,7 @@ export class HouseholdSystem {
         else hi = mid;
       }
       const cellIdx = lo;
-      this.addHousehold(cellIdx, INITIAL_HOUSEHOLD_POP, -1);
+      this.addHousehold(cellIdx, tuning.household.initialHouseholdPop, -1);
     }
   }
 
@@ -152,6 +146,7 @@ export class HouseholdSystem {
     prng: PRNG,
     areaTags: AreaTagSystem,
   ): { awakenings: AwakeningResult[]; splits: SplitResult[] } {
+    const tuning = getSimTuning();
     const awakenings: AwakeningResult[] = [];
     const splits: SplitResult[] = [];
     const toRemove: number[] = [];
@@ -163,8 +158,8 @@ export class HouseholdSystem {
       const se = areaTags.getSpiritualEnergy(x, y);
 
       // Growth
-      const safetyFactor = TERRAIN_SAFETY_FACTOR[td];
-      const rawGrowth = h.population * HOUSEHOLD_BASE_GROWTH_RATE * safetyFactor;
+      const safetyFactor = tuning.terrain.terrainSafetyFactor[td];
+      const rawGrowth = h.population * tuning.household.householdBaseGrowthRate * safetyFactor;
       h.growthAccum += rawGrowth;
       const intGrowth = Math.floor(h.growthAccum);
       if (intGrowth > 0) {
@@ -176,8 +171,8 @@ export class HouseholdSystem {
       }
 
       // Awakening
-      const awakeningFactor = SPIRITUAL_ENERGY_AWAKENING_FACTOR[se];
-      const awakeningProb = BASE_AWAKENING_RATE * h.population * awakeningFactor;
+      const awakeningFactor = tuning.terrain.spiritualEnergyAwakeningFactor[se];
+      const awakeningProb = tuning.household.baseAwakeningRate * h.population * awakeningFactor;
       if (prng() < awakeningProb && h.population > 1) {
         h.population -= 1;
         if (h.settlementId >= 0) {
@@ -194,7 +189,7 @@ export class HouseholdSystem {
       }
 
       // Split check
-      if (h.population >= HOUSEHOLD_SPLIT_THRESHOLD) {
+      if (h.population >= tuning.household.householdSplitThreshold) {
         splits.push({
           parentId: h.id,
           parentSettlementId: h.settlementId,
@@ -225,8 +220,9 @@ export class HouseholdSystem {
     prng: PRNG,
     settlements: SettlementSystem,
   ): { newHouseholds: Household[]; originCell: number } | null {
+    const tuning = getSimTuning();
     const parent = this.households.get(parentId);
-    if (!parent || parent.population < HOUSEHOLD_SPLIT_THRESHOLD) return null;
+    if (!parent || parent.population < tuning.household.householdSplitThreshold) return null;
 
     const px = parent.cellIdx % MAP_SIZE;
     const py = (parent.cellIdx - px) / MAP_SIZE;
@@ -256,7 +252,10 @@ export class HouseholdSystem {
     const targetCell = candidates[0];
 
     // Split: take population from parent, create new households at target cell
-    const splitPop = Math.min(parent.population, HOUSEHOLD_SPLIT_COUNT * HOUSEHOLD_SPLIT_POP);
+    const splitPop = Math.min(
+      parent.population,
+      tuning.household.householdSplitCount * tuning.household.householdSplitPopulation,
+    );
     parent.population -= splitPop;
     if (parent.settlementId >= 0 && splitPop > 0) {
       const cached = this.populationCache.get(parent.settlementId);
@@ -268,10 +267,10 @@ export class HouseholdSystem {
     }
 
     const newHouseholds: Household[] = [];
-    const perHousehold = Math.floor(splitPop / HOUSEHOLD_SPLIT_COUNT);
-    let remainder = splitPop - perHousehold * HOUSEHOLD_SPLIT_COUNT;
+    const perHousehold = Math.floor(splitPop / tuning.household.householdSplitCount);
+    let remainder = splitPop - perHousehold * tuning.household.householdSplitCount;
 
-    for (let i = 0; i < HOUSEHOLD_SPLIT_COUNT; i++) {
+    for (let i = 0; i < tuning.household.householdSplitCount; i++) {
       const pop = perHousehold + (remainder > 0 ? 1 : 0);
       if (remainder > 0) remainder--;
       if (pop > 0) {

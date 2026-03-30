@@ -7,7 +7,6 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     proxy: {
-      '/ws': { target: 'http://localhost:3001', ws: true },
       '/api': { target: 'http://localhost:3001' },
       '/health': { target: 'http://localhost:3001' },
     },

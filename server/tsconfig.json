@@ -16,6 +16,9 @@
     "./**/*.ts",
     "../src/engine/**/*.ts",
     "../src/types.ts",
-    "../src/constants.ts"
+    "../src/constants.ts",
+    "../src/constants/**/*.ts",
+    "../src/sim-tuning.ts",
+    "../src/balance.ts"
   ]
 }
