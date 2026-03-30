@@ -1,0 +1,11 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "server/index.ts", "reason": "Gateway: bot routing, session management, IPC"}
+{"file": "server/ipc.ts", "reason": "IPC type definitions"}
+{"file": "server/reporter.ts", "reason": "callLLM base, PromptMessage type"}
+{"file": "server/processes/llm-worker.ts", "reason": "LLM worker job handling"}
+{"file": "server/processes/sim-worker.ts", "reason": "Sim worker IPC, mem_query execution"}
+{"file": "server/db.ts", "reason": "DB schema, query functions"}
+{"file": "server/bot.ts", "reason": "OneBot connection"}
+{"file": "src/sim-tuning.ts", "reason": "SimTuning constants"}
+{"file": "server/config.ts", "reason": "LLM config"}

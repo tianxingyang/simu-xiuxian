@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": "src/engine/simulation.ts", "reason": "Current evaluateBehaviorStates() to replace"}
+{"file": "src/types.ts", "reason": "Cultivator type and BehaviorState"}
+{"file": "src/constants/courage.ts", "reason": "BEHAVIOR_COURAGE_FACTOR integration"}
+{"file": "src/sim-tuning.ts", "reason": "BehaviorTuning params"}
+{"file": "src/engine/area-tag.ts", "reason": "Spiritual energy and danger per cell"}
+{"file": "src/constants/threshold.ts", "reason": "Breakthrough thresholds for cultivation_progress"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "TS conventions"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Code quality rules"}

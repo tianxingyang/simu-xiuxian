@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": "src/engine/simulation.ts", "reason": "Verify integration point"}
+{"file": "src/types.ts", "reason": "Verify type consistency"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "Verify code quality"}
