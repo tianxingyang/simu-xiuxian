@@ -1694,3 +1694,50 @@ Replace fixed `spawnCultivators(1000)` with organic household-driven cultivator 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: fix: settlement level distribution
+
+**Date**: 2026-03-30
+**Task**: fix: settlement level distribution
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## Root Cause
+
+Every household split unconditionally created a new settlement. Settlements could never accumulate
+population past ~250 because all households split out in the same tick, leaving 0 pop → pruned.
+Village (200-999) and town (1000-4999) were structurally unreachable.
+
+## Fix
+
+- Added `SettlementSystem.addCell()` method for expanding settlements to new cells
+- Modified split logic in `tickYear()`: splits within an existing settlement expand it; only unaffiliated households create new settlements
+
+**Files**:
+- `src/engine/settlement.ts` — new `addCell()` method
+- `src/engine/simulation.ts` — conditional split handling
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `98bfe4a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
