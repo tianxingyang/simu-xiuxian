@@ -15,7 +15,7 @@
 
 ---
 
-一个修仙世界演化模拟器。模拟修仙者在 32×32 环面地图上的修炼、突破、战斗与陨落，实时可视化种群动态与境界分布。后端以多进程架构（Gateway + 模拟引擎子进程 + LLM 子进程）持续运行，通过 WebSocket 将实时数据推送至前端仪表盘与 TUI 控制台，并按需聚合事件经 LLM 润色后生成"修仙世界日报"，通过 QQ 官方 Bot API v2 被动回复至群聊。支持查询具名修士传记，记忆细节随时间按艾宾浩斯遗忘曲线衰减。
+一个修仙世界演化模拟器。模拟修仙者在 32×32 环面地图上的修炼、突破、战斗与陨落，实时可视化种群动态与境界分布。后端以多进程架构（Gateway + 模拟引擎子进程 + LLM 子进程）持续运行，通过 WebSocket 将实时数据推送至前端仪表盘与 TUI 控制台，并按需聚合事件经 LLM 润色后生成"修仙世界日报"，通过 OneBot v11 协议推送至 QQ 群聊。支持查询具名修士传记，记忆细节随时间按艾宾浩斯遗忘曲线衰减。
 
 ## Features
 
@@ -98,7 +98,7 @@
 
 ### 修仙世界日报
 
-在群聊中 @机器人 发送"日报"按需聚合模拟事件，按新闻价值筛选分级，构建结构化 Prompt 发送至 LLM（默认 OpenRouter，可配置任意兼容 API），由"修仙史官"视角润色生成日报文本（~800字），通过 QQ 官方 Bot API v2 被动回复至群。发送"传记 <名字>"查询修士传记。支持运行时热切换 LLM 模型（`POST /api/config/llm`），无需重启服务。
+在群聊中 @机器人 或发送 `/日报` 按需聚合模拟事件，按新闻价值筛选分级，构建结构化 Prompt 发送至 LLM（默认 OpenRouter，可配置任意兼容 API），由"修仙史官"视角润色生成日报文本（~300字），通过 OneBot v11 协议推送至 QQ 群。发送 `传记 <名字>` 或 `/传记 <名字>` 查询修士传记。同一群组内自动防重复提交，上一条请求完成前新请求会被拒绝。
 
 ### 可视化仪表盘
 
@@ -138,7 +138,7 @@
 | Backend | Node.js + WebSocket (ws)，多进程架构 |
 | Database | SQLite (better-sqlite3) |
 | LLM | OpenRouter / DeepSeek / 任意 OpenAI 兼容 API |
-| Bot | QQ Bot API v2 (官方) |
+| Bot | OneBot v11 (via NapCat) |
 | Language | TypeScript 5.8 |
 | Build | Vite 6 (frontend) + tsx/tsup (backend) |
 | TUI | blessed (terminal dashboard) |
@@ -174,10 +174,12 @@ npm test
 | `HOST` | `0.0.0.0` | 后端绑定地址 |
 | `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | LLM API 基础地址（兼容 OpenAI 格式） |
 | `LLM_API_KEY` | — | LLM API Key（不设置则跳过 LLM 调用） |
-| `LLM_MODEL` | `deepseek/deepseek-chat` | LLM 模型名称（运行时可通过 API 热切换） |
-| `QQ_BOT_APP_ID` | — | QQ 机器人 AppID（不设置则不启动 Bot） |
-| `QQ_BOT_APP_SECRET` | — | QQ 机器人 AppSecret |
+| `LLM_MODEL` | `deepseek/deepseek-chat` | LLM 模型名称 |
+| `ONEBOT_WS_URL` | — | OneBot v11 WebSocket 地址（不设置则不启动 Bot） |
+| `ONEBOT_TOKEN` | — | OneBot 认证 Token |
+| `QQ_GROUP_ID` | — | 目标 QQ 群号（不设置则响应所有群） |
 | `DB_PATH` | `./data/simu-xiuxian.db` | SQLite 数据库路径 |
+| `LOG_LEVEL` | `info` | 日志级别（debug / info / warn / error） |
 | `VITE_WS_URL` | — | 前端 WebSocket 地址覆盖（默认从 origin 推导） |
 
 启动后端后访问 `http://localhost:5173`，点击 **Start** 开始模拟。
@@ -229,9 +231,11 @@ server/
 ├── events.ts             # 事件收集 + 新闻价值评分
 ├── reporter.ts           # 日报管线：聚合 → Prompt → LLM → 存储
 ├── eviction.ts           # 数据淘汰：事件过期清理 + 修士记忆衰减
-├── bot.ts                # QQ Bot (官方 API v2 Gateway + 被动回复)
+├── bot.ts                # QQ Bot (OneBot v11 WebSocket + @mention / 斜杠命令)
 ├── db.ts                 # SQLite 数据层
-└── config.ts             # 环境变量配置（LLM 运行时热重载）
+├── config.ts             # 环境变量配置
+├── logger.ts             # 统一日志（级别控制 + 标签标识）
+└── yaml.ts               # 轻量 YAML 序列化器（Prompt 构建）
 
 cli.ts                    # TUI 控制台（blessed 终端仪表盘）
 ```

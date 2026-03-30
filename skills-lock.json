@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "trellis-meta": {
+      "source": "mindfold-ai/Trellis",
+      "sourceType": "github",
+      "computedHash": "41f09ee6da7fcde404b4b32459a1feb39bc39ad7be2aff8d2d996dd38d5f6c08"
+    }
+  }
+}
