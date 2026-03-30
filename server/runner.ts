@@ -378,6 +378,8 @@ export class Runner {
       case 'milestone':
         if (namedIds.has(event.detail.cultivatorId)) ids.push(event.detail.cultivatorId);
         break;
+      case 'disaster':
+        break;
     }
     return ids;
   }

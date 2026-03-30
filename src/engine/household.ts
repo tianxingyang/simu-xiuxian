@@ -102,6 +102,7 @@ export class HouseholdSystem {
       settlementId,
       population,
       growthAccum: 0,
+      deathAccum: 0,
       cellIdx,
     };
     this.households.set(id, h);
@@ -145,11 +146,12 @@ export class HouseholdSystem {
   tickAll(
     prng: PRNG,
     areaTags: AreaTagSystem,
-  ): { awakenings: AwakeningResult[]; splits: SplitResult[] } {
+  ): { awakenings: AwakeningResult[]; splits: SplitResult[]; totalNaturalDeaths: number } {
     const tuning = getSimTuning();
     const awakenings: AwakeningResult[] = [];
     const splits: SplitResult[] = [];
     const toRemove: number[] = [];
+    let totalNaturalDeaths = 0;
 
     for (const h of this.households.values()) {
       const x = h.cellIdx % MAP_SIZE;
@@ -167,6 +169,28 @@ export class HouseholdSystem {
         h.growthAccum -= intGrowth;
         if (h.settlementId >= 0) {
           this.populationCache.set(h.settlementId, (this.populationCache.get(h.settlementId) ?? 0) + intGrowth);
+        }
+      }
+
+      // Natural death (density-dependent)
+      const cellPop = this.getCellPopulation(h.cellIdx);
+      const densityRatio = cellPop / tuning.mortalDeath.carryingCapacityPerCell;
+      const deathRate = tuning.mortalDeath.baseDeathRate * (1 + tuning.mortalDeath.densityPressureFactor * Math.max(0, densityRatio - 1));
+      const rawDeaths = h.population * deathRate;
+      h.deathAccum += rawDeaths;
+      const intDeaths = Math.floor(h.deathAccum);
+      if (intDeaths > 0) {
+        const actualDeaths = Math.min(intDeaths, h.population - 1);
+        h.population -= actualDeaths;
+        h.deathAccum -= intDeaths;
+        totalNaturalDeaths += actualDeaths;
+        if (h.settlementId >= 0 && actualDeaths > 0) {
+          const cached = this.populationCache.get(h.settlementId);
+          if (cached !== undefined) {
+            const updated = cached - actualDeaths;
+            if (updated <= 0) this.populationCache.delete(h.settlementId);
+            else this.populationCache.set(h.settlementId, updated);
+          }
         }
       }
 
@@ -208,7 +232,7 @@ export class HouseholdSystem {
       this.removeHousehold(id);
     }
 
-    return { awakenings, splits };
+    return { awakenings, splits, totalNaturalDeaths };
   }
 
   /**
@@ -340,6 +364,27 @@ export class HouseholdSystem {
     }
   }
 
+  /** Recount and fix population cache for a specific settlement */
+  recountSettlementPopulation(settlementId: number): void {
+    let sum = 0;
+    for (const h of this.households.values()) {
+      if (h.settlementId === settlementId) sum += h.population;
+    }
+    if (sum <= 0) this.populationCache.delete(settlementId);
+    else this.populationCache.set(settlementId, sum);
+  }
+
+  getCellPopulation(cellIdx: number): number {
+    const cellSet = this.cellIndex.get(cellIdx);
+    if (!cellSet) return 0;
+    let sum = 0;
+    for (const hid of cellSet) {
+      const h = this.households.get(hid);
+      if (h) sum += h.population;
+    }
+    return sum;
+  }
+
   reset(): void {
     this.households.clear();
     this.cellIndex.clear();
@@ -351,8 +396,8 @@ export class HouseholdSystem {
 
   serializeSize(): number {
     // header: nextId(i32) + count(i32)
-    // per household: id(i32) + settlementId(i32) + population(i32) + growthAccum(f32) + cellIdx(i32) = 20 bytes
-    return 8 + this.households.size * 20;
+    // per household: id(i32) + settlementId(i32) + population(i32) + growthAccum(f32) + deathAccum(f32) + cellIdx(i32) = 24 bytes
+    return 8 + this.households.size * 24;
   }
 
   serializeTo(dv: DataView, off: number): number {
@@ -363,12 +408,13 @@ export class HouseholdSystem {
       dv.setInt32(off, h.settlementId, true); off += 4;
       dv.setInt32(off, h.population, true); off += 4;
       dv.setFloat32(off, h.growthAccum, true); off += 4;
+      dv.setFloat32(off, h.deathAccum, true); off += 4;
       dv.setInt32(off, h.cellIdx, true); off += 4;
     }
     return off;
   }
 
-  static deserializeFrom(dv: DataView, off: number): { system: HouseholdSystem; offset: number } {
+  static deserializeFrom(dv: DataView, off: number, version = 6): { system: HouseholdSystem; offset: number } {
     const system = new HouseholdSystem();
     system.nextId = dv.getInt32(off, true); off += 4;
     const count = dv.getInt32(off, true); off += 4;
@@ -377,9 +423,13 @@ export class HouseholdSystem {
       const settlementId = dv.getInt32(off, true); off += 4;
       const population = dv.getInt32(off, true); off += 4;
       const growthAccum = dv.getFloat32(off, true); off += 4;
+      let deathAccum = 0;
+      if (version >= 6) {
+        deathAccum = dv.getFloat32(off, true); off += 4;
+      }
       const cellIdx = dv.getInt32(off, true); off += 4;
 
-      const h: Household = { id, settlementId, population, growthAccum, cellIdx };
+      const h: Household = { id, settlementId, population, growthAccum, deathAccum, cellIdx };
       system.households.set(id, h);
 
       let cellSet = system.cellIndex.get(cellIdx);

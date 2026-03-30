@@ -34,6 +34,7 @@ export interface Household {
   settlementId: number; // -1 = unaffiliated (scattered)
   population: number;
   growthAccum: number;
+  deathAccum: number;
   cellIdx: number; // y * MAP_SIZE + x
 }
 
@@ -84,12 +85,15 @@ export interface YearSummary {
   villageCount: number;
   townCount: number;
   cityCount: number;
+  naturalDeaths: number;
+  disasterDeaths: number;
+  disasterCount: number;
 }
 
 export interface SimEvent {
   id: number;
   year: number;
-  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation';
+  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster';
   actorLevel: number;
   detail: string;
 }
@@ -186,13 +190,31 @@ export interface RichTribulationEvent {
   terrainDanger?: number;
 }
 
+export type DisasterType = 'plague' | 'famine' | 'flood' | 'beast_tide' | 'qi_disruption';
+
+export interface RichDisasterEvent {
+  type: 'disaster';
+  year: number;
+  newsRank: NewsRank;
+  disasterType: DisasterType;
+  settlementId: number;
+  settlementName: string;
+  populationBefore: number;
+  populationLost: number;
+  lossRatio: number;
+  region?: string;
+  spiritualEnergy?: number;
+  terrainDanger?: number;
+}
+
 export type RichEvent =
   | RichCombatEvent
   | RichPromotionEvent
   | RichExpiryEvent
   | RichMilestoneEvent
   | RichBreakthroughEvent
-  | RichTribulationEvent;
+  | RichTribulationEvent
+  | RichDisasterEvent;
 
 export interface EngineHooks {
   onPromotion(c: Cultivator, toLevel: number, year: number): void;

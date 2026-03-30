@@ -1,5 +1,5 @@
 import { LEVEL_NAMES } from '../src/constants/index.js';
-import type { DefeatOutcome, RichEvent, SimEvent } from '../src/types.js';
+import type { DefeatOutcome, DisasterType, RichEvent, SimEvent } from '../src/types.js';
 
 export { scoreNewsRank } from '../src/engine/combat.js';
 export { MilestoneTracker } from '../src/engine/simulation.js';
@@ -76,6 +76,16 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
         detail: e.outcome === 'ascension'
           ? `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}渡劫成功，飞升离去！`
           : `${rp}${prefix}${LEVEL_NAMES[e.subject.level]}渡劫失败，陨落天劫之下`,
+      };
+    }
+    case 'disaster': {
+      const disasterNames: Record<DisasterType, string> = {
+        plague: '瘟疫', famine: '饥荒', flood: '洪水',
+        beast_tide: '兽潮', qi_disruption: '灵气紊乱',
+      };
+      return {
+        id, year: e.year, type: 'disaster', actorLevel: 0,
+        detail: `${rp}${e.settlementName}爆发${disasterNames[e.disasterType]}，${e.populationLost}人死亡`,
       };
     }
   }

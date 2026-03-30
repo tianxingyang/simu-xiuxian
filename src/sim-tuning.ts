@@ -96,6 +96,31 @@ export type SettlementTuning = {
   shrinkThreshold: number;
 };
 
+export type DisasterType = 'plague' | 'famine' | 'flood' | 'beast_tide' | 'qi_disruption';
+
+export type DisasterConfig = {
+  popLossMin: number;
+  popLossMax: number;
+  densityWeight: number;
+  terrainDangerWeight: number;
+  spiritualEnergyWeight: number;
+  baseProb: number;
+};
+
+export type MortalDeathTuning = {
+  baseDeathRate: number;
+  densityPressureFactor: number;
+  carryingCapacityPerCell: number;
+};
+
+export type DisasterTuning = {
+  enabled: boolean;
+  densityThreshold: number;
+  densityProbScale: number;
+  eventRecordThreshold: number;
+  types: Record<DisasterType, DisasterConfig>;
+};
+
 export type MemoryTuning = {
   enabled: boolean;
   // Emotional decay (per year: value = baseline + (value - baseline) * decayRate)
@@ -139,6 +164,8 @@ export type SimTuning = {
   spatial: SpatialTuning;
   terrain: TerrainTuning;
   settlement: SettlementTuning;
+  mortalDeath: MortalDeathTuning;
+  disaster: DisasterTuning;
   memory: MemoryTuning;
 };
 
@@ -238,6 +265,24 @@ export const DEFAULT_SIM_TUNING: Readonly<SimTuning> = Object.freeze({
     expandThreshold: 1000,
     shrinkThreshold: 300,
   }),
+  mortalDeath: Object.freeze({
+    baseDeathRate: 0.005,
+    densityPressureFactor: 2.0,
+    carryingCapacityPerCell: 1500,
+  }),
+  disaster: Object.freeze({
+    enabled: true,
+    densityThreshold: 0.8,
+    densityProbScale: 0.15,
+    eventRecordThreshold: 0.10,
+    types: Object.freeze({
+      plague: Object.freeze({ popLossMin: 0.15, popLossMax: 0.40, densityWeight: 3.0, terrainDangerWeight: 0, spiritualEnergyWeight: 0, baseProb: 0.002 }),
+      famine: Object.freeze({ popLossMin: 0.10, popLossMax: 0.25, densityWeight: 2.0, terrainDangerWeight: 1.5, spiritualEnergyWeight: 0, baseProb: 0.005 }),
+      flood: Object.freeze({ popLossMin: 0.05, popLossMax: 0.15, densityWeight: 0.5, terrainDangerWeight: 0.5, spiritualEnergyWeight: 0, baseProb: 0.008 }),
+      beast_tide: Object.freeze({ popLossMin: 0.10, popLossMax: 0.30, densityWeight: 1.0, terrainDangerWeight: 2.5, spiritualEnergyWeight: 2.0, baseProb: 0.003 }),
+      qi_disruption: Object.freeze({ popLossMin: 0.05, popLossMax: 0.20, densityWeight: 0.5, terrainDangerWeight: 0, spiritualEnergyWeight: 3.0, baseProb: 0.001 }),
+    }),
+  }),
   memory: Object.freeze({
     enabled: true,
     emotionalDecayRate: 0.95,
@@ -312,6 +357,17 @@ export function cloneSimTuning(tuning: Readonly<SimTuning>): SimTuning {
       terrainDangerEvasionAdjust: cloneArray(tuning.terrain.terrainDangerEvasionAdjust),
     },
     settlement: { ...tuning.settlement },
+    mortalDeath: { ...tuning.mortalDeath },
+    disaster: {
+      ...tuning.disaster,
+      types: {
+        plague: { ...tuning.disaster.types.plague },
+        famine: { ...tuning.disaster.types.famine },
+        flood: { ...tuning.disaster.types.flood },
+        beast_tide: { ...tuning.disaster.types.beast_tide },
+        qi_disruption: { ...tuning.disaster.types.qi_disruption },
+      },
+    },
     memory: { ...tuning.memory },
   };
 }
@@ -326,6 +382,20 @@ function mergeBehaviorFactors(
     seeking_breakthrough: overrides?.seeking_breakthrough ?? base.seeking_breakthrough,
     settling: overrides?.settling ?? base.settling,
     wandering: overrides?.wandering ?? base.wandering,
+  };
+}
+
+function mergeDisasterConfig(
+  base: Readonly<DisasterConfig>,
+  overrides?: DeepPartial<DisasterConfig>,
+): DisasterConfig {
+  return {
+    popLossMin: overrides?.popLossMin ?? base.popLossMin,
+    popLossMax: overrides?.popLossMax ?? base.popLossMax,
+    densityWeight: overrides?.densityWeight ?? base.densityWeight,
+    terrainDangerWeight: overrides?.terrainDangerWeight ?? base.terrainDangerWeight,
+    spiritualEnergyWeight: overrides?.spiritualEnergyWeight ?? base.spiritualEnergyWeight,
+    baseProb: overrides?.baseProb ?? base.baseProb,
   };
 }
 
@@ -431,6 +501,24 @@ function mergeSimTuning(overrides: SimTuningInput = {}): SimTuning {
     settlement: {
       expandThreshold: overrides.settlement?.expandThreshold ?? DEFAULT_SIM_TUNING.settlement.expandThreshold,
       shrinkThreshold: overrides.settlement?.shrinkThreshold ?? DEFAULT_SIM_TUNING.settlement.shrinkThreshold,
+    },
+    mortalDeath: {
+      baseDeathRate: overrides.mortalDeath?.baseDeathRate ?? DEFAULT_SIM_TUNING.mortalDeath.baseDeathRate,
+      densityPressureFactor: overrides.mortalDeath?.densityPressureFactor ?? DEFAULT_SIM_TUNING.mortalDeath.densityPressureFactor,
+      carryingCapacityPerCell: overrides.mortalDeath?.carryingCapacityPerCell ?? DEFAULT_SIM_TUNING.mortalDeath.carryingCapacityPerCell,
+    },
+    disaster: {
+      enabled: overrides.disaster?.enabled ?? DEFAULT_SIM_TUNING.disaster.enabled,
+      densityThreshold: overrides.disaster?.densityThreshold ?? DEFAULT_SIM_TUNING.disaster.densityThreshold,
+      densityProbScale: overrides.disaster?.densityProbScale ?? DEFAULT_SIM_TUNING.disaster.densityProbScale,
+      eventRecordThreshold: overrides.disaster?.eventRecordThreshold ?? DEFAULT_SIM_TUNING.disaster.eventRecordThreshold,
+      types: {
+        plague: mergeDisasterConfig(DEFAULT_SIM_TUNING.disaster.types.plague, overrides.disaster?.types?.plague),
+        famine: mergeDisasterConfig(DEFAULT_SIM_TUNING.disaster.types.famine, overrides.disaster?.types?.famine),
+        flood: mergeDisasterConfig(DEFAULT_SIM_TUNING.disaster.types.flood, overrides.disaster?.types?.flood),
+        beast_tide: mergeDisasterConfig(DEFAULT_SIM_TUNING.disaster.types.beast_tide, overrides.disaster?.types?.beast_tide),
+        qi_disruption: mergeDisasterConfig(DEFAULT_SIM_TUNING.disaster.types.qi_disruption, overrides.disaster?.types?.qi_disruption),
+      },
     },
     memory: {
       enabled: overrides.memory?.enabled ?? DEFAULT_SIM_TUNING.memory.enabled,

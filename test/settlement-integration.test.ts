@@ -37,7 +37,8 @@ describe('Settlement System Integration (PRD Acceptance Criteria)', () => {
     const engine = new SimulationEngine(42, 200);
     const popBefore = engine.households.totalPopulation();
 
-    runYears(engine, 10);
+    // With natural death rate (~2%) offsetting growth (~3%), net growth is slower
+    runYears(engine, 30);
 
     expect(engine.households.totalPopulation()).toBeGreaterThan(popBefore);
   });
@@ -69,18 +70,20 @@ describe('Settlement System Integration (PRD Acceptance Criteria)', () => {
     const engine = new SimulationEngine(42, 200);
     expect(engine.settlements.count).toBe(0);
 
-    // Run until at least one settlement forms
-    // At 3% growth, household of 5 reaches 50 in ~80 years
-    runYears(engine, 150);
+    // With natural death rate, net growth is ~1%/yr at low density
+    // Household of 5 reaches 50 in ~230 years
+    runYears(engine, 300);
 
     expect(engine.settlements.count).toBeGreaterThan(0);
 
     // Verify settlement has a name and valid metadata
     const first = engine.settlements.allSettlements().next().value;
     expect(first).toBeDefined();
-    expect(first.name.length).toBeGreaterThan(0);
-    expect(first.cells.length).toBeGreaterThanOrEqual(1);
-    expect(first.foundedYear).toBeGreaterThan(0);
+    if (first) {
+      expect(first.name.length).toBeGreaterThan(0);
+      expect(first.cells.length).toBeGreaterThanOrEqual(1);
+      expect(first.foundedYear).toBeGreaterThan(0);
+    }
   });
 
   /**
@@ -182,9 +185,11 @@ describe('Settlement System Integration (PRD Acceptance Criteria)', () => {
     for (const s of engine.settlements.allSettlements()) {
       const rs = restored.settlements.getSettlement(s.id);
       expect(rs).toBeDefined();
-      expect(rs!.name).toBe(s.name);
-      expect(rs!.cells).toEqual(s.cells);
-      expect(rs!.foundedYear).toBe(s.foundedYear);
+      if (rs) {
+        expect(rs.name).toBe(s.name);
+        expect(rs.cells).toEqual(s.cells);
+        expect(rs.foundedYear).toBe(s.foundedYear);
+      }
     }
 
     // Verify cultivator origin fields survive serialization
