@@ -19,9 +19,9 @@ import { prngShuffle, truncatedGaussian } from './prng.js';
 import { tryBreakthrough, type SimulationEngine } from './simulation.js';
 import { profiler } from './profiler.js';
 import { buildEncounterProbCache, findSpatialOpponent, localEncounterProbability } from './spatial.js';
-import { onCombatWin, onCombatLoss, onKinKilled, pushPlace, PLACE_DANGER, findEncounter, ENCOUNTER_LOSS, ENCOUNTER_KIN_KILLED, countEncountersWith } from './memory.js';
+import { onCombatWin, onCombatLoss, pushPlace, PLACE_DANGER, findEncounter, ENCOUNTER_LOSS, ENCOUNTER_KIN_KILLED, countEncountersWith } from './memory.js';
 import {
-  isFellowDisciple, isAlly, isRival, hasVendettaAgainst, findAlly,
+  isFellowDisciple, isRival, hasVendettaAgainst, findAlly,
   addRival, addVendetta, addAlly, removeRival, setMentor, addDisciple,
 } from './relationship.js';
 import type { RichRelationshipEvent } from '../types.js';

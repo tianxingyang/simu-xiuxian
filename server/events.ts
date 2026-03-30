@@ -104,5 +104,22 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
         detail: `${rp}${an}与${bn}${subtypeText[e.subtype]}`,
       };
     }
+    case 'sparring': {
+      const an = e.actorA.name ? `${e.actorA.name}(${LEVEL_NAMES[e.actorA.level]})` : LEVEL_NAMES[e.actorA.level];
+      const bn = e.actorB.name ? `${e.actorB.name}(${LEVEL_NAMES[e.actorB.level]})` : LEVEL_NAMES[e.actorB.level];
+      return {
+        id, year: e.year, type: 'sparring', actorLevel: Math.max(e.actorA.level, e.actorB.level),
+        detail: `${rp}${an}与${bn}切磋论道`,
+      };
+    }
+    case 'teaching': {
+      const tn = e.teacher.name ? `${e.teacher.name}(${LEVEL_NAMES[e.teacher.level]})` : LEVEL_NAMES[e.teacher.level];
+      const sn = e.student.name ? `${e.student.name}(${LEVEL_NAMES[e.student.level]})` : LEVEL_NAMES[e.student.level];
+      const verb = e.isMentorTeaching ? '传授弟子' : '指点';
+      return {
+        id, year: e.year, type: 'teaching', actorLevel: Math.max(e.teacher.level, e.student.level),
+        detail: `${rp}${tn}${verb}${sn}修行`,
+      };
+    }
   }
 }

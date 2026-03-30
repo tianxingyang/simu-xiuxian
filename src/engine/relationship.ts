@@ -17,9 +17,10 @@ const VENDETTA_REASON_ENCODE: Readonly<Record<VendettaReason, number>> = {
   killed_disciple: VENDETTA_KILLED_DISCIPLE,
   killed_close_ally: VENDETTA_KILLED_CLOSE_ALLY,
 };
-const VENDETTA_REASON_DECODE: readonly VendettaReason[] = [
+const _VENDETTA_REASON_DECODE: readonly VendettaReason[] = [
   'killed_mentor', 'killed_disciple', 'killed_close_ally',
 ];
+void _VENDETTA_REASON_DECODE;
 
 export interface AllyEntry {
   id: number;       // -1 = empty slot

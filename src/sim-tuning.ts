@@ -171,6 +171,20 @@ export type MemoryTuning = {
   breakthroughFearDelayProb: number;
 };
 
+export type InteractionTuning = {
+  enabled: boolean;
+  sparringCultivationMin: number;
+  sparringCultivationMax: number;
+  sparringAllyStrengthGain: number;
+  sparringProbability: number;
+  teachingBoostRateMentor: number;
+  teachingBoostRateAlly: number;
+  teachingBoostDuration: number;
+  teacherCultivationGain: number;
+  teachingBoostRateMax: number;
+  teachingProbability: number;
+};
+
 export type SimTuning = {
   breakthroughFailure: BreakthroughFailureTuning;
   combat: CombatTuning;
@@ -185,6 +199,7 @@ export type SimTuning = {
   disaster: DisasterTuning;
   memory: MemoryTuning;
   relationship: RelationshipTuning;
+  interaction: InteractionTuning;
 };
 
 type DeepPartial<T> =
@@ -317,6 +332,19 @@ export const DEFAULT_SIM_TUNING: Readonly<SimTuning> = Object.freeze({
     fellowDiscipleCombatReduction: 0.5,
     closeAllyThreshold: 0.6,
   }),
+  interaction: Object.freeze({
+    enabled: true,
+    sparringCultivationMin: 0.3,
+    sparringCultivationMax: 0.8,
+    sparringAllyStrengthGain: 0.05,
+    sparringProbability: 0.15,
+    teachingBoostRateMentor: 0.5,
+    teachingBoostRateAlly: 0.3,
+    teachingBoostDuration: 10,
+    teacherCultivationGain: 0.1,
+    teachingBoostRateMax: 0.8,
+    teachingProbability: 0.12,
+  }),
   memory: Object.freeze({
     enabled: true,
     emotionalDecayRate: 0.95,
@@ -404,6 +432,7 @@ export function cloneSimTuning(tuning: Readonly<SimTuning>): SimTuning {
     },
     memory: { ...tuning.memory },
     relationship: { ...tuning.relationship },
+    interaction: { ...tuning.interaction },
   };
 }
 
@@ -594,6 +623,19 @@ function mergeSimTuning(overrides: SimTuningInput = {}): SimTuning {
       rivalCombatThreshold: overrides.relationship?.rivalCombatThreshold ?? DEFAULT_SIM_TUNING.relationship.rivalCombatThreshold,
       fellowDiscipleCombatReduction: overrides.relationship?.fellowDiscipleCombatReduction ?? DEFAULT_SIM_TUNING.relationship.fellowDiscipleCombatReduction,
       closeAllyThreshold: overrides.relationship?.closeAllyThreshold ?? DEFAULT_SIM_TUNING.relationship.closeAllyThreshold,
+    },
+    interaction: {
+      enabled: overrides.interaction?.enabled ?? DEFAULT_SIM_TUNING.interaction.enabled,
+      sparringCultivationMin: overrides.interaction?.sparringCultivationMin ?? DEFAULT_SIM_TUNING.interaction.sparringCultivationMin,
+      sparringCultivationMax: overrides.interaction?.sparringCultivationMax ?? DEFAULT_SIM_TUNING.interaction.sparringCultivationMax,
+      sparringAllyStrengthGain: overrides.interaction?.sparringAllyStrengthGain ?? DEFAULT_SIM_TUNING.interaction.sparringAllyStrengthGain,
+      sparringProbability: overrides.interaction?.sparringProbability ?? DEFAULT_SIM_TUNING.interaction.sparringProbability,
+      teachingBoostRateMentor: overrides.interaction?.teachingBoostRateMentor ?? DEFAULT_SIM_TUNING.interaction.teachingBoostRateMentor,
+      teachingBoostRateAlly: overrides.interaction?.teachingBoostRateAlly ?? DEFAULT_SIM_TUNING.interaction.teachingBoostRateAlly,
+      teachingBoostDuration: overrides.interaction?.teachingBoostDuration ?? DEFAULT_SIM_TUNING.interaction.teachingBoostDuration,
+      teacherCultivationGain: overrides.interaction?.teacherCultivationGain ?? DEFAULT_SIM_TUNING.interaction.teacherCultivationGain,
+      teachingBoostRateMax: overrides.interaction?.teachingBoostRateMax ?? DEFAULT_SIM_TUNING.interaction.teachingBoostRateMax,
+      teachingProbability: overrides.interaction?.teachingProbability ?? DEFAULT_SIM_TUNING.interaction.teachingProbability,
     },
   };
 }

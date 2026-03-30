@@ -25,6 +25,8 @@ export interface Cultivator {
   settlingUntil: number;
   originSettlementId: number;
   originHouseholdId: number;
+  teachingBoostUntil: number;
+  teachingBoostRate: number;
 }
 
 // --- Household & Settlement ---
@@ -93,7 +95,7 @@ export interface YearSummary {
 export interface SimEvent {
   id: number;
   year: number;
-  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster' | 'relationship';
+  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster' | 'relationship' | 'sparring' | 'teaching';
   actorLevel: number;
   detail: string;
 }
@@ -225,6 +227,28 @@ export interface RichRelationshipEvent {
   region?: string;
 }
 
+export interface RichSparringEvent {
+  type: 'sparring';
+  year: number;
+  newsRank: NewsRank;
+  actorA: { id: number; name?: string; level: number };
+  actorB: { id: number; name?: string; level: number };
+  cultivationGained: [number, number];
+  region?: string;
+}
+
+export interface RichTeachingEvent {
+  type: 'teaching';
+  year: number;
+  newsRank: NewsRank;
+  teacher: { id: number; name?: string; level: number };
+  student: { id: number; name?: string; level: number };
+  boostRate: number;
+  boostDuration: number;
+  isMentorTeaching: boolean;
+  region?: string;
+}
+
 export type RichEvent =
   | RichCombatEvent
   | RichPromotionEvent
@@ -233,7 +257,9 @@ export type RichEvent =
   | RichBreakthroughEvent
   | RichTribulationEvent
   | RichDisasterEvent
-  | RichRelationshipEvent;
+  | RichRelationshipEvent
+  | RichSparringEvent
+  | RichTeachingEvent;
 
 export interface EngineHooks {
   onPromotion(c: Cultivator, toLevel: number, year: number): void;

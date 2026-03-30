@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/shared/code-quality.md", "reason": "no ! assertions, no any"}
+{"file": ".trellis/spec/shared/typescript.md", "reason": "interface/type patterns"}
+{"file": "src/engine/relationship.ts", "reason": "relationship data structures, ally/mentor checks"}
+{"file": "src/engine/combat.ts", "reason": "encounter processing pattern, combat resolution to reference for sparring"}
+{"file": "src/engine/simulation.ts", "reason": "tick loop, cultivator growth calc for teaching boost"}
+{"file": "src/types.ts", "reason": "RichEvent union, Cultivator interface"}
+{"file": "src/engine/ai-state-extract.ts", "reason": "feature extraction to extend"}
+{"file": "src/sim-tuning.ts", "reason": "tuning pattern"}
+{"file": "server/events.ts", "reason": "toDisplayEvent for Chinese text"}
+{"file": "src/engine/memory.ts", "reason": "memory pattern"}

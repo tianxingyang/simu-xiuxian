@@ -15,6 +15,9 @@ export interface RelationshipContext {
   rivalNearby: boolean;
   vendettaTargetNearby: boolean;
   isFellowDisciple: boolean;
+  canSpar: boolean;
+  canTeach: boolean;
+  canBeTaught: boolean;
 }
 
 export function extractState(
@@ -85,6 +88,10 @@ export function extractState(
       hasAnyVendetta(rel) ? 1 : 0,
       relCtx.vendettaTargetNearby ? 1 : 0,
       relCtx.isFellowDisciple ? 1 : 0,
+      relCtx.canSpar ? 1 : 0,
+      relCtx.canTeach ? 1 : 0,
+      relCtx.canBeTaught ? 1 : 0,
+      c.teachingBoostUntil > year ? 1 : 0,
     );
   }
 

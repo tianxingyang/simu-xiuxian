@@ -316,7 +316,7 @@ const U16_MAX = 65535;
 
 export function incrementStat(mem: CharacterMemory, field: keyof CharacterMemory, delta = 1): void {
   const v = (mem[field] as number) + delta;
-  (mem as Record<string, number>)[field as string] = v > U16_MAX ? U16_MAX : v;
+  (mem as unknown as Record<string, number>)[field as string] = v > U16_MAX ? U16_MAX : v;
 }
 
 // --- Serialization ---

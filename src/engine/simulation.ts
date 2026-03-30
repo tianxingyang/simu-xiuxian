@@ -24,6 +24,7 @@ import {
   tickRelationshipDecay, purgeDeadFromRelationships,
   addAlly, removeDisciple, clearMentor,
 } from './relationship.js';
+import { processNonCombatEncounters } from './interaction.js';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -185,6 +186,8 @@ export class SimulationEngine {
       c.settlingUntil = 0;
       c.originSettlementId = originSettlementId;
       c.originHouseholdId = originHouseholdId;
+      c.teachingBoostUntil = 0;
+      c.teachingBoostRate = 0;
       resetMemory(this.memories[id], c);
       resetRelationships(this.relationships[id]);
     } else {
@@ -196,6 +199,7 @@ export class SimulationEngine {
         reachedMaxLevelAt: 0, x, y,
         behaviorState: 'wandering' as BehaviorState, settlingUntil: 0,
         originSettlementId, originHouseholdId,
+        teachingBoostUntil: 0, teachingBoostRate: 0,
       };
       nc.cachedCourage = effectiveCourage(nc);
       this.memories[id] = createEmptyMemory(nc);
@@ -229,6 +233,11 @@ export class SimulationEngine {
         growthRate = tuning.combat.injuryGrowthRate;
       } else if (c.lightInjuryUntil > this.year) {
         growthRate = tuning.combat.lightInjuryGrowthRate;
+      }
+      if (c.teachingBoostUntil > this.year) {
+        growthRate += c.teachingBoostRate;
+      } else if (c.teachingBoostRate > 0) {
+        c.teachingBoostRate = 0;
       }
       c.cultivation += growthRate;
 
@@ -724,6 +733,7 @@ export class SimulationEngine {
     this.evaluateBehaviorStates();
     moveCultivators(this);
     processEncounters(this, events);
+    processNonCombatEncounters(this, events);
     this.purgeDead();
     const isExtinct = this.aliveCount === 0 && this.households.count === 0;
     this._summaryYear = this.year;
@@ -784,12 +794,12 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 7;
+    const SNAPSHOT_VERSION = 8;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
-    // Per cultivator: v4 fields (75) bytes
-    const CULTIVATOR_SIZE = 75;
+    // Per cultivator: v8 fields (75 + 12 = 87) bytes
+    const CULTIVATOR_SIZE = 87;
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
     const memoriesSize = this.nextId * MEMORY_SERIALIZE_BYTES;
     const relationshipsSize = this.nextId * RELATIONSHIP_SERIALIZE_BYTES;
@@ -839,6 +849,8 @@ export class SimulationEngine {
       dv.setInt32(off, c.settlingUntil, true); off += 4;
       dv.setInt32(off, c.originSettlementId, true); off += 4;
       dv.setInt32(off, c.originHouseholdId, true); off += 4;
+      dv.setInt32(off, c.teachingBoostUntil, true); off += 4;
+      dv.setFloat64(off, c.teachingBoostRate, true); off += 8;
     }
 
     // Memories (v7)
@@ -880,7 +892,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version < 1 || version > 7) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 8) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -931,12 +943,20 @@ export class SimulationEngine {
         originHouseholdId = dv.getInt32(off, true); off += 4;
       }
 
+      let teachingBoostUntil = 0;
+      let teachingBoostRate = 0;
+      if (version >= 8) {
+        teachingBoostUntil = dv.getInt32(off, true); off += 4;
+        teachingBoostRate = dv.getFloat64(off, true); off += 8;
+      }
+
       const c: Cultivator = {
         id: i, age, cultivation, level, courage, maxAge,
         injuredUntil, lightInjuryUntil, meridianDamagedUntil,
         breakthroughCooldownUntil, alive, cachedCourage, reachedMaxLevelAt, x, y,
         behaviorState, settlingUntil,
         originSettlementId, originHouseholdId,
+        teachingBoostUntil, teachingBoostRate,
       };
       cultivators[i] = c;
 

@@ -190,7 +190,7 @@ function toroidalDist(ax: number, ay: number, bx: number, by: number): number {
 }
 
 // Direction bias toward a target cell (higher weight for directions that reduce distance)
-function homingWeight(cx: number, cy: number, tx: number, ty: number, dirIdx: number, strength: number): number {
+function _homingWeight(cx: number, cy: number, tx: number, ty: number, dirIdx: number, strength: number): number {
   const nx = wrapCoord(cx + DX[dirIdx]);
   const ny = wrapCoord(cy + DY[dirIdx]);
   const curDist = toroidalDist(cx, cy, tx, ty);
@@ -199,6 +199,7 @@ function homingWeight(cx: number, cy: number, tx: number, ty: number, dirIdx: nu
   if (newDist > curDist) return Math.max(0.1, 1 - strength * 0.5);
   return 1;
 }
+void _homingWeight;
 
 export function moveCultivators(engine: SimulationEngine): void {
   profiler.start('moveCultivators');
