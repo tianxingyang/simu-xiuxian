@@ -1,0 +1,45 @@
+{
+  "id": "analytical-balance-derivation",
+  "name": "analytical-balance-derivation",
+  "title": "分析推导法重构平衡系统：从目标分布反推游戏参数",
+  "description": "用 birth-death process 稳态理论从目标分布反推游戏参数，替代暴力搜索",
+  "status": "in-progress",
+  "dev_type": "backend",
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "vitoyang",
+  "assignee": "vitoyang",
+  "createdAt": "2026-03-31",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "current_phase": 0,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "implement"
+    },
+    {
+      "phase": 2,
+      "action": "check"
+    },
+    {
+      "phase": 3,
+      "action": "finish"
+    },
+    {
+      "phase": 4,
+      "action": "create-pr"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
