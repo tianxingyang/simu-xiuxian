@@ -12,6 +12,8 @@ const TYPE_LABELS: Record<SimEvent['type'], string> = {
   relationship: '关系',
   sparring: '切磋',
   teaching: '传授',
+  faction_founded: '立宗',
+  faction_dissolved: '覆灭',
 };
 
 const TYPE_COLORS: Record<SimEvent['type'], string> = {
@@ -24,6 +26,8 @@ const TYPE_COLORS: Record<SimEvent['type'], string> = {
   relationship: '#3498db',
   sparring: '#2ecc71',
   teaching: '#1abc9c',
+  faction_founded: '#f39c12',
+  faction_dissolved: '#c0392b',
 };
 
 interface Props {

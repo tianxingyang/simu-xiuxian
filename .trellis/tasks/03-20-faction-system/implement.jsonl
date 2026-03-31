@@ -1,0 +1,12 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend development guide"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "src/types.ts", "reason": "Core types - add Faction interface, factionId to Cultivator"}
+{"file": "src/engine/simulation.ts", "reason": "Tick loop - integrate FactionSystem, serialize v9"}
+{"file": "src/engine/spatial.ts", "reason": "Spatial index - region query helpers"}
+{"file": "src/engine/settlement.ts", "reason": "Reference pattern for System class with serialize/deserialize"}
+{"file": "src/constants/region.ts", "reason": "Region codes and names for faction naming"}
+{"file": "src/balance.ts", "reason": "Balance params - may need faction thresholds"}
+{"file": "server/runner.ts", "reason": "Runner - wire faction hooks and WS messages"}
+{"file": "server/identity.ts", "reason": "Name generation pattern reference"}
+{"file": ".trellis/tasks/03-20-faction-system/prd.md", "reason": "PRD with confirmed requirements"}

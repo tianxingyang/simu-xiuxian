@@ -1,4 +1,4 @@
-import type { BehaviorState, Cultivator, EngineHooks, GuardianInfo, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichRelationshipEvent, RichTribulationEvent, YearSummary } from '../types.js';
+import type { BehaviorState, Cultivator, EngineHooks, FactionSummary, GuardianInfo, LevelStat, RichBreakthroughEvent, RichDisasterEvent, RichEvent, RichExpiryEvent, RichMilestoneEvent, RichPromotionEvent, RichRelationshipEvent, RichTribulationEvent, YearSummary } from '../types.js';
 import { getSimTuning } from '../sim-tuning.js';
 import { LEVEL_COUNT, MAP_SIZE, YEARLY_NEW, breakthroughChance, effectiveCourage, getRegionCode, getRegionName, type RegionCode, REGION_NAMES, lifespanBonus, round1, round2, sustainableMaxAge, threshold, tribulationChance } from '../constants/index.js';
 import { getBalanceProfile } from '../balance.js';
@@ -28,6 +28,7 @@ import {
   strongestAllyStrength, maxRivalIntensity, hasAnyVendetta,
 } from './relationship.js';
 import { processNonCombatEncounters } from './interaction.js';
+import { FactionSystem, processFactions } from './faction.js';
 
 const MAX_LEVEL = LEVEL_COUNT - 1;
 type EventBuffer = RichEvent[] | null;
@@ -114,6 +115,7 @@ export class SimulationEngine {
   areaTags = new AreaTagSystem();
   households = new HouseholdSystem();
   settlements = new SettlementSystem();
+  factions = new FactionSystem();
 
   combatDeaths = 0;
   combatDemotions = 0;
@@ -129,6 +131,9 @@ export class SimulationEngine {
   ascensions = 0;
   tribulationDeaths = 0;
   promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
+  breakthroughAttemptsByLevel = new Array<number>(LEVEL_COUNT).fill(0);
+  expiryDeathsByLevel = new Array<number>(LEVEL_COUNT).fill(0);
+  combatDeathsByLevel = new Array<number>(LEVEL_COUNT).fill(0);
   spawned = 0;
   naturalDeaths = 0;
   disasterDeaths = 0;
@@ -191,6 +196,7 @@ export class SimulationEngine {
       c.originHouseholdId = originHouseholdId;
       c.teachingBoostUntil = 0;
       c.teachingBoostRate = 0;
+      c.factionId = -1;
       resetMemory(this.memories[id], c);
       resetRelationships(this.relationships[id]);
     } else {
@@ -203,6 +209,7 @@ export class SimulationEngine {
         behaviorState: 'wandering' as BehaviorState, settlingUntil: 0,
         originSettlementId, originHouseholdId,
         teachingBoostUntil: 0, teachingBoostRate: 0,
+        factionId: -1,
       };
       nc.cachedCourage = effectiveCourage(nc);
       this.memories[id] = createEmptyMemory(nc);
@@ -326,6 +333,7 @@ export class SimulationEngine {
       if (c.age >= c.maxAge) {
         c.alive = false;
         this.expiryDeaths++;
+        this.expiryDeathsByLevel[c.level]++;
         this.aliveCount--;
         this._deadIds.push(c.id);
         const deathLevel = c.level;
@@ -364,6 +372,12 @@ export class SimulationEngine {
     for (let i = 0; i < deadIds.length; i++) {
       const deadId = deadIds[i];
       freeSlots.push(deadId);
+      // Remove from faction
+      const fid = this.cultivators[deadId].factionId;
+      if (fid >= 0) {
+        this.factions.removeMember(deadId, fid);
+        this.cultivators[deadId].factionId = -1;
+      }
       if (rt.enabled) {
         for (let j = 0; j < this.nextId; j++) {
           if (!this.cultivators[j].alive) continue;
@@ -426,6 +440,18 @@ export class SimulationEngine {
 
     const typeCounts = this.settlements.getTypeCounts();
 
+    const factionSummaries: FactionSummary[] = [];
+    for (const f of this.factions.allFactions()) {
+      factionSummaries.push({
+        id: f.id,
+        name: f.name,
+        regionCode: f.regionCode,
+        memberCount: f.memberCount,
+        foundedYear: f.foundedYear,
+      });
+    }
+    factionSummaries.sort((a, b) => b.memberCount - a.memberCount);
+
     profiler.end('getSummary');
     return {
       year: this._summaryYear,
@@ -439,6 +465,9 @@ export class SimulationEngine {
       ascensions: this.ascensions,
       tribulationDeaths: this.tribulationDeaths,
       promotions: [...this.promotionCounts],
+      breakthroughAttemptsByLevel: [...this.breakthroughAttemptsByLevel],
+      expiryDeathsByLevel: [...this.expiryDeathsByLevel],
+      combatDeathsByLevel: [...this.combatDeathsByLevel],
       highestLevel: highLevel,
       highestCultivation: highCult,
       combatDemotions: this.combatDemotions,
@@ -460,6 +489,8 @@ export class SimulationEngine {
       naturalDeaths: this.naturalDeaths,
       disasterDeaths: this.disasterDeaths,
       disasterCount: this.disasterCount,
+      factionCount: this.factions.count,
+      factionSummaries,
     };
   }
 
@@ -754,6 +785,7 @@ export class SimulationEngine {
     moveCultivators(this);
     processEncounters(this, events);
     processNonCombatEncounters(this, events);
+    processFactions(this, events);
     this.purgeDead();
     const isExtinct = this.aliveCount === 0 && this.households.count === 0;
     this._summaryYear = this.year;
@@ -777,6 +809,9 @@ export class SimulationEngine {
     this.ascensions = 0;
     this.tribulationDeaths = 0;
     this.promotionCounts.fill(0);
+    this.breakthroughAttemptsByLevel.fill(0);
+    this.expiryDeathsByLevel.fill(0);
+    this.combatDeathsByLevel.fill(0);
     this.spawned = 0;
     this.naturalDeaths = 0;
     this.disasterDeaths = 0;
@@ -803,6 +838,7 @@ export class SimulationEngine {
     this.areaTags.generate(seed);
     this.households.reset();
     this.settlements.reset();
+    this.factions.reset();
     this.year = 1;
     this._summaryYear = 1;
     this.prng = createPRNG(seed);
@@ -814,12 +850,12 @@ export class SimulationEngine {
   }
 
   serialize(): Buffer {
-    const SNAPSHOT_VERSION = 8;
+    const SNAPSHOT_VERSION = 9;
     // Header: version(u8) + prngState(i32) + year(i32) + nextId(i32) + aliveCount(i32) + yearlySpawn(i32) + freeSlotsLen(i32)
     const HEADER_SIZE = 1 + 4 * 6;
     const freeSlotsSize = this.freeSlots.length * 4;
-    // Per cultivator: v8 fields (75 + 12 = 87) bytes
-    const CULTIVATOR_SIZE = 87;
+    // Per cultivator: v9 fields (87 + factionId i32 = 91) bytes
+    const CULTIVATOR_SIZE = 91;
     const cultivatorsSize = this.nextId * CULTIVATOR_SIZE;
     const memoriesSize = this.nextId * MEMORY_SERIALIZE_BYTES;
     const relationshipsSize = this.nextId * RELATIONSHIP_SERIALIZE_BYTES;
@@ -828,7 +864,8 @@ export class SimulationEngine {
     const areaTagsSize = this.areaTags.serializeSize();
     const householdsSize = this.households.serializeSize();
     const settlementsSize = this.settlements.serializeSize();
-    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + memoriesSize + relationshipsSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize;
+    const factionsSize = this.factions.serializeSize();
+    const totalSize = HEADER_SIZE + freeSlotsSize + cultivatorsSize + memoriesSize + relationshipsSize + milestonesSize + areaTagsSize + householdsSize + settlementsSize + factionsSize;
 
     const buf = Buffer.alloc(totalSize);
     const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -871,6 +908,7 @@ export class SimulationEngine {
       dv.setInt32(off, c.originHouseholdId, true); off += 4;
       dv.setInt32(off, c.teachingBoostUntil, true); off += 4;
       dv.setFloat64(off, c.teachingBoostRate, true); off += 8;
+      dv.setInt32(off, c.factionId, true); off += 4;
     }
 
     // Memories (v7)
@@ -898,6 +936,9 @@ export class SimulationEngine {
     // Settlements (v4)
     off = this.settlements.serializeTo(dv, off, buf);
 
+    // Factions (v9)
+    off = this.factions.serializeTo(dv, off, buf);
+
     return buf;
   }
 
@@ -912,7 +953,7 @@ export class SimulationEngine {
 
     // Header
     const version = dv.getUint8(off); off += 1;
-    if (version < 1 || version > 8) throw new Error(`Unknown snapshot version: ${version}`);
+    if (version < 1 || version > 9) throw new Error(`Unknown snapshot version: ${version}`);
     const prngState = dv.getInt32(off, true); off += 4;
     const year = dv.getInt32(off, true); off += 4;
     const nextId = dv.getInt32(off, true); off += 4;
@@ -970,6 +1011,11 @@ export class SimulationEngine {
         teachingBoostRate = dv.getFloat64(off, true); off += 8;
       }
 
+      let factionId = -1;
+      if (version >= 9) {
+        factionId = dv.getInt32(off, true); off += 4;
+      }
+
       const c: Cultivator = {
         id: i, age, cultivation, level, courage, maxAge,
         injuredUntil, lightInjuryUntil, meridianDamagedUntil,
@@ -977,6 +1023,7 @@ export class SimulationEngine {
         behaviorState, settlingUntil,
         originSettlementId, originHouseholdId,
         teachingBoostUntil, teachingBoostRate,
+        factionId,
       };
       cultivators[i] = c;
 
@@ -1057,6 +1104,16 @@ export class SimulationEngine {
       settlements = new SettlementSystem();
     }
 
+    // Factions (v9)
+    let factionSys: FactionSystem;
+    if (version >= 9) {
+      const fResult = FactionSystem.deserializeFrom(dv, off, buf);
+      factionSys = fResult.system;
+      off = fResult.offset;
+    } else {
+      factionSys = new FactionSystem();
+    }
+
     // Construct engine bypassing constructor
     const engine = Object.create(SimulationEngine.prototype) as SimulationEngine;
     engine.prng = createPRNG(prngState);
@@ -1076,6 +1133,7 @@ export class SimulationEngine {
     engine.areaTags = areaTags;
     engine.households = households;
     engine.settlements = settlements;
+    engine.factions = factionSys;
     engine.levelArrayCache = initLevelArrayCache();
     engine.aliveIds = [];
     engine['_levelCountsBuf'] = new Array<number>(LEVEL_COUNT).fill(0);
@@ -1104,6 +1162,9 @@ export class SimulationEngine {
     engine.ascensions = 0;
     engine.tribulationDeaths = 0;
     engine.promotionCounts = new Array<number>(LEVEL_COUNT).fill(0);
+    engine.breakthroughAttemptsByLevel = new Array<number>(LEVEL_COUNT).fill(0);
+    engine.expiryDeathsByLevel = new Array<number>(LEVEL_COUNT).fill(0);
+    engine.combatDeathsByLevel = new Array<number>(LEVEL_COUNT).fill(0);
     engine.spawned = 0;
     engine.naturalDeaths = 0;
     engine.disasterDeaths = 0;
@@ -1278,6 +1339,7 @@ export function tryBreakthrough(
   if (c.injuredUntil > year) return false;
 
   engine.breakthroughAttempts++;
+  engine.breakthroughAttemptsByLevel[c.level]++;
 
   // Find eligible guardians nearby
   const { guardians, bonus: guardianBonus } = findEligibleGuardians(engine, c);

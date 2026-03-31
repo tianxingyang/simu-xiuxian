@@ -1,20 +1,21 @@
 {
-  "id": "faction-system",
-  "name": "faction-system",
-  "title": "brainstorm: 势力系统设计",
+  "id": "faction-frontend",
+  "name": "faction-frontend",
+  "title": "势力系统前端展示：势力列表、成员、领地",
   "description": "",
   "status": "planning",
-  "dev_type": "fullstack",
+  "dev_type": "frontend",
   "scope": null,
+  "package": null,
   "priority": "P2",
   "creator": "vitoyang",
   "assignee": "vitoyang",
-  "createdAt": "2026-03-20",
+  "createdAt": "2026-03-31",
   "completedAt": null,
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "current_phase": 2,
+  "current_phase": 1,
   "next_action": [
     {
       "phase": 1,
@@ -26,14 +27,10 @@
     },
     {
       "phase": 3,
-      "action": "review"
-    },
-    {
-      "phase": 4,
       "action": "finish"
     },
     {
-      "phase": 5,
+      "phase": 4,
       "action": "create-pr"
     }
   ],
@@ -44,6 +41,5 @@
   "parent": null,
   "relatedFiles": [],
   "notes": "",
-  "meta": {},
-  "package": null
+  "meta": {}
 }

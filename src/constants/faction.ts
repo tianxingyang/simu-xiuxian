@@ -1,0 +1,5 @@
+export const FACTION_LEADER_MIN_LEVEL = 3; // YuanYing
+export const FACTION_MIN_UNAFFILIATED = 40;
+export const FACTION_CHECK_INTERVAL = 5;
+export const FACTION_RECRUIT_PROB_BASE = 0.05;
+export const FACTION_RECRUIT_LEVEL_DIFF_BONUS = 0.02;

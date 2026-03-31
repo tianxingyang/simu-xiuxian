@@ -1,0 +1,10 @@
+{"file": ".trellis/workflow.md", "reason": "Project workflow and conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend development guide"}
+{"file": "src/types.ts", "reason": "Faction types, YearSummary, FromServer/ToServer messages"}
+{"file": "src/components/Dashboard.tsx", "reason": "Dashboard layout - add faction panel slot"}
+{"file": "src/components/EventLog.tsx", "reason": "EventLog - add faction event rendering"}
+{"file": "src/components/StatsPanel.tsx", "reason": "Reference pattern for stats display"}
+{"file": "src/hooks/useSimulation.ts", "reason": "WebSocket hook - handle faction data"}
+{"file": "server/runner.ts", "reason": "Runner - wire faction data to WS messages"}
+{"file": "src/engine/faction.ts", "reason": "FactionSystem - understand data structure"}
+{"file": ".trellis/tasks/03-31-faction-frontend/prd.md", "reason": "PRD requirements"}

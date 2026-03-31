@@ -5,6 +5,7 @@ import LevelChart from './components/LevelChart';
 import TrendChart from './components/TrendChart';
 import EventLog from './components/EventLog';
 import StatsPanel from './components/StatsPanel';
+import FactionPanel from './components/FactionPanel';
 
 const INITIAL_SEED = 42;
 
@@ -33,6 +34,13 @@ function App() {
       trendChart={<TrendChart trendData={sim.trendData} />}
       eventLog={<EventLog events={sim.events} />}
       statsPanel={<StatsPanel summary={sim.yearSummary} />}
+      factionPanel={
+        <FactionPanel
+          factionCount={sim.yearSummary?.factionCount ?? 0}
+          factions={sim.yearSummary?.factionSummaries ?? []}
+          currentYear={year}
+        />
+      }
     />
   );
 }

@@ -1,0 +1,5 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": "src/types.ts", "reason": "Verify Faction types"}
+{"file": "src/engine/simulation.ts", "reason": "Verify tick integration and serialize"}
+{"file": ".trellis/tasks/03-20-faction-system/prd.md", "reason": "Check against PRD requirements"}

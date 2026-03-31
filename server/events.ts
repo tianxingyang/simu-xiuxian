@@ -129,5 +129,18 @@ export function toDisplayEvent(e: RichEvent): SimEvent {
         detail: `${rp}${tn}${verb}${sn}修行`,
       };
     }
+    case 'faction_founded': {
+      const ln = e.leader.name ? `${e.leader.name}(${LEVEL_NAMES[e.leader.level]})` : LEVEL_NAMES[e.leader.level];
+      return {
+        id, year: e.year, type: 'faction_founded', actorLevel: e.leader.level,
+        detail: `${rp}${ln}创立${e.factionName}，初始${e.memberCount}人`,
+      };
+    }
+    case 'faction_dissolved': {
+      return {
+        id, year: e.year, type: 'faction_dissolved', actorLevel: 0,
+        detail: `${rp}${e.factionName}覆灭，宗主陨落`,
+      };
+    }
   }
 }

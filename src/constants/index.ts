@@ -13,3 +13,4 @@ export * from './behavior.js';
 export * from './household.js';
 export * from './settlement.js';
 export * from './terrain.js';
+export * from './faction.js';

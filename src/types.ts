@@ -28,6 +28,19 @@ export interface Cultivator {
   originHouseholdId: number;
   teachingBoostUntil: number;
   teachingBoostRate: number;
+  factionId: number;
+}
+
+// --- Faction ---
+
+export interface Faction {
+  id: number;
+  name: string;
+  leaderId: number;
+  regionCode: string;
+  headquarterCell: number;
+  foundedYear: number;
+  memberCount: number;
 }
 
 // --- Household & Settlement ---
@@ -58,6 +71,14 @@ export interface LevelStat {
   courageMedian: number;
 }
 
+export interface FactionSummary {
+  id: number;
+  name: string;
+  regionCode: string;
+  memberCount: number;
+  foundedYear: number;
+}
+
 export interface YearSummary {
   year: number;
   totalPopulation: number;
@@ -70,6 +91,9 @@ export interface YearSummary {
   ascensions: number;
   tribulationDeaths: number;
   promotions: number[];
+  breakthroughAttemptsByLevel: number[];
+  expiryDeathsByLevel: number[];
+  combatDeathsByLevel: number[];
   highestLevel: number;
   highestCultivation: number;
   combatDemotions: number;
@@ -91,12 +115,14 @@ export interface YearSummary {
   naturalDeaths: number;
   disasterDeaths: number;
   disasterCount: number;
+  factionCount: number;
+  factionSummaries: FactionSummary[];
 }
 
 export interface SimEvent {
   id: number;
   year: number;
-  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster' | 'relationship' | 'sparring' | 'teaching';
+  type: 'combat' | 'promotion' | 'expiry' | 'breakthrough_fail' | 'tribulation' | 'disaster' | 'relationship' | 'sparring' | 'teaching' | 'faction_founded' | 'faction_dissolved';
   actorLevel: number;
   detail: string;
 }
@@ -257,6 +283,27 @@ export interface RichTeachingEvent {
   region?: string;
 }
 
+export interface RichFactionFoundedEvent {
+  type: 'faction_founded';
+  year: number;
+  newsRank: NewsRank;
+  factionId: number;
+  factionName: string;
+  leader: { id: number; name?: string; level: number };
+  memberCount: number;
+  region?: string;
+}
+
+export interface RichFactionDissolvedEvent {
+  type: 'faction_dissolved';
+  year: number;
+  newsRank: NewsRank;
+  factionId: number;
+  factionName: string;
+  reason: 'leader_dead';
+  region?: string;
+}
+
 export type RichEvent =
   | RichCombatEvent
   | RichPromotionEvent
@@ -267,7 +314,9 @@ export type RichEvent =
   | RichDisasterEvent
   | RichRelationshipEvent
   | RichSparringEvent
-  | RichTeachingEvent;
+  | RichTeachingEvent
+  | RichFactionFoundedEvent
+  | RichFactionDissolvedEvent;
 
 export interface EngineHooks {
   onPromotion(c: Cultivator, toLevel: number, year: number): void;
