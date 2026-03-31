@@ -5,12 +5,12 @@ export const LEVEL_NAMES = [
 export const LEVEL_COUNT = LEVEL_NAMES.length;
 
 export const LEVEL_COLORS = [
-  '#555',
-  '#7fb069',
-  '#5ab0c4',
-  '#6c8cff',
-  '#a67bff',
-  '#ff9b4e',
-  '#ff5c5c',
-  '#ffd700',
+  '#6b9a7a',
+  '#5b9bd5',
+  '#e8b040',
+  '#8878d8',
+  '#c068a8',
+  '#e87848',
+  '#d84848',
+  '#f0c040',
 ] as const;

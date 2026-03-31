@@ -47,7 +47,7 @@ export default memo(function TrendChart({ trendData }: Props) {
   return (
     <div className="chart-container">
       <div className="chart-header">
-        <span className="chart-title">{TABS.find(t => t.key === tab)!.label}</span>
+        <span className="chart-title">{TABS.find(t => t.key === tab)?.label}</span>
         <div className="tab-group">
           {TABS.map(t => (
             <button

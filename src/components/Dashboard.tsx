@@ -15,14 +15,10 @@ export default function Dashboard({ controls, levelChart, trendChart, eventLog, 
       <header className="dashboard-controls">{controls}</header>
       <main className="dashboard-grid">
         <section className="panel">{levelChart}</section>
+        <section className="panel">{statsPanel}</section>
         <section className="panel">{trendChart}</section>
-        <section className="panel">{eventLog}</section>
-        <section className="panel panel-right">
-          <div className="panel-split">
-            <div className="panel-split-top">{statsPanel}</div>
-            <div className="panel-split-bottom">{factionPanel}</div>
-          </div>
-        </section>
+        <section className="panel">{factionPanel}</section>
+        <section className="panel panel-wide">{eventLog}</section>
       </main>
     </div>
   );

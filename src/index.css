@@ -1,22 +1,40 @@
+/* ═══════════════════════════════════════════════════
+   修仙世界模拟器 — 天道监察
+   Aesthetic: Ink-wash celestial void
+   ═══════════════════════════════════════════════════ */
+
+/* ── Design Tokens ───────────────────────────────── */
+
 :root {
   color-scheme: dark;
+
   --bg-primary: #050510;
-  --bg-panel: #0a0e1a;
-  --bg-input: #101428;
-  --bg-hover: #161c35;
+  --bg-panel: #0a0d1a;
+  --bg-input: #10142a;
+  --bg-hover: #161c38;
+
   --border: #1a1f3a;
-  --border-glow: rgba(108, 140, 255, 0.12);
-  --text: #e2e5ea;
-  --text-dim: #6b7394;
+  --border-glow: rgba(108, 140, 255, 0.08);
+
+  --text: #d0d4e4;
+  --text-dim: #5a6080;
+  --text-bright: #eef0f8;
+
   --accent: #6c8cff;
   --accent-hover: #8aa4ff;
   --accent-glow: rgba(108, 140, 255, 0.15);
-  --danger: #ff4d4d;
-  --gold: #ffd700;
+
+  --gold: #d4a840;
+  --gold-bright: #f0c848;
+  --gold-glow: rgba(212, 168, 64, 0.12);
+  --danger: #e05050;
+
   --speed-active: #6c8cff;
   --radius: 6px;
   --radius-lg: 10px;
 }
+
+/* ── Reset & Base ────────────────────────────────── */
 
 * {
   margin: 0;
@@ -29,20 +47,26 @@
 }
 
 body {
-  font-family: -apple-system, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+  font-family: -apple-system, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   background: var(--bg-primary);
   color: var(--text);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+/* ── Scrollbar ───────────────────────────────────── */
 
-/* ── Dashboard ────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(108, 140, 255, 0.15);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(108, 140, 255, 0.3);
+}
+
+/* ── Dashboard ───────────────────────────────────── */
 
 .dashboard {
   display: flex;
@@ -50,25 +74,45 @@ body {
   height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 20% 50%, rgba(108, 140, 255, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 50%, rgba(160, 103, 255, 0.02) 0%, transparent 50%),
+    radial-gradient(ellipse at 15% 25%, rgba(80, 60, 150, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 75%, rgba(60, 100, 180, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 0%, rgba(120, 80, 160, 0.03) 0%, transparent 40%),
+    radial-gradient(ellipse at 50% 100%, rgba(60, 40, 100, 0.03) 0%, transparent 40%),
     var(--bg-primary);
 }
 
 .dashboard-controls {
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.dashboard-controls::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(108, 140, 255, 0.25), transparent);
+  animation: breath 8s ease-in-out infinite;
 }
 
 .dashboard-grid {
   flex: 1;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: 4px;
-  padding: 4px;
+  grid-template-rows: 2fr 2fr 1.5fr;
+  gap: 3px;
+  padding: 3px;
   min-height: 0;
 }
+
+.panel-wide {
+  grid-column: 1 / -1;
+}
+
+/* ── Panels ──────────────────────────────────────── */
 
 .panel {
   background: var(--bg-panel);
@@ -77,6 +121,18 @@ body {
   padding: 14px;
   overflow: auto;
   min-height: 0;
+  box-shadow:
+    0 0 0 1px rgba(108, 140, 255, 0.02),
+    0 4px 20px rgba(0, 0, 0, 0.2);
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+
+.panel:hover {
+  border-color: rgba(108, 140, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(108, 140, 255, 0.04),
+    0 4px 24px rgba(0, 0, 0, 0.25),
+    0 0 40px rgba(108, 140, 255, 0.02);
 }
 
 .placeholder {
@@ -88,25 +144,25 @@ body {
   font-size: 14px;
 }
 
-/* ── Controls ─────────────────────────────────── */
+/* ── Controls ────────────────────────────────────── */
 
 .controls {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  background: var(--bg-panel);
+  background: linear-gradient(180deg, rgba(10, 13, 26, 0.95) 0%, var(--bg-panel) 100%);
   font-size: 13px;
   flex-wrap: wrap;
   user-select: none;
 }
 
 .controls-title {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
-  letter-spacing: 0.5px;
-  background: linear-gradient(135deg, var(--accent), var(--gold));
+  letter-spacing: 2px;
+  background: linear-gradient(135deg, var(--gold-bright) 0%, var(--accent) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -137,16 +193,16 @@ body {
   font-size: 12px;
   font-family: inherit;
   outline: none;
-  transition: border-color 150ms ease, box-shadow 150ms ease;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
 }
 
 .controls-group input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-glow);
+  box-shadow: 0 0 0 2px var(--accent-glow), 0 0 12px rgba(108, 140, 255, 0.08);
 }
 
 .controls-group input:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
 }
 
 .controls button {
@@ -159,13 +215,14 @@ body {
   cursor: pointer;
   white-space: nowrap;
   font-family: inherit;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
 }
 
 .controls button:hover:not(:disabled) {
   background: var(--bg-hover);
   border-color: var(--accent);
   color: var(--accent);
+  box-shadow: 0 0 12px rgba(108, 140, 255, 0.08);
 }
 
 .controls button:disabled {
@@ -177,7 +234,7 @@ body {
   background: var(--speed-active);
   border-color: var(--speed-active);
   color: #fff;
-  box-shadow: 0 0 8px rgba(108, 140, 255, 0.3);
+  box-shadow: 0 0 12px rgba(108, 140, 255, 0.3);
 }
 
 .controls-info {
@@ -186,11 +243,14 @@ body {
   gap: 12px;
   margin-left: auto;
   font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  font-size: 13px;
 }
 
 .extinction {
   color: var(--danger);
   font-weight: 600;
+  text-shadow: 0 0 8px rgba(224, 80, 80, 0.3);
   animation: pulse-danger 1.5s ease-in-out infinite;
 }
 
@@ -209,7 +269,7 @@ body {
 
 .conn-connected {
   background: #4ade80;
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.4);
+  box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
 }
 
 .conn-connecting {
@@ -224,6 +284,7 @@ body {
 
 .conn-disconnected {
   background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.3);
 }
 
 .conn-label {
@@ -231,7 +292,7 @@ body {
   font-size: 12px;
 }
 
-/* ── Chart containers ─────────────────────────── */
+/* ── Chart Containers ────────────────────────────── */
 
 .chart-container,
 .event-log,
@@ -250,13 +311,25 @@ body {
   margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.chart-header::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 60px;
+  height: 1px;
+  background: linear-gradient(90deg, var(--gold), transparent);
+  opacity: 0.4;
 }
 
 .chart-title {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text);
-  letter-spacing: 0.3px;
+  color: var(--text-bright);
+  letter-spacing: 1px;
 }
 
 .chart-toggle {
@@ -267,7 +340,7 @@ body {
   color: var(--text-dim);
   font-size: 11px;
   cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease;
+  transition: border-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
 }
 
 .chart-toggle:hover {
@@ -279,6 +352,7 @@ body {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+  box-shadow: 0 0 8px rgba(108, 140, 255, 0.2);
 }
 
 .chart-body {
@@ -286,23 +360,24 @@ body {
   min-height: 0;
 }
 
-/* ── Event log ────────────────────────────────── */
+/* ── Event Log ───────────────────────────────────── */
 
 .event-pending {
   text-align: center;
   padding: 5px 8px;
-  background: var(--accent);
+  background: linear-gradient(135deg, var(--accent), rgba(108, 140, 255, 0.8));
   color: #fff;
   font-size: 12px;
   cursor: pointer;
   flex-shrink: 0;
   border-radius: var(--radius);
   margin-bottom: 6px;
-  transition: background 150ms ease;
+  transition: background 200ms ease, box-shadow 200ms ease;
 }
 
 .event-pending:hover {
-  background: var(--accent-hover);
+  background: linear-gradient(135deg, var(--accent-hover), var(--accent));
+  box-shadow: 0 0 12px rgba(108, 140, 255, 0.2);
 }
 
 .event-filter {
@@ -314,11 +389,12 @@ body {
   font-size: 12px;
   outline: none;
   cursor: pointer;
-  transition: border-color 150ms ease;
+  transition: border-color 200ms ease;
 }
 
 .event-filter:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
 .event-list {
@@ -332,17 +408,18 @@ body {
   font-size: 13px;
   text-align: center;
   padding-top: 24px;
+  letter-spacing: 1px;
 }
 
 .event-item {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 4px 0 4px 8px;
+  padding: 5px 0 5px 10px;
   font-size: 12px;
-  border-bottom: 1px solid rgba(26, 31, 58, 0.5);
+  border-bottom: 1px solid rgba(26, 31, 58, 0.4);
   border-left: 3px solid transparent;
-  transition: background 100ms ease;
+  transition: background 150ms ease;
 }
 
 .event-item:hover {
@@ -354,12 +431,15 @@ body {
   width: 52px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
+  font-size: 11px;
 }
 
 .event-type {
   flex-shrink: 0;
-  width: 32px;
+  width: 36px;
   font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
 }
 
 .event-detail {
@@ -369,21 +449,23 @@ body {
   white-space: nowrap;
   min-width: 0;
   flex: 1;
+  font-size: 12px;
 }
 
-/* ── Stats panel ──────────────────────────────── */
+/* ── Stats Panel ─────────────────────────────────── */
 
 .stats-empty {
   color: var(--text-dim);
   font-size: 13px;
   text-align: center;
   padding-top: 24px;
+  letter-spacing: 1px;
 }
 
 .stats-grid {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .stat-item {
@@ -394,7 +476,7 @@ body {
   background: var(--bg-input);
   border-radius: var(--radius);
   font-size: 13px;
-  transition: background 100ms ease;
+  transition: background 150ms ease;
 }
 
 .stat-item:hover {
@@ -417,9 +499,9 @@ body {
 }
 
 .stat-highlight .stat-value {
-  color: var(--gold);
+  color: var(--gold-bright);
   font-weight: 600;
-  text-shadow: 0 0 8px rgba(255, 215, 0, 0.2);
+  text-shadow: 0 0 10px var(--gold-glow);
 }
 
 .stat-label {
@@ -432,7 +514,7 @@ body {
   color: var(--text);
 }
 
-/* ── Tab group ────────────────────────────────── */
+/* ── Tab Group ───────────────────────────────────── */
 
 .tab-group {
   display: flex;
@@ -448,7 +530,7 @@ body {
   font-size: 11px;
   cursor: pointer;
   font-family: inherit;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
 }
 
 .tab-btn:hover {
@@ -460,9 +542,10 @@ body {
   background: var(--accent);
   border-color: var(--accent);
   color: #fff;
+  box-shadow: 0 0 8px rgba(108, 140, 255, 0.2);
 }
 
-/* ── Level stats table ────────────────────────── */
+/* ── Level Stats Table ───────────────────────────── */
 
 .level-stats-table {
   width: 100%;
@@ -476,14 +559,14 @@ body {
 .level-stats-table td {
   padding: 5px 8px;
   text-align: right;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(26, 31, 58, 0.5);
 }
 
 .level-stats-table th {
   color: var(--text-dim);
   font-weight: 500;
   font-size: 11px;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.5px;
 }
 
 .level-stats-table td:first-child,
@@ -492,44 +575,15 @@ body {
 }
 
 .level-stats-table tbody tr {
-  transition: background 100ms ease;
+  transition: background 150ms ease;
 }
 
 .level-stats-table tbody tr:hover {
   background: rgba(108, 140, 255, 0.04);
 }
 
-/* ── Panel split layout ──────────────────────── */
 
-.panel-right {
-  padding: 0;
-  overflow: hidden;
-}
-
-.panel-split {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
-}
-
-.panel-split-top {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-  padding: 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.panel-split-bottom {
-  flex: 0 0 auto;
-  max-height: 35%;
-  overflow: auto;
-  min-height: 0;
-  padding: 14px;
-}
-
-/* ── Faction panel ───────────────────────────── */
+/* ── Faction Panel ───────────────────────────────── */
 
 .faction-panel {
   display: flex;
@@ -549,6 +603,7 @@ body {
   font-size: 13px;
   text-align: center;
   padding-top: 12px;
+  letter-spacing: 1px;
 }
 
 .faction-list {
@@ -561,20 +616,22 @@ body {
 }
 
 .faction-item {
-  padding: 5px 10px;
+  padding: 6px 10px;
   background: var(--bg-input);
   border-radius: var(--radius);
-  transition: background 100ms ease;
+  border-left: 2px solid rgba(108, 140, 255, 0.15);
+  transition: background 150ms ease, border-color 200ms ease;
 }
 
 .faction-item:hover {
   background: var(--bg-hover);
+  border-left-color: var(--accent);
 }
 
 .faction-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-bright);
 }
 
 .faction-meta {
@@ -583,4 +640,23 @@ body {
   font-size: 11px;
   color: var(--text-dim);
   margin-top: 2px;
+}
+
+/* ── Animations ──────────────────────────────────── */
+
+@keyframes breath {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Recharts Overrides ──────────────────────────── */
+
+.recharts-legend-item-text {
+  color: var(--text-dim) !important;
+  font-size: 11px !important;
+}
+
+.recharts-default-tooltip {
+  border-radius: var(--radius) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4) !important;
 }
