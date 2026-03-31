@@ -1909,3 +1909,66 @@ Village (200-999) and town (1000-4999) were structurally unreachable.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: 势力系统 MVP：后端 + 前端
+
+**Date**: 2026-03-31
+**Task**: 势力系统 MVP：后端 + 前端
+**Branch**: `main`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 完成内容
+
+| 模块 | 描述 |
+|------|------|
+| 势力形成 | 混合机制：元婴修士 + 区域≥40无派修士自动立宗 |
+| 成员管理 | 被动吸引/主动投靠/招募征召加入，宗主陨落解散 |
+| 宗门命名 | 区域名 + 词库随机宗门名（类似聚落命名机制） |
+| 序列化 | 快照 v9，向后兼容 v1-v8 |
+| 前端面板 | FactionPanel 展示势力列表（名称/区域/成员数/年龄） |
+| 事件展示 | EventLog 支持立宗/覆灭事件 |
+
+## 新建文件
+- `src/constants/faction.ts` — 势力常量与宗门名词库
+- `src/engine/faction.ts` — FactionSystem 类
+- `src/components/FactionPanel.tsx` — 势力面板组件
+
+## 修改文件
+- `src/types.ts` — Faction/FactionSummary 接口、事件类型
+- `src/engine/simulation.ts` — tick 集成、快照 v9
+- `src/components/Dashboard.tsx` — factionPanel 插槽
+- `src/components/EventLog.tsx` — 势力事件渲染
+- `server/events.ts` — toDisplayEvent 势力事件转换
+- `src/App.tsx` — 接入 FactionPanel
+- `src/index.css` — 势力面板样式
+
+## 设计决策
+- Tick 位置：Phase 8（combat 后、purgeDead 前）
+- 数据传递：通过 YearSummary.factionSummaries（避免新 WS 消息类型）
+- Formation check 每 5 tick 一次（性能优化）
+- 独立 FactionSystem 类，不嵌入 SpatialIndex（避免污染 combat 热路径）
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `927574c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 37
+- **Total Sessions**: 38
 - **Last Active**: 2026-03-31
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1911 | Active |
+| `journal-1.md` | ~1974 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 38 | 2026-03-31 | 势力系统 MVP：后端 + 前端 | `927574c` | `main` |
 | 37 | 2026-03-31 | 非暴力交互系统 - 关系/切磋/传授/护法 + AI Policy v3 | `89c0c0d`, `4fc5391`, `9162cc6`, `6d85764`, `b9bd214`, `a3e0c80`, `ccc15c6` | `main` |
 | 36 | 2026-03-30 | Dashboard UI/UX overhaul + WebSocket proxy fix | `42503cf` | `main` |
 | 35 | 2026-03-30 | 聚落地盘收缩机制 | `079796a` | `main` |
