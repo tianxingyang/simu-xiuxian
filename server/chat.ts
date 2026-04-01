@@ -296,6 +296,85 @@ export function compactHistory(history: ChatMessage[]): ChatMessage[] {
 }
 
 // ---------------------------------------------------------------------------
+// Tier 1 — HISTORY_SNIP: Remove consumed tool noise (zero-cost)
+// Tool results that the model has already consumed are pure noise.
+// Snip them to minimal markers — no summarization, just deletion.
+// ---------------------------------------------------------------------------
+
+export function snipToolNoise(messages: ChatMessage[]): ChatMessage[] {
+  return messages.map(m => {
+    // Tool results: once consumed, the assistant response already has the useful info
+    if (m.role === 'tool' && m.content && m.content.length > 100) {
+      return { role: 'tool' as const, content: '[已处理]', tool_call_id: m.tool_call_id };
+    }
+    // Tool call arguments (SQL, JS expressions): noise after execution
+    if (m.role === 'assistant' && m.tool_calls) {
+      return {
+        ...m,
+        tool_calls: m.tool_calls.map(tc => ({
+          ...tc,
+          function: { name: tc.function.name, arguments: '{}' },
+        })),
+      };
+    }
+    return m;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tier 2 — CONTEXT_COLLAPSE: Archive old turns preserving structure (zero-cost)
+// Like git log: each turn records what was asked and concluded.
+// Keeps last turn in full, collapses older ones into one-line entries.
+// ---------------------------------------------------------------------------
+
+export function collapseOldTurns(messages: ChatMessage[]): ChatMessage[] {
+  let priorSummary = '';
+
+  interface Turn { question: string; answer: string }
+  const turns: Turn[] = [];
+  let pendingQ = '';
+
+  for (const m of messages) {
+    if (m.role === 'user' && m.content) {
+      // Detect and carry forward existing collapsed history
+      const collapse = m.content.match(/^\[对话历史\]\n([\s\S]*)\n\[历史结束\]/);
+      if (collapse) { priorSummary = collapse[1]; continue; }
+      // Also absorb legacy summary formats
+      if (m.content.startsWith('[Previous conversation summary]') ||
+          m.content.startsWith('[之前的对话摘要]')) {
+        priorSummary = m.content; continue;
+      }
+      pendingQ = m.content;
+    } else if (m.role === 'assistant' && m.content && !m.tool_calls && pendingQ) {
+      turns.push({ question: pendingQ, answer: m.content });
+      pendingQ = '';
+    }
+  }
+
+  if (turns.length === 0) return messages;
+  if (turns.length === 1 && !priorSummary) return messages;
+
+  const toCollapse = turns.length > 1 ? turns.slice(0, -1) : [];
+  const lastTurn = turns[turns.length - 1];
+
+  const newEntries = toCollapse.map(t =>
+    `Q: ${t.question.slice(0, 80)} → A: ${t.answer.slice(0, 150)}`
+  ).join('\n');
+
+  const fullLog = [priorSummary, newEntries].filter(Boolean).join('\n');
+
+  const result: ChatMessage[] = [];
+  if (fullLog) {
+    result.push({ role: 'user', content: `[对话历史]\n${fullLog}\n[历史结束]\n\n${lastTurn.question}` });
+  } else {
+    result.push({ role: 'user', content: lastTurn.question });
+  }
+  result.push({ role: 'assistant', content: lastTurn.answer });
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // Chat result type
 // ---------------------------------------------------------------------------
 

@@ -9,6 +9,8 @@ import {
   TOOL_DEFINITIONS,
   executeDbQuery,
   compactHistory,
+  snipToolNoise,
+  collapseOldTurns,
   estimateTokens,
   MAX_TOOL_ROUNDS,
   MAX_HISTORY_TOKENS,
@@ -202,16 +204,32 @@ async function executeTool(
 }
 
 // ---------------------------------------------------------------------------
-// LLM-driven history compaction (falls back to text truncation)
+// Tiered context compression pipeline
+// Tier 1: HISTORY_SNIP   — delete consumed tool noise (free)
+// Tier 2: CONTEXT_COLLAPSE — archive old turns as structured log (free)
+// Tier 3: AUTOCOMPACT    — LLM summarization (one API call)
+// Tier 4: Text truncation — fallback
 // ---------------------------------------------------------------------------
 
-async function compactWithLlm(history: ChatMessage[], signal: AbortSignal): Promise<ChatMessage[]> {
-  const tokens = estimateTokens(history);
-  if (tokens < MAX_HISTORY_TOKENS * COMPACT_THRESHOLD) return history;
+async function tieredCompact(history: ChatMessage[], signal: AbortSignal): Promise<ChatMessage[]> {
+  const rawTokens = estimateTokens(history);
+  if (rawTokens < MAX_HISTORY_TOKENS * COMPACT_THRESHOLD) return history;
 
-  log.info(`compacting history with LLM: ~${tokens} tokens, ${history.length} messages`);
+  // Tier 1: HISTORY_SNIP
+  let msgs = snipToolNoise(history);
+  let tokens = estimateTokens(msgs);
+  log.info(`compact T1-SNIP: ${rawTokens}→${tokens} tokens`);
+  if (tokens < MAX_HISTORY_TOKENS * COMPACT_THRESHOLD) return msgs;
 
-  const transcript = history
+  // Tier 2: CONTEXT_COLLAPSE
+  msgs = collapseOldTurns(msgs);
+  tokens = estimateTokens(msgs);
+  log.info(`compact T2-COLLAPSE: →${tokens} tokens, ${msgs.length} msgs`);
+  if (tokens < MAX_HISTORY_TOKENS * COMPACT_THRESHOLD) return msgs;
+
+  // Tier 3: AUTOCOMPACT (LLM call)
+  log.info(`compact T3-AUTOCOMPACT: ${tokens} tokens, ${msgs.length} msgs`);
+  const transcript = msgs
     .filter(m => m.role !== 'system' && m.content)
     .map(m => `${m.role}: ${m.content!.slice(0, 300)}`)
     .join('\n');
@@ -227,14 +245,15 @@ async function compactWithLlm(history: ChatMessage[], signal: AbortSignal): Prom
     );
     const summary = resp.choices[0]?.message?.content;
     if (summary) {
-      log.info(`LLM compaction done: ${summary.length} chars`);
-      return [{ role: 'user', content: `[之前的对话摘要]\n${summary}\n[摘要结束，请基于以上信息继续对话]` }];
+      log.info(`T3-AUTOCOMPACT done: ${summary.length} chars`);
+      return [{ role: 'user', content: `[之前的对话摘要]\n${summary}\n[摘要结束]` }];
     }
   } catch (err) {
-    log.warn(`LLM compaction failed, falling back: ${err instanceof Error ? err.message : err}`);
+    log.warn(`T3-AUTOCOMPACT failed: ${err instanceof Error ? err.message : err}`);
   }
 
-  return compactHistory(history);
+  // Tier 4: text truncation fallback
+  return compactHistory(msgs);
 }
 
 // ---------------------------------------------------------------------------
@@ -258,7 +277,7 @@ async function handleChat(
     }
 
     const systemPrompt = buildSystemPrompt(worldContext, yearSummary);
-    const compacted = await compactWithLlm(history, ac.signal);
+    const compacted = await tieredCompact(history, ac.signal);
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -325,11 +344,13 @@ async function handleChat(
     if (ac.signal.aborted) return;
 
     // Build updated history (exclude system message)
-    const updatedHistory = messages.filter(m => m.role !== 'system');
+    const rawHistory = messages.filter(m => m.role !== 'system');
     // Add the final assistant reply
-    if (reply && (updatedHistory.length === 0 || updatedHistory[updatedHistory.length - 1].role !== 'assistant')) {
-      updatedHistory.push({ role: 'assistant', content: reply });
+    if (reply && (rawHistory.length === 0 || rawHistory[rawHistory.length - 1].role !== 'assistant')) {
+      rawHistory.push({ role: 'assistant', content: reply });
     }
+    // Eagerly SNIP tool noise — next conversation won't need raw results
+    const updatedHistory = snipToolNoise(rawHistory);
 
     const result: ChatResult = { reply, updatedHistory };
     send({ type: 'job:result', jobId, kind: 'chat', payload: result });
