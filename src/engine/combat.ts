@@ -318,6 +318,7 @@ function resolveCombat(
     loser.alive = false;
     loserDied = true;
     engine.combatDeaths++;
+    engine.combatDeathsByLevel[loser.level]++;
     engine.aliveCount--;
     engine._deadIds.push(loser.id);
     engine.levelGroups[loser.level].delete(loser.id);

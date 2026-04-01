@@ -1,0 +1,78 @@
+{
+  "measureYears": 1600,
+  "cooldown": 3,
+  "rates": [
+    {
+      "level": 0,
+      "lambda": 0.11061904995318472,
+      "s_empirical": 0.52000585812082,
+      "d_bg": 0.0010339238344159972,
+      "p_effective": 0.05752255399541568,
+      "avgPop": 1505,
+      "popFraction": 0.4204537475971791
+    },
+    {
+      "level": 1,
+      "lambda": 0.02765594615644965,
+      "s_empirical": 0.4490362764077098,
+      "d_bg": 0.049297928632249244,
+      "p_effective": 0.012418523082624264,
+      "avgPop": 1343,
+      "popFraction": 0.3751598533034835
+    },
+    {
+      "level": 2,
+      "lambda": 0.005955243773187865,
+      "s_empirical": 0.37257438551099614,
+      "d_bg": 0.024785084045867812,
+      "p_effective": 0.002218771289363655,
+      "avgPop": 568,
+      "popFraction": 0.15869376665557022
+    },
+    {
+      "level": 3,
+      "lambda": 0.001022039583889942,
+      "s_empirical": 0.2697095435684647,
+      "d_bg": 0.007069460524251176,
+      "p_effective": 0.00027565382967985986,
+      "avgPop": 147,
+      "popFraction": 0.041184254052265966
+    },
+    {
+      "level": 4,
+      "lambda": 0,
+      "s_empirical": 0,
+      "d_bg": 0.0010072444117305234,
+      "p_effective": 0,
+      "avgPop": 16,
+      "popFraction": 0.004508378391501131
+    },
+    {
+      "level": 5,
+      "lambda": 0,
+      "s_empirical": 0,
+      "d_bg": 0,
+      "p_effective": 0,
+      "avgPop": 0,
+      "popFraction": 0
+    },
+    {
+      "level": 6,
+      "lambda": 0,
+      "s_empirical": 0,
+      "d_bg": 0,
+      "p_effective": 0,
+      "avgPop": 0,
+      "popFraction": 0
+    },
+    {
+      "level": 7,
+      "lambda": 0,
+      "s_empirical": 0,
+      "d_bg": 0,
+      "p_effective": 0,
+      "avgPop": 0,
+      "popFraction": 0
+    }
+  ]
+}

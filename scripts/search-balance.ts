@@ -31,6 +31,7 @@ type SearchOptions = {
   refinements: number;
   focusLevel?: number;
   searchScope: SearchScopeName;
+  searchMode: SearchModeName;
   baseFile?: string;
 };
 
@@ -57,6 +58,7 @@ type RangeSpec = {
 
 type SearchSpaceNode = RangeSpec | SearchSpaceNode[] | { [key: string]: SearchSpaceNode };
 type SearchScopeName = 'full' | 'lv0' | 'lv1' | 'lv2';
+type SearchModeName = 'random' | 'guided';
 
 type LongRunConfig = {
   years?: number;
@@ -87,13 +89,14 @@ const DEFAULT_OPTIONS: SearchOptions = {
   survivors: 8,
   refinements: 3,
   searchScope: 'full',
+  searchMode: 'random',
 };
 
 const SEARCH_SPACE: SearchSpaceNode = {
   balance: {
     breakthrough: {
-      a: { min: 0.35, max: 0.75 },
-      b: { min: 0.05, max: 0.2 },
+      a: { min: 0.35, max: 1.5 },
+      b: { min: 0.05, max: 0.35 },
       tailPenalty: {
         amplitude: { min: 0, max: 5 },
         center: { min: 1.2, max: 6.4 },
@@ -628,6 +631,169 @@ function mutateCandidate(base: Candidate, space: SearchSpaceNode, rng: () => num
   return candidateFromProfile(id, mergeNested(base.profile, patch));
 }
 
+// ── Guided candidate generation (analytical derivation) ─────────────
+//
+// Instead of randomly sampling breakthrough params (a, b, penalties),
+// we randomly sample "assumptions" (death rate model + attempt rate model)
+// and analytically derive breakthrough params from steady-state equations.
+// This ensures every candidate is mathematically consistent with a distribution
+// close to the target.
+
+type GuidedAssumptions = {
+  d0: number;          // combat death base rate at lv0
+  gamma: number;       // combat death decay with level
+  dFloor: number;      // combat death floor
+  lambda0: number;     // breakthrough attempt rate at lv0
+  lambdaDecay: number; // attempt rate decay factor per level
+};
+
+function deriveBreakthroughFromAssumptions(
+  assumptions: GuidedAssumptions,
+  profile: SearchProfile,
+): { a: number; b: number; tailAmp: number; gateAmp: number } | null {
+  const cooldown = profile.tuning.breakthroughFailure.cooldown;
+  const bp = profile.balance.breakthrough;
+  const earlyAges = profile.tuning.lifespan.earlySustainableMaxAge;
+
+  function maxAge(level: number): number {
+    if (level <= 0) return profile.tuning.lifespan.mortalMaxAge;
+    if (level < earlyAges.length) return earlyAges[level];
+    const highStart = earlyAges.length - 1;
+    const highSpan = LEVEL_COUNT - 1 - highStart;
+    if (highSpan <= 0) return profile.tuning.lifespan.lv7MaxAge;
+    const progress = (level - highStart) / highSpan;
+    const startAge = earlyAges[highStart];
+    return Math.round(startAge * Math.exp(Math.log(profile.tuning.lifespan.lv7MaxAge / startAge) * progress));
+  }
+
+  // Population ratios from target
+  const R: number[] = [];
+  for (let l = 0; l < LEVEL_COUNT - 1; l++) R.push(TARGET_DISTRIBUTION[l + 1] / TARGET_DISTRIBUTION[l]);
+  R.push(0);
+
+  // Death rates and attempt rates from assumptions
+  const dBg: number[] = [];
+  const lambda: number[] = [];
+  for (let l = 0; l < LEVEL_COUNT; l++) {
+    const dNat = 1 / Math.max(1, maxAge(l));
+    const dCombat = assumptions.d0 * Math.exp(-assumptions.gamma * l) + assumptions.dFloor;
+    dBg.push(dNat + dCombat);
+    lambda.push(assumptions.lambda0 * Math.pow(assumptions.lambdaDecay, l));
+  }
+
+  // Solve backwards: p_L = R_L * (p_{L+1} + d_{L+1})
+  const pNeeded = new Array(LEVEL_COUNT).fill(0);
+  for (let l = LEVEL_COUNT - 2; l >= 0; l--) {
+    pNeeded[l] = R[l] * (pNeeded[l + 1] + dBg[l + 1]);
+  }
+
+  // Invert to raw success probability: s = p*(1+τλ) / (λ*(1+τp))
+  const yVals: { l: number; y: number }[] = [];
+  for (let l = 0; l < LEVEL_COUNT - 1; l++) {
+    const lam = lambda[l];
+    if (lam <= 1e-10) continue;
+    const s = pNeeded[l] * (1 + cooldown * lam) / (lam * (1 + cooldown * pNeeded[l]));
+    if (s <= 0 || s >= 1) continue;
+    yVals.push({ l, y: -Math.log(s) });
+  }
+  if (yVals.length < 2) return null;
+
+  // Fit: y = a + b*(2L+1) + tailAmp*sigmoid(L) + gateAmp*gaussian(L)
+  const sigCenter = bp.tailPenalty.center, sigSteep = Math.max(1e-6, bp.tailPenalty.steepness);
+  const gauCenter = bp.gatePenalty.center, gauWidth = Math.max(1e-3, bp.gatePenalty.width);
+  const n = yVals.length;
+  const cols = 4;
+  const AtA = Array.from({ length: cols }, () => new Array(cols).fill(0));
+  const Atb = new Array(cols).fill(0);
+
+  for (const { l, y } of yVals) {
+    const row = [
+      1, 2 * l + 1,
+      1 / (1 + Math.exp(-sigSteep * (l - sigCenter))),
+      Math.exp(-0.5 * Math.pow((l - gauCenter) / gauWidth, 2)),
+    ];
+    for (let j = 0; j < cols; j++) {
+      Atb[j] += row[j] * y;
+      for (let k = 0; k < cols; k++) AtA[j][k] += row[j] * row[k];
+    }
+  }
+
+  // Gaussian elimination
+  const M = AtA.map((row, i) => [...row, Atb[i]]);
+  for (let col = 0; col < cols; col++) {
+    let maxRow = col;
+    for (let row = col + 1; row < cols; row++) {
+      if (Math.abs(M[row][col]) > Math.abs(M[maxRow][col])) maxRow = row;
+    }
+    [M[col], M[maxRow]] = [M[maxRow], M[col]];
+    if (Math.abs(M[col][col]) < 1e-12) continue;
+    for (let row = col + 1; row < cols; row++) {
+      const f = M[row][col] / M[col][col];
+      for (let j = col; j <= cols; j++) M[row][j] -= f * M[col][j];
+    }
+  }
+  const x = new Array(cols).fill(0);
+  for (let i = cols - 1; i >= 0; i--) {
+    if (Math.abs(M[i][i]) < 1e-12) continue;
+    x[i] = M[i][cols];
+    for (let j = i + 1; j < cols; j++) x[i] -= M[i][j] * x[j];
+    x[i] /= M[i][i];
+  }
+
+  return {
+    a: Math.max(0.1, x[0]),
+    b: Math.max(0.01, x[1]),
+    tailAmp: Math.max(0, Math.min(5.0, x[2])),
+    gateAmp: Math.max(0, Math.min(3.0, x[3])),
+  };
+}
+
+function candidateFromGuided(base: SearchProfile, space: SearchSpaceNode, rng: () => number, id: number): Candidate {
+  const assumptions: GuidedAssumptions = {
+    d0: randIn(rng, 0.01, 0.15),
+    gamma: randIn(rng, 0.1, 1.5),
+    dFloor: randIn(rng, 0, 0.01),
+    lambda0: randIn(rng, 0.05, 0.35),
+    lambdaDecay: randIn(rng, 0.15, 0.7),
+  };
+
+  const derived = deriveBreakthroughFromAssumptions(assumptions, base);
+  if (!derived) return candidateFromRandom(base, space, rng, id);
+
+  // Start from random candidate (for non-breakthrough params), then override breakthrough
+  const candidate = candidateFromRandom(base, space, rng, id);
+  const bt = candidate.profile.balance.breakthrough;
+  bt.a = derived.a;
+  bt.b = derived.b;
+  bt.tailPenalty.amplitude = derived.tailAmp;
+  bt.gatePenalty.amplitude = derived.gateAmp;
+  return candidateFromProfile(id, candidate.profile);
+}
+
+function mutateGuidedCandidate(parent: Candidate, space: SearchSpaceNode, rng: () => number, id: number, scale: number): Candidate {
+  // Mutate non-breakthrough params normally
+  const mutated = mutateCandidate(parent, space, rng, id, scale);
+
+  // Re-derive breakthrough from slightly perturbed assumptions
+  const assumptions: GuidedAssumptions = {
+    d0: randIn(rng, 0.02, 0.10),
+    gamma: randIn(rng, 0.2, 1.2),
+    dFloor: randIn(rng, 0, 0.005),
+    lambda0: randIn(rng, 0.08, 0.25),
+    lambdaDecay: randIn(rng, 0.2, 0.6),
+  };
+
+  const derived = deriveBreakthroughFromAssumptions(assumptions, mutated.profile);
+  if (!derived) return mutated;
+
+  const bt = mutated.profile.balance.breakthrough;
+  bt.a = derived.a;
+  bt.b = derived.b;
+  bt.tailPenalty.amplitude = derived.tailAmp;
+  bt.gatePenalty.amplitude = derived.gateAmp;
+  return candidateFromProfile(id, mutated.profile);
+}
+
 function scoreDistribution(avgDist: number[], options: SearchOptions): { score: number; violations: number } {
   let score = 0;
   let violations = 0;
@@ -832,6 +998,9 @@ function parseArgs(): ParsedArgs {
       case 'search-scope':
         if (raw === 'full' || raw === 'lv0' || raw === 'lv1' || raw === 'lv2') options.searchScope = raw;
         break;
+      case 'search-mode':
+        if (raw === 'random' || raw === 'guided') options.searchMode = raw;
+        break;
       case 'base': options.baseFile = raw; break;
       case 'long-run-years': longRunConfig.years = Number(raw); break;
       case 'long-run-warmup': longRunConfig.warmup = Number(raw); break;
@@ -850,9 +1019,19 @@ async function main(): Promise<void> {
   const baseCandidate = options.baseFile
     ? candidateFromProfile(nextId++, normalizeInputProfile(JSON.parse(readFileSync(options.baseFile, 'utf8'))))
     : defaultCandidate(nextId++);
+  const guided = options.searchMode === 'guided';
+  const generateCandidate = guided
+    ? (base: SearchProfile, id: number) => candidateFromGuided(base, activeSearchSpace, rng, id)
+    : (base: SearchProfile, id: number) => candidateFromRandom(base, activeSearchSpace, rng, id);
+  const mutateOne = guided
+    ? (parent: Candidate, id: number, scale: number) => mutateGuidedCandidate(parent, activeSearchSpace, rng, id, scale)
+    : (parent: Candidate, id: number, scale: number) => mutateCandidate(parent, activeSearchSpace, rng, id, scale);
+
+  if (guided) console.log('[guided mode] Candidates generated via analytical derivation\n');
+
   const population = [baseCandidate];
   while (population.length < options.iterations) {
-    population.push(candidateFromRandom(baseCandidate.profile, activeSearchSpace, rng, nextId++));
+    population.push(generateCandidate(baseCandidate.profile, nextId++));
   }
   let evaluated = population.map(candidate => evaluateCandidate(candidate, options));
   evaluated.sort((a, b) => (a.score ?? Infinity) - (b.score ?? Infinity));
@@ -864,7 +1043,7 @@ async function main(): Promise<void> {
     const mutations: Candidate[] = [];
     while (mutations.length < options.iterations) {
       const parent = survivors[mutations.length % survivors.length];
-      mutations.push(mutateCandidate(parent, activeSearchSpace, rng, nextId++, scale));
+      mutations.push(mutateOne(parent, nextId++, scale));
     }
     evaluated = [...survivors, ...mutations].map(candidate => evaluateCandidate(candidate, options));
     evaluated.sort((a, b) => (a.score ?? Infinity) - (b.score ?? Infinity));

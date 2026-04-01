@@ -1,0 +1,323 @@
+{
+  "balance": {
+    "breakthrough": {
+      "a": 1.5358796886858779,
+      "b": 0.15825644433063685,
+      "tailPenalty": {
+        "amplitude": 5,
+        "center": 4.9,
+        "steepness": 2.2
+      },
+      "gatePenalty": {
+        "amplitude": 0,
+        "center": 4.7,
+        "width": 1.2
+      }
+    },
+    "threshold": {
+      "tailBoost": {
+        "amplitude": 1.25,
+        "center": 6.6,
+        "steepness": 1.74
+      },
+      "gateBoost": {
+        "amplitude": 1.42,
+        "center": 4.865,
+        "width": 0.325
+      },
+      "peakBoost": {
+        "amplitude": 1.55,
+        "center": 5.75,
+        "width": 0.39
+      },
+      "reliefBoost": {
+        "amplitude": -0.8,
+        "center": 7,
+        "width": 0.28
+      },
+      "finalRelief": {
+        "amplitude": 0,
+        "center": 7,
+        "width": 0.2
+      }
+    },
+    "combat": {
+      "deathBoost": {
+        "amplitude": 0,
+        "center": 5.5,
+        "width": 0.7
+      },
+      "lootPenalty": {
+        "amplitude": 0.37,
+        "center": 5.22,
+        "steepness": 2
+      }
+    },
+    "tribulation": {
+      "chance": {
+        "amplitude": 0.02,
+        "center": 5000,
+        "steepness": 0.001
+      },
+      "successRate": 0.12
+    }
+  },
+  "tuning": {
+    "breakthroughFailure": {
+      "cooldown": 3,
+      "cultLossRate": 0.2,
+      "nothingWeight": 5,
+      "cultLossWeight": 2,
+      "injuryWeight": 2
+    },
+    "combat": {
+      "defeatDeathBase": 0.4,
+      "defeatDeathDecay": 0.8,
+      "defeatGapSeverity": 0.3,
+      "defeatMaxDeath": 0.95,
+      "defeatDemotionWeight": 0.4,
+      "defeatInjuryWeight": 2.9,
+      "defeatCultLossWeight": 2,
+      "defeatLightInjuryWeight": 4,
+      "defeatMeridianWeight": 1,
+      "defeatCultLossRate": 0.3,
+      "lootBaseRate": 0.28,
+      "lootVariableRate": 0.24,
+      "luckMean": 1,
+      "luckStddev": 0.3,
+      "luckMin": 0,
+      "luckMax": 2.5,
+      "injuryDuration": 5,
+      "injuryGrowthRate": 0.5,
+      "lightInjuryDuration": 2,
+      "lightInjuryGrowthRate": 0.7,
+      "meridianDamageDuration": 10,
+      "meridianCombatPenalty": 0.3
+    },
+    "courage": {
+      "trough": 0.3,
+      "youngAmp": 0.1,
+      "oldAmp": 0.3,
+      "mean": 0.5,
+      "stddev": 0.15,
+      "evasionSensitivity": 0.5,
+      "evasionPenalty": 0.05,
+      "behaviorFactors": {
+        "escaping": 0.3,
+        "recuperating": 0.6,
+        "seeking_breakthrough": 1,
+        "settling": 1,
+        "wandering": 1
+      }
+    },
+    "behavior": {
+      "escapingMoveProb": 1,
+      "recuperatingMoveProb": 0.05,
+      "seekingBreakthroughMoveProb": 0.6,
+      "settlingFraction": 0.05,
+      "evalBaseInterval": 5
+    },
+    "household": {
+      "householdBaseGrowthRate": 0.03,
+      "householdSplitThreshold": 50,
+      "householdSplitCount": 5,
+      "householdSplitPopulation": 10,
+      "baseAwakeningRate": 0.0005,
+      "initialHouseholdPop": 5,
+      "combatCollateralPopLoss": 3
+    },
+    "lifespan": {
+      "mortalMaxAge": 60,
+      "lv7MaxAge": 100000,
+      "lifespanDecayRate": 0.2,
+      "earlySustainableMaxAge": [
+        60,
+        150,
+        1070,
+        11070
+      ],
+      "legacyLifespanBonus": [
+        0,
+        100,
+        1000,
+        10000
+      ]
+    },
+    "spatial": {
+      "encounterRadius": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        16
+      ],
+      "wanderBaseProb": 0.15,
+      "wanderLevelBonus": 0.03,
+      "breakthroughMove": [
+        2,
+        4
+      ]
+    },
+    "terrain": {
+      "terrainSafetyFactor": [
+        0,
+        1.2,
+        1.1,
+        1,
+        0.8,
+        0.5
+      ],
+      "spiritualEnergyAwakeningFactor": [
+        0,
+        0.5,
+        0.8,
+        1,
+        1.5,
+        2.5
+      ],
+      "spiritualEnergyBreakthroughFactor": [
+        0,
+        0.7,
+        0.85,
+        1,
+        1.2,
+        1.5
+      ],
+      "terrainDangerEncounterFactor": [
+        0,
+        0.6,
+        0.8,
+        1,
+        1.3,
+        1.6
+      ],
+      "terrainDangerEvasionAdjust": [
+        0,
+        0.05,
+        0.025,
+        0,
+        -0.05,
+        -0.1
+      ]
+    },
+    "settlement": {
+      "expandThreshold": 1000,
+      "shrinkThreshold": 300
+    },
+    "mortalDeath": {
+      "baseDeathRate": 0.005,
+      "densityPressureFactor": 2,
+      "carryingCapacityPerCell": 1500
+    },
+    "disaster": {
+      "enabled": true,
+      "densityThreshold": 0.8,
+      "densityProbScale": 0.15,
+      "eventRecordThreshold": 0.1,
+      "types": {
+        "plague": {
+          "popLossMin": 0.15,
+          "popLossMax": 0.4,
+          "densityWeight": 3,
+          "terrainDangerWeight": 0,
+          "spiritualEnergyWeight": 0,
+          "baseProb": 0.002
+        },
+        "famine": {
+          "popLossMin": 0.1,
+          "popLossMax": 0.25,
+          "densityWeight": 2,
+          "terrainDangerWeight": 1.5,
+          "spiritualEnergyWeight": 0,
+          "baseProb": 0.005
+        },
+        "flood": {
+          "popLossMin": 0.05,
+          "popLossMax": 0.15,
+          "densityWeight": 0.5,
+          "terrainDangerWeight": 0.5,
+          "spiritualEnergyWeight": 0,
+          "baseProb": 0.008
+        },
+        "beast_tide": {
+          "popLossMin": 0.1,
+          "popLossMax": 0.3,
+          "densityWeight": 1,
+          "terrainDangerWeight": 2.5,
+          "spiritualEnergyWeight": 2,
+          "baseProb": 0.003
+        },
+        "qi_disruption": {
+          "popLossMin": 0.05,
+          "popLossMax": 0.2,
+          "densityWeight": 0.5,
+          "terrainDangerWeight": 0,
+          "spiritualEnergyWeight": 3,
+          "baseProb": 0.001
+        }
+      }
+    },
+    "memory": {
+      "enabled": true,
+      "emotionalDecayRate": 0.95,
+      "confidenceWinDelta": 0.12,
+      "confidenceLossDelta": 0.15,
+      "cautionHeavyInjuryDelta": 0.3,
+      "cautionLightInjuryDelta": 0.1,
+      "ambitionSuccessDelta": 0.2,
+      "ambitionFailHighCourageDelta": 0.08,
+      "ambitionFailLowCourageDelta": 0.12,
+      "ambitionCourageThreshold": 0.5,
+      "bloodlustKillDelta": 0.2,
+      "bloodlustWinDelta": 0.05,
+      "rootednessSettlingDelta": 0.02,
+      "rootednessDisplaceDelta": 0.15,
+      "breakthroughFearDelta": 0.15,
+      "encounterFleeBoost": 0.35,
+      "kinCombatReduction": 0.6,
+      "homingStrength": 2,
+      "dangerPlaceAvoidance": 3,
+      "powerSpotAttraction": 2.5,
+      "bloodlustDangerAttraction": 1.5,
+      "breakthroughFearDelayProb": 0.3
+    },
+    "relationship": {
+      "enabled": true,
+      "allyDecayRate": 0.02,
+      "rivalDecayRate": 0.01,
+      "allyStrengthPerEncounter": 0.1,
+      "rivalIntensityPerCombat": 0.2,
+      "mentorCultivationBonus": 0.4,
+      "mentorTeachingBonus": 0.1,
+      "mentorLevelGap": 2,
+      "mentorFormChance": 0.15,
+      "allyFormChance": 0.1,
+      "allyCultivationRatioMin": 0.3,
+      "rivalCombatThreshold": 3,
+      "fellowDiscipleCombatReduction": 0.5,
+      "closeAllyThreshold": 0.6
+    },
+    "interaction": {
+      "enabled": true,
+      "sparringCultivationMin": 0.3,
+      "sparringCultivationMax": 0.8,
+      "sparringAllyStrengthGain": 0.05,
+      "sparringProbability": 0.15,
+      "teachingBoostRateMentor": 0.5,
+      "teachingBoostRateAlly": 0.3,
+      "teachingBoostDuration": 10,
+      "teacherCultivationGain": 0.1,
+      "teachingBoostRateMax": 0.8,
+      "teachingProbability": 0.12
+    },
+    "guardian": {
+      "mentorGuardianBonus": 0.18,
+      "allyGuardianBonus": 0.08,
+      "maxGuardianBonus": 0.25,
+      "failurePenaltyReduction": 0.5
+    }
+  }
+}
