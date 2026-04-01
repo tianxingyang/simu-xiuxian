@@ -14,10 +14,30 @@ import {
   REGION_NAMES,
 } from '../constants/index.js';
 
-const SECT_PREFIX = [
-  '天', '玄', '紫', '青', '苍', '碧', '灵', '仙', '丹', '瑞',
-  '太', '清', '云', '龙', '凤', '鹤', '金', '白', '赤', '翠',
-  '玉', '冰', '炎', '雷', '风', '星', '月', '日', '霞', '岚',
+/** Scheme A: classic two-char imagery + suffix → 青云门, 碧落谷 */
+const SECT_PAIR = [
+  '青云', '碧落', '太虚', '九霄', '万象', '天枢', '紫霄', '玄天',
+  '苍穹', '凌云', '清风', '明月', '寒山', '落星', '幽冥', '瑶池',
+  '蓬莱', '昆仑', '长生', '无极', '玉京', '沧海', '千机', '浩然',
+  '天衡', '星河',
+] as const;
+
+/** Scheme B head: single-char adjective → 天, 玄, 紫 */
+const SECT_HEAD = [
+  '天', '玄', '紫', '青', '苍', '碧', '灵', '金',
+  '玉', '赤', '白', '翠', '凌', '太', '清', '冰',
+] as const;
+
+/** Scheme B tail: object + org suffix → 剑宗, 云门, 霄宫 */
+const SECT_COMPOUND_TAIL = [
+  '剑宗', '云门', '霄宫', '灵阁', '火殿', '水谷', '雷院',
+  '鹤庐', '月派', '岚盟', '风堂', '华阁', '龙宗', '凤阁',
+  '鸾宫', '花谷',
+] as const;
+
+/** Scheme C middle: celestial/geographic imagery → 霞, 岳, 渊 */
+const SECT_MIDDLE = [
+  '霞', '虹', '岳', '渊', '溟', '泽', '崖', '峰', '霄', '焰', '澜', '泉',
 ] as const;
 
 const SECT_SUFFIX = [
@@ -98,13 +118,29 @@ export class FactionSystem {
     this.factions.delete(factionId);
   }
 
-  private generateName(prng: PRNG, regionCode: string): string {
-    const regionName = REGION_NAMES[regionCode as RegionCode] ?? regionCode;
-    // Take one character from region name for flavor
-    const regionChar = regionName[Math.floor(prng() * regionName.length)];
-    const prefix = SECT_PREFIX[Math.floor(prng() * SECT_PREFIX.length)];
-    const suffix = SECT_SUFFIX[Math.floor(prng() * SECT_SUFFIX.length)];
-    return regionChar + prefix + suffix;
+  private generateName(prng: PRNG, _regionCode: string): string {
+    const scheme = Math.floor(prng() * 3);
+    switch (scheme) {
+      case 0: {
+        // 双字意象 + 后缀: 青云门, 碧落谷
+        const stem = SECT_PAIR[Math.floor(prng() * SECT_PAIR.length)];
+        const suffix = SECT_SUFFIX[Math.floor(prng() * SECT_SUFFIX.length)];
+        return stem + suffix;
+      }
+      case 1: {
+        // 单字 + 双字尾缀: 天剑宗, 玄云门
+        const head = SECT_HEAD[Math.floor(prng() * SECT_HEAD.length)];
+        const tail = SECT_COMPOUND_TAIL[Math.floor(prng() * SECT_COMPOUND_TAIL.length)];
+        return head + tail;
+      }
+      default: {
+        // 单字 + 意象 + 后缀: 赤霞谷, 苍岳门
+        const head = SECT_HEAD[Math.floor(prng() * SECT_HEAD.length)];
+        const middle = SECT_MIDDLE[Math.floor(prng() * SECT_MIDDLE.length)];
+        const suffix = SECT_SUFFIX[Math.floor(prng() * SECT_SUFFIX.length)];
+        return head + middle + suffix;
+      }
+    }
   }
 
   /** Check if faction leaders are still alive; dissolve if dead */
